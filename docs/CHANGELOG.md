@@ -4,6 +4,18 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.4.0] — 2026-11-01 — Root Cloud Run Dockerfile & Phase 2 Onboarding API
+
+### Added
+- `Dockerfile` (root) — Multi-stage Cloud Run production build targeting Fastify backend
+- `.dockerignore` (root) — Ignore frontend, local node_modules, and git from container context
+- `backend/src/routes/organizations.ts` — `POST /api/v1/organizations` with ATO ABN validation, atomic org member assignment (ADMIN), and automated 7-account Chart of Accounts seed
+- `backend/src/routes/auth.ts` — Added `GET /api/v1/auth/me` for seamless session restoration on page reload
+- `frontend/src/api/client.ts` — Added `authApi.me()`
+- `frontend/src/hooks/useAuth.tsx` — Auto-restore auth state on initial mount
+
+---
+
 ## [0.3.0] — 2026-11-01 — Phase F1 & Cloud Run Containerization
 
 ### Added

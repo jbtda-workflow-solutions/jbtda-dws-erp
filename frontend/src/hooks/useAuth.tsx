@@ -65,12 +65,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     role: null,
   });
 
-  // On mount, try a lightweight authenticated endpoint to restore session.
-  // We use /api/v1/auth/me (to be added in Phase 2). For now we start
-  // unauthenticated so the login page is shown on every fresh load.
-  // TODO: replace with a /me endpoint once Phase 2 ships.
+  // On mount, check session via /api/v1/auth/me
   useEffect(() => {
-    setState((s) => ({ ...s, status: 'unauthenticated' }));
+    let mounted = true;
+    authApi
+      .me()
+      .then((res) => {
+        if (!mounted) return;
+        if (res.status === 'onboarding') {
+          setState({
+            status: 'onboarding',
+            userId: res.user?.id ?? null,
+            organizationId: null,
+            role: null,
+          });
+        } else {
+          setState({
+            status: 'authenticated',
+            userId: res.user?.id ?? null,
+            organizationId: res.organizationId ?? null,
+            role: res.role ?? null,
+          });
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setState({
+            status: 'unauthenticated',
+            userId: null,
+            organizationId: null,
+            role: null,
+          });
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const loginWithGoogle = useCallback(async (idToken: string) => {

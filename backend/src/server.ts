@@ -20,6 +20,7 @@ import sensible from '@fastify/sensible';
 import prismaPlugin from './plugins/prisma.js';
 import authPlugin from './plugins/auth.js';
 import authRoutes from './routes/auth.js';
+import organizationRoutes from './routes/organizations.js';
 
 const PORT = Number(process.env['PORT'] ?? 8080);
 const HOST = process.env['HOST'] ?? '0.0.0.0';
@@ -83,6 +84,7 @@ async function buildServer() {
   // Routes
   // -------------------------------------------------------------------------
   await fastify.register(authRoutes);
+  await fastify.register(organizationRoutes);
 
   // -------------------------------------------------------------------------
   // Health check (unauthenticated — used by Cloud Run)

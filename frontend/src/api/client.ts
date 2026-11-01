@@ -55,9 +55,22 @@ export interface AuthResponse {
   status: 'authenticated' | 'onboarding';
   organizationId?: string;
   role?: string;
+  user?: {
+    id: string;
+    email: string;
+    name: string;
+    avatarUrl?: string;
+  };
+  organization?: {
+    id: string;
+    name: string;
+    abn: string;
+  };
 }
 
 export const authApi = {
+  me: () => request<AuthResponse>('GET', '/auth/me'),
+
   loginWithGoogle: (idToken: string) =>
     request<AuthResponse>('POST', '/auth/google', { idToken }),
 

@@ -151,6 +151,48 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // -----------------------------------------------------------------------
+  // GET /api/v1/auth/me
+  // -----------------------------------------------------------------------
+  fastify.get('/api/v1/auth/me', async (request, reply) => {
+    const secret = process.env['SESSION_SECRET'];
+    if (!secret) return reply.code(500).send({ error: 'Server misconfiguration' });
+
+    const raw = request.cookies['erp_session'];
+    if (!raw) return reply.code(401).send({ error: 'Unauthenticated' });
+
+    const { getSession } = await import('../plugins/auth.js');
+    const session = getSession(request, secret);
+    if (!session) return reply.code(401).send({ error: 'Invalid session' });
+
+    const user = await fastify.prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, email: true, name: true, avatarUrl: true },
+    });
+
+    if (!user) return reply.code(401).send({ error: 'User not found' });
+
+    if (!session.organizationId) {
+      return reply.code(200).send({
+        status: 'onboarding',
+        user,
+      });
+    }
+
+    const org = await fastify.prisma.organization.findUnique({
+      where: { id: session.organizationId },
+      select: { id: true, name: true, abn: true },
+    });
+
+    return reply.code(200).send({
+      status: 'authenticated',
+      user,
+      organization: org,
+      organizationId: session.organizationId,
+      role: session.role,
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // DELETE /api/v1/auth/logout
   // -----------------------------------------------------------------------
   fastify.delete('/api/v1/auth/logout', async (_request, reply) => {
