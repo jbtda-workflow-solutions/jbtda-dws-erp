@@ -4,6 +4,23 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.4.3] — 2026-11-01 — Documentation & Stages Roadmap Synchronization
+
+### Changed
+- `docs/STAGES_ROADMAP.md` — Marked Phase 2 (`POST /api/v1/organizations` & `GET /api/v1/auth/me`), Phase F1 (Vite/React/Tailwind scaffold & Google login), and Phase F2 (Onboarding modal with live ABN validator) as complete.
+- `docs/SECURITY.md` — Updated session cookie mechanics to document HMAC-SHA256 constant-time verification and documented the session restoration endpoint `GET /api/v1/auth/me`.
+
+---
+
+## [0.4.2] — 2026-11-01 — Agent Rules & Living File Tree
+
+### Added
+- `AGENTS.md` — Added Mandatory Rule 9: Agents must review the complete file structure before creating or altering files to prevent directory duplication, and update both `AGENTS.md` and `docs/CHANGELOG.md` whenever files are added, removed, or moved.
+- `AGENTS.md` — Added Mandatory Rule 10: Strict prohibition on autonomous `git commit` or `git push` operations; all git workflow operations are reserved for manual execution by the user.
+- `AGENTS.md` — Replaced high-level tree with full, living directory tree of all repository files.
+
+---
+
 ## [0.4.1] — 2026-11-01 — Directory Structure & Docker Clean-up
 
 ### Removed

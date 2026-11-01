@@ -36,23 +36,81 @@ by reading:
    include production-grade, multi-stage `Dockerfile` and `.dockerignore` files.
    Containers must run non-root, listen on dynamic `$PORT` (default 8080),
    and keep production images minimal and deterministic.
+9. **File Tree & Pre-Modification Verification:** Agents MUST review the complete
+   file structure below before creating, modifying, or moving files to prevent
+   duplicating files across directories. Whenever files are added, removed, or
+   moved, the agent MUST update this `Directory Layout` section in `AGENTS.md`
+   and append an entry to `docs/CHANGELOG.md` to keep the source of truth accurate.
+10. **No Autonomous Git Commits:** Never run `git commit` or `git push` on behalf
+    of the user. The user will manage git staging, commits, and pushes manually.
 
-## Directory Layout
+## Directory Layout (Living Source of Truth)
 
 ```
 .
-├── AGENTS.md                  ← this file
-├── AGENT_SPECIFICATION.md     ← master spec (read-only reference)
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── DATABASE_SCHEMA.md
-│   ├── SECURITY.md
-│   ├── DESIGN_SYSTEM.md
-│   ├── INTEGRATIONS.md
-│   ├── STAGES_ROADMAP.md
-│   └── CHANGELOG.md
-├── frontend/                  ← React 18 · Vite · TypeScript · Tailwind
-└── backend/                   ← Fastify · TypeScript · Prisma · PostgreSQL
+├── .dockerignore              # Production container build ignore rules
+├── .gitignore                 # Root git ignore rules
+├── AGENTS.md                  # Root agent instructions & living file tree
+├── AGENT_SPECIFICATION.md     # Master specification & architecture
+├── Dockerfile                 # Single root multi-stage Dockerfile for Cloud Run backend
+├── backend/                   # Fastify · TypeScript · Prisma · PostgreSQL API
+│   ├── .env.example           # Backend environment variable template
+│   ├── package.json           # Backend dependencies and scripts
+│   ├── tsconfig.build.json    # TypeScript compiler config for production build
+│   ├── tsconfig.json          # TypeScript base configuration
+│   ├── prisma/
+│   │   └── schema.prisma      # PostgreSQL schema, enums, models (snake_case mapped)
+│   └── src/
+│       ├── lib/
+│       │   ├── abn.ts         # ATO ABN checksum validation algorithm
+│       │   └── gst.ts         # Integer-cent Australian GST calculation utilities
+│       ├── plugins/
+│       │   ├── auth.ts        # Fastify auth plugin, session cookies, requireAuth hooks
+│       │   └── prisma.ts      # Fastify PrismaClient plugin with lifecycle hooks
+│       ├── routes/
+│       │   ├── auth.ts        # POST /api/v1/auth/google, GET /api/v1/auth/me, DELETE /logout
+│       │   └── organizations.ts # POST /api/v1/organizations (ABN check & CoA seeding)
+│       └── server.ts          # Fastify server entry point, CORS, helmet, plugins
+├── docs/                      # Architectural & Technical Specifications
+│   ├── ARCHITECTURE.md        # Topology, service boundaries, and Cloud Run layout
+│   ├── CHANGELOG.md           # Chronological log of changes, migrations, and diffs
+│   ├── DATABASE_SCHEMA.md     # PostgreSQL tables, relations, and migration log
+│   ├── DESIGN_SYSTEM.md       # Typography, Tailwind tokens, and table conventions
+│   ├── INTEGRATIONS.md        # Async webhook payloads and n8n job contracts
+│   ├── SECURITY.md            # Auth mechanics, RBAC matrix, and crypto standards
+│   └── STAGES_ROADMAP.md      # Detailed breakdown of Stage 1 through Stage 3
+└── frontend/                  # React 18 · Vite · TypeScript · Tailwind CSS SPA
+    ├── .env.example           # Frontend environment variable template
+    ├── index.html             # HTML entry point with Inter & Open Sans font links
+    ├── package.json           # Frontend dependencies and scripts
+    ├── postcss.config.js      # PostCSS configuration for Tailwind
+    ├── tailwind.config.ts     # Brand palette (Forest, Navy, badges, typography)
+    ├── tsconfig.json          # TypeScript client configuration
+    ├── tsconfig.node.json     # TypeScript Vite config runner
+    ├── vite.config.ts         # Vite server with /api proxy to Fastify backend
+    ├── public/
+    │   └── favicon.svg        # Brand favicon
+    └── src/
+        ├── App.tsx            # Main application root with AuthProvider and routes
+        ├── index.css          # Tailwind base/components/utilities and tabular-nums
+        ├── main.tsx           # React DOM root with GoogleOAuthProvider
+        ├── api/
+        │   └── client.ts      # Typed fetch client with credentials for session cookies
+        ├── components/
+        │   ├── AppShell.tsx   # Authenticated layout with responsive sidebar navigation
+        │   └── ui/
+        │       ├── Button.tsx # Styled button primitive (Forest, ghost, outline, danger)
+        │       ├── Input.tsx  # Styled input primitive with error/hint states
+        │       └── Modal.tsx  # Accessible dialog overlay primitive
+        ├── hooks/
+        │   └── useAuth.tsx    # Auth state machine & session auto-restore hook
+        ├── lib/
+        │   └── utils.ts       # cn() helper and formatAUD() currency formatter
+        └── pages/
+            ├── DashboardPage.tsx     # KPI summary cards with tabular numbers
+            ├── LoginPage.tsx         # Google sign-in landing page
+            ├── OnboardingModal.tsx   # First-time org creation with live ABN validator
+            └── PlaceholderPages.tsx  # Route placeholders (Contacts, Invoices, Bills, Ledger)
 ```
 
 ## Tech Stack Quick-Reference

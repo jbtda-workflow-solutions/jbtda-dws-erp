@@ -34,20 +34,27 @@ Browser                     Fastify Backend             Google Auth
 
 ### Session Cookie
 
-- **Mechanism:** Signed + encrypted HttpOnly cookie via `@fastify/session` or
-  `fastify-secure-session`.
-- **Flags:** `HttpOnly`, `Secure` (production), `SameSite=Strict`, `Path=/`
+- **Mechanism:** Cryptographically signed session cookie (`erp_session`) using HMAC-SHA256
+  and constant-time timing-safe verification.
+- **Flags:** `HttpOnly`, `Secure` (production), `SameSite=Strict`, `Path=/`, `MaxAge=7 days`
 - **Payload:**
   ```json
   {
     "userId": "uuid",
-    "organizationId": "uuid",
-    "role": "ADMIN"
+    "organizationId": "uuid | null",
+    "role": "Role | null"
   }
   ```
 - **Signing secret:** `SESSION_SECRET` env var (≥ 32 bytes, random).
-- **Encryption key:** `SESSION_ENCRYPTION_KEY` env var (exactly 32 bytes).
 - Sessions are stateless (no server-side store). The cookie IS the session.
+
+### Session Verification & Restoration Endpoint (`GET /api/v1/auth/me`)
+
+Used by the frontend SPA upon mounting/page refresh:
+- Reads `erp_session` cookie and verifies HMAC signature against `SESSION_SECRET`.
+- If valid session exists with an `organizationId`: returns `200 OK` with user details, organization details, and role.
+- If valid session exists without an `organizationId`: returns `200 OK` with status `onboarding` and user details.
+- If cookie is missing or invalid: returns `401 Unauthorized`.
 
 ### Fastify Auth Middleware
 

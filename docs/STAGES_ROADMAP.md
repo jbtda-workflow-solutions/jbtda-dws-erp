@@ -15,7 +15,7 @@ No external file dependencies.
 
 - [x] Phase 0: `/docs` scaffold and `AGENTS.md`
 - [x] Phase 1: Backend project init, Google OAuth + session, Prisma schema + migrations
-- [ ] Phase 2: Organization creation with ABN validation and CoA seeding
+- [x] Phase 2: Organization creation with ABN validation and CoA seeding (`POST /api/v1/organizations`, `GET /api/v1/auth/me`)
 - [ ] Phase 3: Contacts CRUD API
 - [ ] Phase 4: Bills API (create, list, get) with automatic ledger posting
 - [ ] Phase 5: Payments Out API with ledger posting
@@ -25,8 +25,8 @@ No external file dependencies.
 
 ### Frontend Milestones
 
-- [ ] Phase F1: Vite + React + Tailwind scaffold, Google OAuth login screen
-- [ ] Phase F2: Onboarding modal (org creation with ABN validation)
+- [x] Phase F1: Vite + React + Tailwind scaffold, Google OAuth login screen
+- [x] Phase F2: Onboarding modal (org creation with live ATO ABN checksum validator)
 - [ ] Phase F3: Contacts directory (list, create, edit)
 - [ ] Phase F4: Bills module (list, create bill with line items, pay bill)
 - [ ] Phase F5: Invoices module (list, create invoice, issue, record payment)
