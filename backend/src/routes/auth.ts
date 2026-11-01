@@ -39,15 +39,20 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     // -----------------------------------------------------------------------
     // 2. Verify Google ID token
     // -----------------------------------------------------------------------
+    const googleClientId = process.env['GOOGLE_CLIENT_ID'];
+    if (!googleClientId) {
+      return reply.code(500).send({ error: 'Server misconfiguration: GOOGLE_CLIENT_ID missing' });
+    }
+
     let googleSub: string;
     let email: string;
     let name: string;
-    let avatarUrl: string | undefined;
+    let avatarUrl: string | null = null;
 
     try {
       const ticket = await googleClient.verifyIdToken({
         idToken,
-        audience: process.env['GOOGLE_CLIENT_ID'],
+        audience: googleClientId,
       });
       const payload = ticket.getPayload();
       if (!payload?.sub || !payload.email) {
@@ -56,7 +61,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       googleSub = payload.sub;
       email = payload.email;
       name = payload.name ?? email;
-      avatarUrl = payload.picture;
+      avatarUrl = payload.picture ?? null;
     } catch {
       return reply.code(401).send({ error: 'Google token verification failed' });
     }

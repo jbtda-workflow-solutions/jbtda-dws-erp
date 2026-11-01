@@ -26,14 +26,17 @@ const PORT = Number(process.env['PORT'] ?? 8080);
 const HOST = process.env['HOST'] ?? '0.0.0.0';
 
 async function buildServer() {
+  const isProduction = process.env['NODE_ENV'] === 'production';
   const fastify = Fastify({
-    logger: {
-      level: process.env['NODE_ENV'] === 'production' ? 'info' : 'debug',
-      transport:
-        process.env['NODE_ENV'] !== 'production'
-          ? { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss Z', ignore: 'pid,hostname' } }
-          : undefined,
-    },
+    logger: isProduction
+      ? { level: 'info' }
+      : {
+          level: 'debug',
+          transport: {
+            target: 'pino-pretty',
+            options: { translateTime: 'HH:MM:ss Z', ignore: 'pid,hostname' },
+          },
+        },
   });
 
   // -------------------------------------------------------------------------
@@ -61,9 +64,13 @@ async function buildServer() {
   // -------------------------------------------------------------------------
   // Cookie parser (required for session helpers)
   // -------------------------------------------------------------------------
-  await fastify.register(cookie, {
-    secret: process.env['SESSION_SECRET'],
-  });
+  if (process.env['SESSION_SECRET']) {
+    await fastify.register(cookie, {
+      secret: process.env['SESSION_SECRET'],
+    });
+  } else {
+    await fastify.register(cookie);
+  }
 
   // -------------------------------------------------------------------------
   // HTTP error helpers (reply.notFound(), reply.badRequest(), etc.)

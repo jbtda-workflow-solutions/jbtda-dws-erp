@@ -4,6 +4,16 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.4.4] — 2026-11-01 — TypeScript Build Fixes for Cloud Build
+
+### Fixed
+- `backend/tsconfig.json` — Removed `exactOptionalPropertyTypes: true` which caused compilation incompatibilities with Fastify, Pino, and Prisma library types.
+- `backend/src/plugins/auth.ts` — Removed conflicting duplicate `declare module '@fastify/cookie'` interface declaration.
+- `backend/src/routes/auth.ts` — Added explicit validation for `GOOGLE_CLIENT_ID` before invoking `verifyIdToken` and normalized `avatarUrl` to `null`.
+- `backend/src/server.ts` — Adjusted logger and cookie registration to prevent passing `undefined` properties to Fastify plugins.
+
+---
+
 ## [0.4.3] — 2026-11-01 — Documentation & Stages Roadmap Synchronization
 
 ### Changed

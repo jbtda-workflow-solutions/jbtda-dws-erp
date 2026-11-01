@@ -19,12 +19,6 @@ declare module 'fastify' {
   }
 }
 
-declare module '@fastify/cookie' {
-  interface FastifyCookieOptions {
-    secret?: string | string[];
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Session cookie name
 // ---------------------------------------------------------------------------
