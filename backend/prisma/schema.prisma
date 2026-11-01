@@ -1,0 +1,392 @@
+// This is your Prisma schema file.
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  ACCOUNTANT
+  AR_SPECIALIST
+  AP_SPECIALIST
+  AUDITOR
+}
+
+enum ContactType {
+  CUSTOMER
+  VENDOR
+  BOTH
+}
+
+enum TaxTreatment {
+  TAX_EXCLUSIVE
+  TAX_INCLUSIVE
+  GST_FREE
+}
+
+enum BillStatus {
+  AWAITING_PAYMENT
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum NormalBalance {
+  DEBIT
+  CREDIT
+}
+
+enum EntryType {
+  DEBIT
+  CREDIT
+}
+
+// ---------------------------------------------------------------------------
+// Users
+// ---------------------------------------------------------------------------
+
+/// Application user — created/updated on every Google OAuth login.
+model User {
+  id        String   @id @default(uuid())
+  /// Immutable Google subject ID — never changes even if email changes.
+  googleSub String   @unique @map("google_sub")
+  email     String   @unique
+  name      String
+  avatarUrl String?  @map("avatar_url")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  memberships OrganizationMember[]
+  invitesSent OrganizationInvite[] @relation("InvitedBy")
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Organizations (Multi-Tenant Boundary)
+// ---------------------------------------------------------------------------
+
+/// Top-level tenant. Every business record is scoped to one organization.
+model Organization {
+  id        String   @id @default(uuid())
+  /// Legal trading name (2–100 chars).
+  name      String
+  /// 11-digit Australian Business Number — validated on creation.
+  abn       String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members          OrganizationMember[]
+  invites          OrganizationInvite[]
+  accounts         Account[]
+  contacts         Contact[]
+  bills            Bill[]
+  billLineItems    BillLineItem[]
+  invoices         Invoice[]
+  invoiceLineItems InvoiceLineItem[]
+  paymentsOut      PaymentOut[]
+  paymentsIn       PaymentIn[]
+  journalEntries   JournalEntry[]
+  journalLines     JournalLine[]
+
+  @@map("organizations")
+}
+
+// ---------------------------------------------------------------------------
+// Organization Membership & Invites
+// ---------------------------------------------------------------------------
+
+/// Many-to-many join between users and organizations, with a role.
+model OrganizationMember {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  userId         String       @map("user_id")
+  role           Role
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, userId])
+  @@map("organization_members")
+}
+
+/// Pending email invitation to join an organization.
+model OrganizationInvite {
+  id               String    @id @default(uuid())
+  organizationId   String    @map("organization_id")
+  /// Email of the invitee — matched against verified Google email on login.
+  email            String
+  role             Role
+  invitedByUserId  String    @map("invited_by_user_id")
+  acceptedAt       DateTime? @map("accepted_at")
+  expiresAt        DateTime  @map("expires_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("InvitedBy", fields: [invitedByUserId], references: [id])
+
+  @@map("organization_invites")
+}
+
+// ---------------------------------------------------------------------------
+// Chart of Accounts
+// ---------------------------------------------------------------------------
+
+/// General Ledger account. Seeded automatically when an organization is created.
+model Account {
+  id             String        @id @default(uuid())
+  organizationId String        @map("organization_id")
+  /// Account code, e.g. "1000", "4000". Unique per organization.
+  code           String
+  name           String
+  type           AccountType
+  normalBalance  NormalBalance @map("normal_balance")
+  description    String?
+  isActive       Boolean       @default(true) @map("is_active")
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  journalLines JournalLine[]
+
+  @@unique([organizationId, code])
+  @@map("accounts")
+}
+
+// ---------------------------------------------------------------------------
+// Contacts (Customers & Vendors)
+// ---------------------------------------------------------------------------
+
+/// A contact can be a CUSTOMER, VENDOR, or BOTH within an organization.
+model Contact {
+  id                        String      @id @default(uuid())
+  organizationId            String      @map("organization_id")
+  type                      ContactType
+  name                      String
+  email                     String?
+  /// 11-digit Australian Business Number (optional for contacts).
+  abn                       String?
+  /// Default net payment terms in days (e.g. 7, 14, 30).
+  paymentTermsDays          Int         @default(30) @map("payment_terms_days")
+  /// When true, incoming payments MUST be matched against an open invoice.
+  requiresInvoiceForPayment Boolean     @default(true) @map("requires_invoice_for_payment")
+  isActive                  Boolean     @default(true) @map("is_active")
+  createdAt                 DateTime    @default(now()) @map("created_at")
+  updatedAt                 DateTime    @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  bills        Bill[]
+  invoices     Invoice[]
+  paymentsIn   PaymentIn[]
+
+  @@map("contacts")
+}
+
+// ---------------------------------------------------------------------------
+// Accounts Payable — Bills
+// ---------------------------------------------------------------------------
+
+/// A bill received from a vendor (AP).
+model Bill {
+  id             String     @id @default(uuid())
+  organizationId String     @map("organization_id")
+  contactId      String     @map("contact_id")
+  /// Vendor's own invoice / reference number.
+  reference      String?
+  issueDate      DateTime   @map("issue_date")
+  dueDate        DateTime   @map("due_date")
+  status         BillStatus @default(AWAITING_PAYMENT)
+  /// Sum of line item amounts excluding GST (cents).
+  subtotalCents  BigInt     @default(0) @map("subtotal_cents")
+  /// Total GST across all line items (cents).
+  gstCents       BigInt     @default(0) @map("gst_cents")
+  /// subtotalCents + gstCents (cents).
+  totalCents     BigInt     @default(0) @map("total_cents")
+  /// Running total of payments made against this bill (cents).
+  amountPaidCents BigInt    @default(0) @map("amount_paid_cents")
+  notes          String?
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  contact      Contact        @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  lineItems    BillLineItem[]
+  paymentsOut  PaymentOut[]
+
+  @@map("bills")
+}
+
+/// A single line item on a bill.
+model BillLineItem {
+  id             String       @id @default(uuid())
+  billId         String       @map("bill_id")
+  /// Denormalized for row-level tenant safety.
+  organizationId String       @map("organization_id")
+  description    String
+  /// Amount excluding GST (cents).
+  amountCents    BigInt       @map("amount_cents")
+  taxTreatment   TaxTreatment @map("tax_treatment")
+  /// Calculated GST for this line (cents).
+  gstCents       BigInt       @map("gst_cents")
+  /// amountCents + gstCents (cents).
+  totalCents     BigInt       @map("total_cents")
+
+  bill         Bill         @relation(fields: [billId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@map("bill_line_items")
+}
+
+// ---------------------------------------------------------------------------
+// Accounts Receivable — Invoices
+// ---------------------------------------------------------------------------
+
+/// A customer invoice issued by the organization (AR).
+model Invoice {
+  id              String        @id @default(uuid())
+  organizationId  String        @map("organization_id")
+  contactId       String        @map("contact_id")
+  /// Auto-incremented per org, e.g. "INV-1001". Unique within the org.
+  invoiceNumber   String        @map("invoice_number")
+  issueDate       DateTime      @map("issue_date")
+  dueDate         DateTime      @map("due_date")
+  status          InvoiceStatus @default(DRAFT)
+  subtotalCents   BigInt        @default(0) @map("subtotal_cents")
+  gstCents        BigInt        @default(0) @map("gst_cents")
+  totalCents      BigInt        @default(0) @map("total_cents")
+  amountPaidCents BigInt        @default(0) @map("amount_paid_cents")
+  notes           String?
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  contact      Contact          @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  lineItems    InvoiceLineItem[]
+  paymentsIn   PaymentIn[]
+
+  @@unique([organizationId, invoiceNumber])
+  @@map("invoices")
+}
+
+/// A single line item on an invoice.
+model InvoiceLineItem {
+  id             String       @id @default(uuid())
+  invoiceId      String       @map("invoice_id")
+  organizationId String       @map("organization_id")
+  description    String
+  amountCents    BigInt       @map("amount_cents")
+  taxTreatment   TaxTreatment @map("tax_treatment")
+  gstCents       BigInt       @map("gst_cents")
+  totalCents     BigInt       @map("total_cents")
+
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@map("invoice_line_items")
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+/// A payment made against a bill (AP — money out).
+model PaymentOut {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  billId         String   @map("bill_id")
+  paymentDate    DateTime @map("payment_date")
+  /// Amount paid in cents.
+  amountCents    BigInt   @map("amount_cents")
+  /// Bank transaction reference.
+  reference      String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  bill         Bill         @relation(fields: [billId], references: [id], onDelete: Restrict)
+
+  @@map("payments_out")
+}
+
+/// A payment received against an invoice (AR — money in).
+model PaymentIn {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  /// Nullable: null only when contact.requiresInvoiceForPayment = false.
+  invoiceId      String?  @map("invoice_id")
+  contactId      String   @map("contact_id")
+  paymentDate    DateTime @map("payment_date")
+  amountCents    BigInt   @map("amount_cents")
+  reference      String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  invoice      Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Restrict)
+
+  @@map("payments_in")
+}
+
+// ---------------------------------------------------------------------------
+// General Ledger — Double-Entry Journal
+// ---------------------------------------------------------------------------
+
+/// A double-entry journal entry automatically posted on financial events.
+/// Invariant: sum of DEBIT lines == sum of CREDIT lines (enforced in code).
+model JournalEntry {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  description    String
+  /// Source record type: "BILL" | "PAYMENT_OUT" | "INVOICE" | "PAYMENT_IN"
+  referenceType  String   @map("reference_type")
+  /// UUID of the source record (bill, invoice, payment).
+  referenceId    String   @map("reference_id")
+  postedAt       DateTime @default(now()) @map("posted_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  lines        JournalLine[]
+
+  @@map("journal_entries")
+}
+
+/// One debit or credit line within a journal entry.
+model JournalLine {
+  id             String    @id @default(uuid())
+  journalEntryId String    @map("journal_entry_id")
+  organizationId String    @map("organization_id")
+  accountId      String    @map("account_id")
+  entryType      EntryType @map("entry_type")
+  amountCents    BigInt    @map("amount_cents")
+
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  account      Account      @relation(fields: [accountId], references: [id])
+
+  @@map("journal_lines")
+}
+
