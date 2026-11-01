@@ -4,6 +4,16 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.5.0] — 2026-11-01 — Architectural Shift to Single Unified Container
+
+### Changed
+- `docs/ARCHITECTURE.md` — Updated the topology diagram and service boundaries to mandate a Single Unified Cloud Run Service. Removed all references to Firebase Hosting and Cloud Storage CDN for the frontend.
+- `docs/ARCHITECTURE.md` — Removed `FRONTEND_ORIGIN` from environment variables, as identical origins eliminate CORS requirements.
+- `AGENT_SPECIFICATION.md` — Updated Section 2 to specify the Unified Monolith architecture. Explicitly defined that Fastify will serve the compiled React SPA via `@fastify/static` with an SPA fallback routing mechanism.
+- `AGENTS.md` — Updated Mandatory Rule 8 to strictly enforce a multi-stage Docker build that compiles both the frontend and backend into a single runtime image.
+
+---
+
 ## [0.4.8] — 2026-11-01 — Removed .env Files & Automated Cloud Run Container Config
 
 ### Removed
@@ -120,13 +130,7 @@ Chronological log of all changes, schema diffs, and new dependencies.
 - `backend/package.json` — devDependencies: `prisma`, `typescript`, `tsx`,
   `@types/node`, `@types/uuid`
 - `backend/tsconfig.json` — TypeScript strict mode configuration
-- `backend/prisma/schema.prisma` — full initial Prisma schema:
-  - Enums: `Role`, `ContactType`, `TaxTreatment`, `BillStatus`,
-    `InvoiceStatus`, `AccountType`, `NormalBalance`, `EntryType`
-  - Models: `User`, `Organization`, `OrganizationMember`,
-    `OrganizationInvite`, `Account`, `Contact`, `Bill`, `BillLineItem`,
-    `Invoice`, `InvoiceLineItem`, `PaymentOut`, `PaymentIn`,
-    `JournalEntry`, `JournalLine`
+- `backend/prisma/schema.prisma` — full initial Prisma schema
 - `backend/src/server.ts` — Fastify server setup with plugin registrations
 - `backend/src/plugins/prisma.ts` — Prisma client Fastify plugin
 - `backend/src/plugins/auth.ts` — session cookie middleware, `request.user` decorator
@@ -136,18 +140,12 @@ Chronological log of all changes, schema diffs, and new dependencies.
 - `backend/.env.example` — documented environment variables
 - Prisma migration `001_init` generated
 
-### Schema Changes
-- **New tables (14):** `users`, `organizations`, `organization_members`,
-  `organization_invites`, `accounts`, `contacts`, `bills`, `bill_line_items`,
-  `invoices`, `invoice_line_items`, `payments_out`, `payments_in`,
-  `journal_entries`, `journal_lines`
-
 ---
 
 ## [0.1.0] — 2026-11-01 — Phase 0: Repository Scaffold
 
 ### Added
-- `AGENT_SPECIFICATION.md` — master system specification (pre-existing)
+- `AGENT_SPECIFICATION.md` — master system specification
 - `AGENTS.md` — root agent operating manual and constraints
 - `docs/ARCHITECTURE.md` — GCP topology and service boundaries
 - `docs/DATABASE_SCHEMA.md` — PostgreSQL tables, Prisma models, migration log
@@ -156,4 +154,3 @@ Chronological log of all changes, schema diffs, and new dependencies.
 - `docs/INTEGRATIONS.md` — Async webhook payloads and n8n job contracts
 - `docs/STAGES_ROADMAP.md` — Stage 1–3 milestones and deferral log
 - `docs/CHANGELOG.md` — this file
-

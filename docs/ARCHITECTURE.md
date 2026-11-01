@@ -7,17 +7,16 @@ JBTDA-DWS ERP application.
 
 ## High-Level Topology
 
-```
-                          ┌────────────────────────────────────────┐
-                          │      GCP Cloud Storage + Cloud CDN     │
-                          │         (or Firebase Hosting)          │
-                          │       Static React SPA (Vite/TS)       │
-                          └───────────────────┬────────────────────┘
-                                             │ HTTPS (REST / JSON)
-                                             ▼
+```text
                           ┌────────────────────────────────────────┐
                           │         GCP Cloud Run Service          │
-                          │       Fastify + TypeScript + Prisma    │
+                          │                                        │
+                          │  ┌──────────────────────────────────┐  │
+                          │  │    Static React SPA (Vite/TS)    │  │
+                          │  │  (Served via @fastify/static)    │  │
+                          │  └──────────────────────────────────┘  │
+                          │                                        │
+                          │     Fastify + TypeScript + Prisma      │
                           └───────┬────────────────────────────┬───┘
                                   │                            │
             Direct Queries (ACID) │                            │ Async Webhooks
@@ -37,30 +36,27 @@ JBTDA-DWS ERP application.
 
 ## Service Boundaries
 
-### Frontend (`/frontend`)
-- **Type:** Static Single Page Application
-- **Framework:** React 18/19, Vite, TypeScript, Tailwind CSS
-- **Component Library:** Radix UI / shadcn/ui patterns, Lucide React icons
-- **Code-splitting:** `React.lazy()` at module boundaries (Contacts, AP, AR, Ledger)
-- **Hosting:** Static assets deployed to GCP Cloud Storage + Cloud CDN or Firebase Hosting.
-- **Auth interaction:** Receives Google OIDC ID token via `@react-oauth/google`,
-  posts it to the backend, then relies entirely on the HttpOnly session cookie.
+### The Unified Cloud Run Service (Frontend + Backend)
+The application operates as a **Modular Monolith** running inside a single Docker container on Google Cloud Run. This eliminates cross-origin (CORS) complexity and ensures secure `SameSite=Strict` session cookies work natively.
 
-### Backend API (`/backend`)
-- **Type:** Core Modular Monolith
-- **Framework:** Fastify with TypeScript
-- **ORM:** Prisma with PostgreSQL client
-- **Stateless design:** No local session caches. Horizontally autoscales across
-  Cloud Run replicas.
-- **Connection pool ceiling:**
-  ```
-  DATABASE_URL="postgresql://user:pass@host/db?connection_limit=7&pool_timeout=10"
-  ```
-  Prevents multiple Cloud Run containers from exhausting Cloud SQL connections.
-- **Route prefix:** All API routes are prefixed `/api/v1/`
-- **Containerization & Deployment:** Built via the root `Dockerfile` and deployed
-  directly from Git to GCP Cloud Run. Runs Node 20 as an unprivileged user,
-  executes `prisma generate`, compiles TypeScript, and listens on dynamic `${PORT:-8080}`.
+#### Frontend (`/frontend`)
+- **Type:** Static Single Page Application (SPA) compiled at build time.
+- **Framework:** React 18/19, Vite, TypeScript, Tailwind CSS.
+- **Component Library:** Radix UI / shadcn/ui patterns, Lucide React icons.
+- **Code-splitting:** `React.lazy()` at module boundaries (Contacts, AP, AR, Ledger).
+- **Delivery:** The compiled `dist/` folder is served directly by the Fastify backend from the root path (`GET /`).
+- **Auth interaction:** Uses `@react-oauth/google` to get an ID token, POSTs it to the API, and relies entirely on the `HttpOnly` session cookie thereafter. All API calls use relative paths (e.g., `fetch('/api/v1/...')`).
+
+#### Backend API (`/backend`)
+- **Framework:** Fastify with TypeScript.
+- **ORM:** Prisma with PostgreSQL client.
+- **Routing Isolation:**
+  - All REST API routes MUST be prefixed with `/api/v1/`.
+  - `@fastify/static` serves the React frontend at `/`.
+  - **SPA Fallback:** Any `GET` request not starting with `/api` returns `index.html` to allow React Router to handle client-side routing.
+- **Stateless design:** No local session caches. Horizontally autoscales across Cloud Run replicas.
+- **Connection pool ceiling:** `DATABASE_URL="...&connection_limit=7&pool_timeout=10"` prevents container autoscaling spikes from exhausting Cloud SQL connections.
+- **Containerization:** Built via a multi-stage root `Dockerfile` that compiles the React app, compiles the TypeScript API, and packages both into a single unprivileged Node 20 runtime listening on `$PORT`.
 
 ### Database (Cloud SQL PostgreSQL)
 - Managed PostgreSQL instance on GCP Cloud SQL.
@@ -68,23 +64,16 @@ JBTDA-DWS ERP application.
   `/cloudsql/<PROJECT_ID>:<REGION>:<INSTANCE_NAME>`
 - Instance Connection Name format: `<PROJECT_ID>:<REGION>:<INSTANCE_NAME>`
 - Zero direct public exposure; private VPC connectivity in production.
-- Connection pool ceiling: configured with `connection_limit=7&pool_timeout=10`
-  to protect the database from container autoscaling spikes.
 - All schema changes managed exclusively through Prisma Migrate.
 
 ### Automation Engine (n8n)
-- n8n instance running on a dedicated Cloud Run service
-- Triggered **only** via asynchronous Fastify webhooks
-- Authenticated with `X-Webhook-Secret` header (64-character pre-shared secret)
-- Responsibilities: email dispatch, PDF generation, external API syncing
-- **Must never** be involved in: authentication, synchronous financial queries,
-  or balance computations
+- n8n instance running on a dedicated Cloud Run service.
+- Triggered **only** via asynchronous Fastify webhooks.
+- Authenticated with `X-Webhook-Secret` header (64-character pre-shared secret).
+- Responsibilities: email dispatch, PDF generation, external API syncing.
+- **Must never** be involved in: authentication, synchronous financial queries, or balance computations.
 
 ---
-
-## API Versioning
-
-All routes live under `/api/v1/`. Future breaking changes increment to `/api/v2/`.
 
 ## Configuration via Cloud Run Container Interface
 
@@ -101,8 +90,9 @@ The application reads its runtime configuration directly from the Google Cloud R
 | `DB_USER` | Database username (e.g. `postgres`) |
 | `DB_NAME` | Database name on the Cloud SQL instance |
 | `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Web Client ID for authentication |
-| `FRONTEND_ORIGIN` | Allowed origin for CORS (e.g. `http://localhost:5173` or production frontend URL) |
 | `NODE_ENV` | `production` |
+
+*(Note: `FRONTEND_ORIGIN` is no longer required as the frontend and backend share the exact same origin).*
 
 ### 3. Secrets Section (Cloud Run UI $\leftarrow$ Secret Manager)
 | Secret in Secret Manager | Mounted as Environment Variable |
@@ -110,4 +100,3 @@ The application reads its runtime configuration directly from the Google Cloud R
 | Database password | `DB_PASSWORD` |
 | Random 32+ character string | `SESSION_SECRET` |
 | 64-character webhook secret (Stage 2) | `WEBHOOK_SECRET` |
-
