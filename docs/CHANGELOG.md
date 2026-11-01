@@ -4,6 +4,41 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.4.8] — 2026-11-01 — Removed .env Files & Automated Cloud Run Container Config
+
+### Removed
+- `backend/.env.example`, `frontend/.env.example` — Removed all `.env` files in favor of direct Cloud Run Container configuration (environment variables, Secret Manager secrets, and Cloud SQL connections).
+
+### Added
+- `backend/src/plugins/prisma.ts` — Implemented automatic discovery of Cloud SQL Unix sockets mounted in `/cloudsql` by Cloud Run.
+- `AGENTS.md` & `docs/ARCHITECTURE.md` — Updated living directory tree and documentation for Cloud Run Container UI configuration.
+
+---
+
+## [0.4.7] — 2026-11-01 — Cloud SQL Instance Connection Specification & Secret Support
+
+### Changed
+- `backend/src/plugins/prisma.ts` — Enhanced `resolveDatabaseUrl()` to directly support Google Cloud's standard `INSTANCE_CONNECTION_NAME` (`PROJECT_ID:REGION:INSTANCE_NAME`) alongside `DB_HOST`, mounting `DB_PASSWORD` directly from Secret Manager with URL-encoding for complex passwords.
+- `docs/ARCHITECTURE.md` & `backend/.env.example` — Documented Google Cloud SQL instance connection name standard and Secret Manager mapping.
+
+---
+
+## [0.4.6] — 2026-11-01 — Discrete Cloud SQL Environment Variables & Secrets
+
+### Added
+- `backend/src/plugins/prisma.ts` — Added `resolveDatabaseUrl()` helper allowing database credentials to be supplied as individual environment variables / secrets (`DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_HOST=/cloudsql/...`) or as a monolithic `DATABASE_URL`.
+- `backend/.env.example` & `docs/ARCHITECTURE.md` — Documented discrete Cloud SQL configuration with Secret Manager support.
+
+---
+
+## [0.4.5] — 2026-11-01 — Container Startup & Health Resilience
+
+### Fixed
+- `backend/src/plugins/prisma.ts` — Made initial database connection non-blocking so container starts and listens on `$PORT` even if `DATABASE_URL` is not yet configured during initial Cloud Run deployment.
+- `backend/src/server.ts` — Wrapped entire startup sequence in try/catch to ensure graceful logging.
+
+---
+
 ## [0.4.4] — 2026-11-01 — TypeScript Build Fixes for Cloud Build
 
 ### Fixed

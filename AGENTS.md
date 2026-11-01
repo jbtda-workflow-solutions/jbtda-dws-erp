@@ -54,7 +54,6 @@ by reading:
 ├── AGENT_SPECIFICATION.md     # Master specification & architecture
 ├── Dockerfile                 # Single root multi-stage Dockerfile for Cloud Run backend
 ├── backend/                   # Fastify · TypeScript · Prisma · PostgreSQL API
-│   ├── .env.example           # Backend environment variable template
 │   ├── package.json           # Backend dependencies and scripts
 │   ├── tsconfig.build.json    # TypeScript compiler config for production build
 │   ├── tsconfig.json          # TypeScript base configuration
@@ -80,7 +79,6 @@ by reading:
 │   ├── SECURITY.md            # Auth mechanics, RBAC matrix, and crypto standards
 │   └── STAGES_ROADMAP.md      # Detailed breakdown of Stage 1 through Stage 3
 └── frontend/                  # React 18 · Vite · TypeScript · Tailwind CSS SPA
-    ├── .env.example           # Frontend environment variable template
     ├── index.html             # HTML entry point with Inter & Open Sans font links
     ├── package.json           # Frontend dependencies and scripts
     ├── postcss.config.js      # PostCSS configuration for Tailwind

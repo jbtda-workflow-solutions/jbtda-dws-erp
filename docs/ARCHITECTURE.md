@@ -63,10 +63,14 @@ JBTDA-DWS ERP application.
   executes `prisma generate`, compiles TypeScript, and listens on dynamic `${PORT:-8080}`.
 
 ### Database (Cloud SQL PostgreSQL)
-- Managed PostgreSQL instance on GCP Cloud SQL
-- Connected via Cloud SQL Auth Proxy (no direct public exposure)
-- Private VPC connectivity in production
-- All schema changes managed exclusively through Prisma Migrate
+- Managed PostgreSQL instance on GCP Cloud SQL.
+- Connected to Cloud Run via Cloud SQL Auth Proxy Unix domain socket at:
+  `/cloudsql/<PROJECT_ID>:<REGION>:<INSTANCE_NAME>`
+- Instance Connection Name format: `<PROJECT_ID>:<REGION>:<INSTANCE_NAME>`
+- Zero direct public exposure; private VPC connectivity in production.
+- Connection pool ceiling: configured with `connection_limit=7&pool_timeout=10`
+  to protect the database from container autoscaling spikes.
+- All schema changes managed exclusively through Prisma Migrate.
 
 ### Automation Engine (n8n)
 - n8n instance running on a dedicated Cloud Run service
@@ -82,16 +86,28 @@ JBTDA-DWS ERP application.
 
 All routes live under `/api/v1/`. Future breaking changes increment to `/api/v2/`.
 
-## Environment Variables (Backend)
+## Configuration via Cloud Run Container Interface
 
-| Variable | Purpose |
-|----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string (with pool params) |
-| `GOOGLE_CLIENT_ID` | OAuth 2.0 client ID for token verification |
-| `SESSION_SECRET` | ≥ 32-byte secret for cookie signing |
-| `SESSION_ENCRYPTION_KEY` | 32-byte key for cookie encryption |
-| `WEBHOOK_SECRET` | 64-char pre-shared secret for n8n webhooks |
-| `N8N_WEBHOOK_BASE_URL` | Base URL of the n8n Cloud Run service |
-| `NODE_ENV` | `development` / `production` |
-| `PORT` | Fastify listen port (default `8080` on Cloud Run) |
+The application reads its runtime configuration directly from the Google Cloud Run Container configuration (no `.env` files are used in production):
+
+### 1. Cloud SQL Connections Section (Cloud Run UI)
+- Select the target Cloud SQL PostgreSQL instance (`PROJECT_ID:REGION:INSTANCE_NAME`).
+- Cloud Run automatically mounts the Unix domain socket into the container at `/cloudsql/<instance>`.
+- The backend application automatically discovers this mounted socket from `/cloudsql` without requiring manual path entry.
+
+### 2. Environment Variables Section (Cloud Run UI)
+| Variable | Description / Value |
+|----------|---------------------|
+| `DB_USER` | Database username (e.g. `postgres`) |
+| `DB_NAME` | Database name on the Cloud SQL instance |
+| `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Web Client ID for authentication |
+| `FRONTEND_ORIGIN` | Allowed origin for CORS (e.g. `http://localhost:5173` or production frontend URL) |
+| `NODE_ENV` | `production` |
+
+### 3. Secrets Section (Cloud Run UI $\leftarrow$ Secret Manager)
+| Secret in Secret Manager | Mounted as Environment Variable |
+|--------------------------|---------------------------------|
+| Database password | `DB_PASSWORD` |
+| Random 32+ character string | `SESSION_SECRET` |
+| 64-character webhook secret (Stage 2) | `WEBHOOK_SECRET` |
 

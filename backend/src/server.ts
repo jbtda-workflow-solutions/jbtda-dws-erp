@@ -102,12 +102,12 @@ async function buildServer() {
 }
 
 async function start() {
-  const fastify = await buildServer();
-
   try {
+    const fastify = await buildServer();
     await fastify.listen({ port: PORT, host: HOST });
+    fastify.log.info(`Server listening on ${HOST}:${PORT}`);
   } catch (err) {
-    fastify.log.error(err);
+    console.error('Fatal error during server startup:', err);
     process.exit(1);
   }
 }
