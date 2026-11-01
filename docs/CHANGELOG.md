@@ -4,6 +4,17 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.4.1] — 2026-11-01 — Directory Structure & Docker Clean-up
+
+### Removed
+- `backend/Dockerfile`, `backend/.dockerignore` — Removed redundant nested backend Docker files in favor of single root `Dockerfile`.
+- `frontend/Dockerfile`, `frontend/.dockerignore`, `frontend/nginx.conf.template` — Removed invalid frontend containerization; frontend is deployed as static assets per spec.
+
+### Changed
+- Verified root directory layout matches `AGENT_SPECIFICATION.md` exactly: single root `Dockerfile` and `.dockerignore` for Cloud Run backend deployment.
+
+---
+
 ## [0.4.0] — 2026-11-01 — Root Cloud Run Dockerfile & Phase 2 Onboarding API
 
 ### Added

@@ -166,3 +166,4 @@ const organizationRoutes: FastifyPluginAsync = async (fastify) => {
 };
 
 export default organizationRoutes;
+

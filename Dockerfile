@@ -58,3 +58,4 @@ COPY --chown=node:node --from=builder /app/backend/package.json ./package.json
 EXPOSE 8080
 
 CMD ["node", "dist/server.js"]
+

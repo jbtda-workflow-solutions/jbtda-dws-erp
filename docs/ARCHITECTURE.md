@@ -42,8 +42,7 @@ JBTDA-DWS ERP application.
 - **Framework:** React 18/19, Vite, TypeScript, Tailwind CSS
 - **Component Library:** Radix UI / shadcn/ui patterns, Lucide React icons
 - **Code-splitting:** `React.lazy()` at module boundaries (Contacts, AP, AR, Ledger)
-- **Hosting / Deployment:** Built via multi-stage Dockerfile (Nginx unprivileged on Cloud Run)
-  or hosted on GCP Cloud Storage + Cloud CDN / Firebase Hosting.
+- **Hosting:** Static assets deployed to GCP Cloud Storage + Cloud CDN or Firebase Hosting.
 - **Auth interaction:** Receives Google OIDC ID token via `@react-oauth/google`,
   posts it to the backend, then relies entirely on the HttpOnly session cookie.
 
@@ -59,9 +58,9 @@ JBTDA-DWS ERP application.
   ```
   Prevents multiple Cloud Run containers from exhausting Cloud SQL connections.
 - **Route prefix:** All API routes are prefixed `/api/v1/`
-- **Containerization & Deployment:** Built via multi-stage Dockerfile and deployed
-  directly from Git to GCP Cloud Run. Runs on Node 20 as an unprivileged user,
-  executes `prisma generate`, compiles TypeScript, and listens on `${PORT:-8080}`.
+- **Containerization & Deployment:** Built via the root `Dockerfile` and deployed
+  directly from Git to GCP Cloud Run. Runs Node 20 as an unprivileged user,
+  executes `prisma generate`, compiles TypeScript, and listens on dynamic `${PORT:-8080}`.
 
 ### Database (Cloud SQL PostgreSQL)
 - Managed PostgreSQL instance on GCP Cloud SQL
