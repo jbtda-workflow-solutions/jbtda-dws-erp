@@ -4,6 +4,36 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.11.0] — 2026-11-07 — Stage 1 Finalization: Manual Journal Entries & Unallocated Direct Payments In
+
+### Added
+- `backend/src/routes/ledger.ts`:
+  - `POST /api/v1/ledger/entries`: Manual double-entry adjusting journal entry API:
+    - Restricted to `ADMIN` and `ACCOUNTANT` roles.
+    - Validates multi-line submissions ($\ge 2$ lines) and ensures all referenced accounts belong to `request.user.organizationId` and are active.
+    - Atomically validates double-entry invariant: $\sum \text{Debits} == \sum \text{Credits}$ in integer cents before insertion.
+    - Creates `JournalEntry` with `referenceType: 'MANUAL'` and nested `JournalLine`s.
+- `frontend/src/api/client.ts`:
+  - Added `CreateManualJournalEntryInput` and `ledgerApi.createManualEntry`.
+- `frontend/src/pages/LedgerPage.tsx`:
+  - Added "New Journal Entry" action button in the header toolbar.
+  - Implemented `CreateManualJournalEntryModal`:
+    - Dynamic multi-line editor supporting account selection, DEBIT/CREDIT toggles, and dollar-cent amounts.
+    - Real-time double-entry balancing indicator displaying total debits, total credits, and exact imbalance differential.
+    - Submit disabled until lines are balanced ($\sum D == \sum C$), memo is provided, and all lines have valid accounts and positive amounts.
+  - Added `MANUAL` badge and filter option in the General Ledger audit trail.
+- `frontend/src/pages/InvoicesPage.tsx`:
+  - Added "Receive Payment" action button in the main header (beside "New Invoice").
+  - Implemented `ReceiveDirectPaymentModal`:
+    - Allows recording incoming customer payments without an invoice (unallocated receipts, retainers, deposits) or matching against open customer invoices.
+    - Checks customer's `requiresInvoiceForPayment` policy in real-time; displays customer policy notes and enforces invoice selection when required.
+    - Posts directly to the General Ledger via `POST /api/v1/payments-in` (Debit `1000 - Operating Bank Account`, Credit `1200 - Accounts Receivable`).
+- `docs/STAGES_ROADMAP.md`:
+  - Moved Manual Journal Entries and Unallocated Payments In into Stage 1 milestones.
+  - Updated Stage 1 Acceptance Criteria and Deferral Log to reflect 100% completion of Stage 1 Core Transactional Engine and General Ledger / Trial Balance visibility.
+
+---
+
 ## [0.10.0] — 2026-11-07 — Stage 1 Complete: Phase 7 Payments In, Phase 8 General Ledger API & Phase F6 General Ledger UI
 
 ### Added

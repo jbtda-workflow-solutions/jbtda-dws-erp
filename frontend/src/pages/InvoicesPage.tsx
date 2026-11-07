@@ -12,10 +12,12 @@ import {
   Send,
   FileSpreadsheet,
   CreditCard,
+  ArrowDownLeft,
 } from 'lucide-react';
 import {
   invoiceApi,
   contactApi,
+  paymentInApi,
   type Invoice,
   type InvoiceStatus,
   type TaxTreatment,
@@ -55,6 +57,7 @@ export function InvoicesPage() {
 
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isDirectPaymentModalOpen, setIsDirectPaymentModalOpen] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
 
@@ -117,13 +120,23 @@ export function InvoicesPage() {
             Accounts Receivable — Create customer invoices and post automatically to the General Ledger upon issuance.
           </p>
         </div>
-        <Button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="inline-flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Invoice</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setIsDirectPaymentModalOpen(true)}
+            className="inline-flex items-center gap-1.5"
+          >
+            <ArrowDownLeft className="w-4 h-4 text-emerald-700" />
+            <span>Receive Payment</span>
+          </Button>
+          <Button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="inline-flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Invoice</span>
+          </Button>
+        </div>
       </div>
 
       {/* Filters Bar */}
@@ -320,6 +333,18 @@ export function InvoicesPage() {
           onPaymentRecorded={(updatedInv) => {
             handleInvoiceUpdated(updatedInv);
             setPaymentInvoice(null);
+          }}
+        />
+      )}
+
+      {/* Receive Direct / Unallocated Payment Modal */}
+      {isDirectPaymentModalOpen && (
+        <ReceiveDirectPaymentModal
+          open={isDirectPaymentModalOpen}
+          onClose={() => setIsDirectPaymentModalOpen(false)}
+          onSuccess={() => {
+            setIsDirectPaymentModalOpen(false);
+            void fetchInvoices();
           }}
         />
       )}
@@ -1187,6 +1212,371 @@ function RecordPaymentInModal({
             Cancel
           </Button>
           <Button type="submit" disabled={submitting}>
+            {submitting ? 'Recording…' : 'Record Payment & Post GL'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Receive Direct / Unallocated Payment Modal (Without or With Invoice)
+// ---------------------------------------------------------------------------
+
+interface ReceiveDirectPaymentModalProps {
+  open: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function ReceiveDirectPaymentModal({
+  open,
+  onClose,
+  onSuccess,
+}: ReceiveDirectPaymentModalProps) {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loadingContacts, setLoadingContacts] = useState(true);
+  const [selectedContactId, setSelectedContactId] = useState('');
+
+  const [customerInvoices, setCustomerInvoices] = useState<Invoice[]>([]);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+
+  const [allocationMode, setAllocationMode] = useState<'UNALLOCATED' | 'INVOICE'>('UNALLOCATED');
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState('');
+
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [amount, setAmount] = useState('');
+  const [reference, setReference] = useState('');
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load customer contacts
+  useEffect(() => {
+    let mounted = true;
+    setLoadingContacts(true);
+    contactApi
+      .list({ type: 'CUSTOMER' })
+      .then((res) => {
+        if (!mounted) return;
+        setContacts(res.contacts);
+        if (res.contacts.length > 0 && !selectedContactId) {
+          setSelectedContactId(res.contacts[0].id);
+        }
+      })
+      .catch(() => {
+        if (mounted) setError('Failed to load customer list.');
+      })
+      .finally(() => {
+        if (mounted) setLoadingContacts(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const selectedContact = useMemo(() => {
+    return contacts.find((c) => c.id === selectedContactId) || null;
+  }, [contacts, selectedContactId]);
+
+  // Load open invoices for selected customer
+  useEffect(() => {
+    if (!selectedContactId) {
+      setCustomerInvoices([]);
+      return;
+    }
+
+    let mounted = true;
+    setLoadingInvoices(true);
+    invoiceApi
+      .list()
+      .then((res) => {
+        if (!mounted) return;
+        const openInvs = res.invoices.filter(
+          (inv) =>
+            inv.contactId === selectedContactId &&
+            (inv.status === 'ISSUED' || inv.status === 'PARTIALLY_PAID'),
+        );
+        setCustomerInvoices(openInvs);
+
+        if (selectedContact?.requiresInvoiceForPayment) {
+          setAllocationMode('INVOICE');
+          if (openInvs.length > 0) {
+            setSelectedInvoiceId(openInvs[0].id);
+          } else {
+            setSelectedInvoiceId('');
+          }
+        } else {
+          setAllocationMode('UNALLOCATED');
+          setSelectedInvoiceId('');
+        }
+      })
+      .catch(() => {
+        if (mounted) setError('Failed to load customer invoices.');
+      })
+      .finally(() => {
+        if (mounted) setLoadingInvoices(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [selectedContactId, selectedContact]);
+
+  const selectedInvoice = useMemo(() => {
+    return customerInvoices.find((i) => i.id === selectedInvoiceId) || null;
+  }, [customerInvoices, selectedInvoiceId]);
+
+  const remainingCents = selectedInvoice
+    ? selectedInvoice.totalCents - selectedInvoice.amountPaidCents
+    : 0;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (!selectedContactId) {
+      setError('Please select a customer.');
+      return;
+    }
+
+    const amtNum = parseFloat(amount);
+    if (!amtNum || amtNum <= 0) {
+      setError('Please enter a valid payment amount greater than $0.00.');
+      return;
+    }
+
+    const amountCents = Math.round(amtNum * 100);
+
+    if (selectedContact?.requiresInvoiceForPayment && allocationMode !== 'INVOICE') {
+      setError(
+        'This customer has requiresInvoiceForPayment policy enabled. Payments must be allocated against an issued invoice.',
+      );
+      return;
+    }
+
+    if (allocationMode === 'INVOICE') {
+      if (!selectedInvoiceId) {
+        setError('Please select an open invoice to allocate this payment against.');
+        return;
+      }
+      if (amountCents > remainingCents) {
+        setError(
+          `Payment amount exceeds the invoice remaining balance (${formatCents(remainingCents)}).`,
+        );
+        return;
+      }
+    }
+
+    setSubmitting(true);
+    try {
+      await paymentInApi.create({
+        contactId: selectedContactId,
+        invoiceId: allocationMode === 'INVOICE' ? selectedInvoiceId : null,
+        paymentDate: new Date(paymentDate).toISOString(),
+        amountCents,
+        reference: reference.trim() || undefined,
+      });
+
+      onSuccess();
+    } catch (err) {
+      if (err instanceof ApiError) setError(err.message);
+      else setError('Failed to record payment in.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Receive Customer Payment"
+      description="Record an incoming payment from a customer with direct General Ledger posting (Debit 1000 Bank, Credit 1200 AR)."
+      maxWidth="max-w-md"
+    >
+      <form onSubmit={handleSubmit} className="space-y-4 mt-3">
+        {error && (
+          <div className="p-3 rounded-lg bg-red-50 text-red-700 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* Customer Select */}
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1">
+            Customer <span className="text-red-500">*</span>
+          </label>
+          {loadingContacts ? (
+            <div className="h-9 bg-slate-100 animate-pulse rounded-lg" />
+          ) : (
+            <select
+              value={selectedContactId}
+              onChange={(e) => setSelectedContactId(e.target.value)}
+              className="w-full h-9 px-3 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900"
+              required
+            >
+              {contacts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.requiresInvoiceForPayment ? '• (Requires Invoice)' : ''}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Customer Policy Note */}
+        {selectedContact && (
+          <div
+            className={`p-2.5 rounded-lg text-xs border ${
+              selectedContact.requiresInvoiceForPayment
+                ? 'bg-amber-50/80 text-amber-900 border-amber-200'
+                : 'bg-slate-50 text-slate-600 border-slate-200'
+            }`}
+          >
+            {selectedContact.requiresInvoiceForPayment ? (
+              <p>
+                <strong>Strict Policy Active:</strong> This customer's settings require all payments to be allocated against an issued invoice.
+              </p>
+            ) : (
+              <p>
+                <strong>Flexible Policy:</strong> This customer permits unallocated payments / direct deposits without an invoice.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Allocation Mode */}
+        {selectedContact && !selectedContact.requiresInvoiceForPayment && (
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">
+              Payment Allocation
+            </label>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setAllocationMode('UNALLOCATED');
+                  setSelectedInvoiceId('');
+                }}
+                className={`py-1.5 px-3 rounded-lg border text-center transition-colors ${
+                  allocationMode === 'UNALLOCATED'
+                    ? 'bg-forest-900 text-white border-forest-900 font-medium'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                No Invoice (Deposit / Retainer)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAllocationMode('INVOICE');
+                  if (customerInvoices.length > 0 && !selectedInvoiceId) {
+                    setSelectedInvoiceId(customerInvoices[0].id);
+                  }
+                }}
+                className={`py-1.5 px-3 rounded-lg border text-center transition-colors ${
+                  allocationMode === 'INVOICE'
+                    ? 'bg-forest-900 text-white border-forest-900 font-medium'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                Match to Open Invoice
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Open Invoice Select (if applicable) */}
+        {(allocationMode === 'INVOICE' || selectedContact?.requiresInvoiceForPayment) && (
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">
+              Select Open Invoice <span className="text-red-500">*</span>
+            </label>
+            {loadingInvoices ? (
+              <div className="h-9 bg-slate-100 animate-pulse rounded-lg" />
+            ) : customerInvoices.length === 0 ? (
+              <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">
+                This customer has no open (ISSUED or PARTIALLY_PAID) invoices.
+              </div>
+            ) : (
+              <select
+                value={selectedInvoiceId}
+                onChange={(e) => setSelectedInvoiceId(e.target.value)}
+                className="w-full h-9 px-3 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900"
+                required
+              >
+                {customerInvoices.map((inv) => {
+                  const bal = inv.totalCents - inv.amountPaidCents;
+                  return (
+                    <option key={inv.id} value={inv.id}>
+                      {inv.invoiceNumber} — Balance Due: {formatCents(bal)} (Total: {formatCents(inv.totalCents)})
+                    </option>
+                  );
+                })}
+              </select>
+            )}
+
+            {selectedInvoice && (
+              <div className="mt-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200/80 flex items-center justify-between text-xs">
+                <span className="text-slate-500">Invoice Remaining Balance:</span>
+                <span className="font-mono font-bold text-forest-950">
+                  {formatCents(remainingCents)}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <Input
+          label="Payment Date"
+          type="date"
+          value={paymentDate}
+          onChange={(e) => setPaymentDate(e.target.value)}
+          required
+        />
+
+        <Input
+          label="Amount Received ($ AUD)"
+          type="number"
+          step="0.01"
+          min="0.01"
+          max={
+            allocationMode === 'INVOICE' && remainingCents > 0
+              ? (remainingCents / 100).toFixed(2)
+              : undefined
+          }
+          placeholder="0.00"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+        />
+
+        <Input
+          label="Bank Transaction Reference (Optional)"
+          placeholder="e.g. Bank remittance ref, Osko, Direct deposit"
+          value={reference}
+          onChange={(e) => setReference(e.target.value)}
+        />
+
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={
+              submitting ||
+              (allocationMode === 'INVOICE' && customerInvoices.length === 0)
+            }
+          >
             {submitting ? 'Recording…' : 'Record Payment & Post GL'}
           </Button>
         </div>

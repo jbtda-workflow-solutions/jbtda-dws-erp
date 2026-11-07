@@ -9,8 +9,9 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { requireOrgAuth } from '../plugins/auth.js';
-import { EntryType, NormalBalance } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { requireOrgAuth, requireRole } from '../plugins/auth.js';
+import { EntryType, NormalBalance, Role } from '@prisma/client';
 
 const ListLedgerQuery = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -20,6 +21,18 @@ const ListLedgerQuery = z.object({
   search: z.string().trim().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
+});
+
+const ManualJournalLineInput = z.object({
+  accountId: z.string().uuid(),
+  entryType: z.enum(['DEBIT', 'CREDIT']),
+  amountCents: z.number().int().positive(),
+});
+
+const CreateManualJournalEntryBody = z.object({
+  description: z.string().trim().min(1).max(500),
+  postedAt: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  lines: z.array(ManualJournalLineInput).min(2),
 });
 
 /**
@@ -202,6 +215,107 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
 
       return reply.code(200).send({
         accounts: accountsWithBalances,
+      });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // POST /api/v1/ledger/entries — Record manual double-entry journal entry
+  // Invariant: sum(DEBIT lines) == sum(CREDIT lines)
+  // Allowed roles: ADMIN, ACCOUNTANT
+  // -------------------------------------------------------------------------
+  fastify.post(
+    '/api/v1/ledger/entries',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+    },
+    async (request, reply) => {
+      const bodyParse = CreateManualJournalEntryBody.safeParse(request.body);
+      if (!bodyParse.success) {
+        return reply.code(400).send({
+          error: 'Validation failed',
+          details: bodyParse.error.flatten().fieldErrors,
+        });
+      }
+
+      const { description, postedAt, lines } = bodyParse.data;
+      const organizationId = request.user.organizationId!;
+
+      // 1. Verify all referenced accounts belong to this organization and are active
+      const accountIds = Array.from(new Set(lines.map((l) => l.accountId)));
+      const accounts = await fastify.prisma.account.findMany({
+        where: {
+          organizationId,
+          id: { in: accountIds },
+          isActive: true,
+        },
+      });
+
+      if (accounts.length !== accountIds.length) {
+        return reply.code(400).send({
+          error: 'One or more selected accounts are invalid or inactive for this organization.',
+        });
+      }
+
+      // 2. Validate double-entry balance: sum(DEBIT) == sum(CREDIT)
+      let sumDebitsCents = 0n;
+      let sumCreditsCents = 0n;
+
+      for (const line of lines) {
+        const lineAmount = BigInt(line.amountCents);
+        if (line.entryType === 'DEBIT') {
+          sumDebitsCents += lineAmount;
+        } else {
+          sumCreditsCents += lineAmount;
+        }
+      }
+
+      if (sumDebitsCents !== sumCreditsCents) {
+        return reply.code(400).send({
+          error: `General Ledger imbalance: Total Debits (${Number(sumDebitsCents)} cents) must equal Total Credits (${Number(sumCreditsCents)} cents).`,
+        });
+      }
+
+      // 3. Atomically create JournalEntry and JournalLines
+      const journalEntry = await fastify.prisma.journalEntry.create({
+        data: {
+          organizationId,
+          description,
+          referenceType: 'MANUAL',
+          referenceId: randomUUID(),
+          postedAt: new Date(postedAt),
+          lines: {
+            create: lines.map((l) => ({
+              organizationId,
+              accountId: l.accountId,
+              entryType: l.entryType === 'DEBIT' ? EntryType.DEBIT : EntryType.CREDIT,
+              amountCents: BigInt(l.amountCents),
+            })),
+          },
+        },
+        include: {
+          lines: {
+            include: {
+              account: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  type: true,
+                  normalBalance: true,
+                },
+              },
+            },
+            orderBy: [
+              { entryType: 'asc' },
+              { amountCents: 'desc' },
+            ],
+          },
+        },
+      });
+
+      return reply.code(201).send({
+        entry: serializeLedger(journalEntry),
       });
     },
   );

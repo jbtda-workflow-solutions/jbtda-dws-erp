@@ -22,6 +22,8 @@ No external file dependencies.
 - [x] Phase 6: Invoices API with automatic ledger posting on issuance (`GET /api/v1/invoices`, `POST /api/v1/invoices`, `GET /api/v1/invoices/:id`, `POST /api/v1/invoices/:id/issue`)
 - [x] Phase 7: Payments In API with invoice matching logic (`POST /api/v1/invoices/:id/payments`, `GET /api/v1/invoices/:id/payments`, `POST /api/v1/payments-in`)
 - [x] Phase 8: General Ledger read API (`GET /api/v1/ledger`, `GET /api/v1/ledger/accounts`)
+- [x] Phase 9: Manual Ledger Entries API with atomic validation (`POST /api/v1/ledger/entries`)
+- [x] Phase 10: Standalone Customer Payments In API supporting unallocated receipts (`POST /api/v1/payments-in`)
 
 ### Frontend Milestones
 
@@ -31,6 +33,8 @@ No external file dependencies.
 - [x] Phase F4: Bills module (list with filters, create bill with dynamic line items & live GST computation, view details & journal entry)
 - [x] Phase F5: Invoices module (list with filters, create draft invoice with dynamic line items & live GST computation, view details, issue invoice with GL posting, and Pay Bill modal)
 - [x] Phase F6: General Ledger view (audit trail journal list, filterable by date/account/event, plus trial balance account totals)
+- [x] Phase F7: Manual Journal Entries Modal (dynamic lines, live debit/credit balance indicator, and atomic GL posting)
+- [x] Phase F8: Receive Payment Modal (direct customer payment without invoice or matched against open invoice, enforcing customer policy)
 
 ### Acceptance Criteria for Stage 1 Complete
 
@@ -46,8 +50,14 @@ No external file dependencies.
 6. User can record a Payment In against an Invoice (enforcing
    `requires_invoice_for_payment` policy), see the Invoice status update, and
    have the ledger posted.
-7. All monetary arithmetic uses integer cents. No floats in DB or logic.
-8. All queries are scoped to `organizationId`. Cross-tenant data leakage is
+7. User can record a direct customer payment / unallocated receipt without an invoice
+   (for customers where `requires_invoice_for_payment` is false).
+8. User can record a manual adjusting double-entry journal entry to the General
+   Ledger with strict real-time and server-side balance enforcement ($\sum D == \sum C$).
+9. User can inspect the General Ledger audit log and Trial Balance account summaries
+   with complete visibility into all accounting events.
+10. All monetary arithmetic uses integer cents. No floats in DB or logic.
+11. All queries are scoped to `organizationId`. Cross-tenant data leakage is
    impossible at the query layer.
 
 ---
@@ -70,15 +80,15 @@ email dispatch and PDF generation via n8n.
 
 ## Stage 3: Reporting & Financial Visibility
 
-**Goal:** Read-only financial reporting views — General Ledger, Trial Balance,
-P&L, and Australian BAS summary.
+**Goal:** Read-only financial reporting views — Profit & Loss and Australian BAS summary
+(General Ledger and Trial Balance were accelerated and completed in Stage 1).
 
 ### Milestones
 
-- [ ] **General Ledger View:** Paginated, filterable list of all journal entries
-  with debit/credit columns and running balance per account.
-- [ ] **Trial Balance:** Aggregated debit/credit totals per GL account,
-  confirming ΣDebits = ΣCredits.
+- [x] **General Ledger View:** Paginated, filterable list of all journal entries
+  with debit/credit columns and running balance per account. *(Completed in Stage 1 Phase F6/Phase 8)*
+- [x] **Trial Balance:** Aggregated debit/credit totals per GL account,
+  confirming ΣDebits = ΣCredits. *(Completed in Stage 1 Phase F6/Phase 8)*
 - [ ] **Profit & Loss:** Revenue accounts minus Expense accounts for a date range.
 - [ ] **BAS Summary (Australian):**
   - G1: Total Sales (sum of all `REVENUE` account credits)
@@ -97,8 +107,7 @@ Items explicitly deferred from Stage 1:
 | File/PDF attachments (GCS presigned URLs) | Stage 2 |
 | n8n webhook triggers | Stage 2 |
 | Email notifications | Stage 2 |
-| General Ledger reporting UI | Stage 3 |
-| Trial Balance & P&L | Stage 3 |
+| Profit & Loss statement | Stage 3 |
 | BAS summary | Stage 3 |
 | Bank reconciliation | Post-Stage 3 |
 | Plaid bank feed integration | Post-Stage 3 |

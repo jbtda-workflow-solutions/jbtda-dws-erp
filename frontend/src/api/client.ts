@@ -444,5 +444,20 @@ export const ledgerApi = {
 
   accounts: () =>
     request<{ accounts: AccountWithBalance[] }>('GET', '/ledger/accounts'),
+
+  createManualEntry: (data: CreateManualJournalEntryInput) =>
+    request<{ entry: JournalEntry }>('POST', '/ledger/entries', data),
 };
+
+export interface CreateManualJournalLineInput {
+  accountId: string;
+  entryType: EntryType;
+  amountCents: number;
+}
+
+export interface CreateManualJournalEntryInput {
+  description: string;
+  postedAt: string;
+  lines: CreateManualJournalLineInput[];
+}
 
