@@ -42,8 +42,11 @@ by reading:
    duplicating files across directories. Whenever files are added, removed, or
    moved, the agent MUST update this `Directory Layout` section in `AGENTS.md`
    and append an entry to `docs/CHANGELOG.md` to keep the source of truth accurate.
-10. **No Autonomous Git Commits:** Never run `git commit` or `git push` on behalf
-    of the user. The user will manage git staging, commits, and pushes manually.
+10. **No Autonomous Git Commits (Provide Commit Messages):** Never run
+    `git commit` or `git push` on behalf of the user. The user manages git
+    staging, commits, and pushes manually. At the conclusion of any task or
+    revision where a commit would typically occur, the agent MUST provide a
+    ready-to-use, conventional git commit message summarizing the changes made.
 11. **No Local Installation or Execution:** Never run `npm install`, `npm run dev`,
     or any dependency installation/execution commands on the local host development
     machine. The development machine is not used to run, demo, or execute the project.
@@ -75,6 +78,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 ### 2. Environment Variables (Cloud Run UI)
 | Variable | Description / Purpose |
 | :--- | :--- |
+| `INSTANCE_CONNECTION_NAME` | Cloud SQL instance connection name (e.g. `PROJECT_ID:REGION:INSTANCE_NAME`). Explicitly defines the Cloud SQL Unix socket target (`/cloudsql/<INSTANCE_CONNECTION_NAME>`). Required for multi-tenant isolation and portable tenant/client forks. |
 | `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Web Client ID (used for token verification & served to frontend via `/api/v1/auth/config`) |
 | `DB_USER` | PostgreSQL database user (e.g. `erp-workflows`) |
 | `DB_NAME` | PostgreSQL database name (e.g. `erp`) |

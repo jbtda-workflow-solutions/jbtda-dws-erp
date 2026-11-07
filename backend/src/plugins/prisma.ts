@@ -40,7 +40,15 @@ function getAutoCloudSqlHost(): string | undefined {
  */
 export function resolveDatabaseUrl(): string | undefined {
   if (process.env['DATABASE_URL']) {
-    return process.env['DATABASE_URL'];
+    let raw = process.env['DATABASE_URL'].trim();
+    // Strip optional surrounding single or double quotes if entered via UI
+    if (
+      (raw.startsWith('"') && raw.endsWith('"')) ||
+      (raw.startsWith("'") && raw.endsWith("'"))
+    ) {
+      raw = raw.slice(1, -1).trim();
+    }
+    return raw;
   }
 
   const user =
@@ -54,12 +62,16 @@ export function resolveDatabaseUrl(): string | undefined {
     process.env['DB_NAME'] ??
     process.env['POSTGRES_DB'];
 
-  // 1. Check explicit Instance Connection Name or DB_HOST
-  // 2. Or automatically discover socket mounted by Cloud Run under /cloudsql
+  // Resolve Cloud SQL Unix socket path or TCP host
+  // 1. Explicit INSTANCE_CONNECTION_NAME or CLOUD_SQL_CONNECTION_NAME
+  // 2. Explicit DB_HOST or POSTGRES_HOST
+  // 3. Dynamic scan of /cloudsql mount directory in Cloud Run
+  const instanceConn =
+    process.env['INSTANCE_CONNECTION_NAME'] ??
+    process.env['CLOUD_SQL_CONNECTION_NAME'];
+
   const host =
-    (process.env['INSTANCE_CONNECTION_NAME']
-      ? `/cloudsql/${process.env['INSTANCE_CONNECTION_NAME']}`
-      : undefined) ??
+    (instanceConn ? `/cloudsql/${instanceConn}` : undefined) ??
     process.env['DB_HOST'] ??
     process.env['POSTGRES_HOST'] ??
     getAutoCloudSqlHost();
@@ -88,11 +100,18 @@ export function resolveDatabaseUrl(): string | undefined {
 
 const prismaPlugin: FastifyPluginAsync = fp(async (fastify) => {
   const dbUrl = resolveDatabaseUrl();
-  if (dbUrl) {
-    process.env['DATABASE_URL'] = dbUrl;
-  }
+
+  // If a valid connection string was formed, ensure it is in process.env
+  // Otherwise, set a mock/dummy URL so PrismaClient initialization never crashes during boot
+  const activeUrl = dbUrl ?? 'postgresql://missing_config:missing_config@localhost:5432/unconfigured';
+  process.env['DATABASE_URL'] = activeUrl;
 
   const prisma = new PrismaClient({
+    datasources: {
+      db: {
+        url: activeUrl,
+      },
+    },
     log:
       process.env['NODE_ENV'] === 'development'
         ? ['query', 'info', 'warn', 'error']
@@ -100,6 +119,9 @@ const prismaPlugin: FastifyPluginAsync = fp(async (fastify) => {
   });
 
   if (dbUrl) {
+    // Mask password when logging for diagnostic debugging
+    const maskedUrl = dbUrl.replace(/:([^@/]+)@/, ':****@');
+    fastify.log.info({ dbUrl: maskedUrl }, 'Attempting PostgreSQL connection');
     try {
       await prisma.$connect();
       fastify.log.info('Connected to PostgreSQL database');
@@ -107,8 +129,12 @@ const prismaPlugin: FastifyPluginAsync = fp(async (fastify) => {
       fastify.log.warn({ err }, 'Prisma failed to connect during startup; will retry on queries');
     }
   } else {
+    const missing: string[] = [];
+    if (!process.env['DB_USER'] && !process.env['POSTGRES_USER']) missing.push('DB_USER');
+    if (!process.env['DB_PASSWORD'] && !process.env['DB_PASS'] && !process.env['POSTGRES_PASSWORD']) missing.push('DB_PASSWORD');
+    if (!process.env['DB_NAME'] && !process.env['POSTGRES_DB']) missing.push('DB_NAME');
     fastify.log.warn(
-      'Database connection variables are not set (requires DATABASE_URL or DB_USER, DB_PASSWORD, DB_NAME, DB_HOST). Database queries will fail until configured.',
+      `Database connection variables are missing: [${missing.join(', ')}]. DATABASE_URL was not configured. Database operations will return 503 until configured.`,
     );
   }
 

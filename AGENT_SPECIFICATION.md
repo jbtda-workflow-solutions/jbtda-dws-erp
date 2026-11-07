@@ -19,6 +19,7 @@ You are operating as a senior full-stack software architect, cloud engineer, and
 3. **Changelog Maintenance:** Any task that introduces a new route, migration, dependency, or schema modification must append an entry to `docs/CHANGELOG.md`.
 4. **Clean-Slate Baseline:** The database is a fresh testing environment. Generate clean baseline Prisma migrations with standard `snake_case` PostgreSQL naming conventions.
 5. **Zero Local Installation or Host Execution:** Do NOT run `npm install`, package managers, or dev servers on the local host development machine. The application is never executed, installed, or demoed locally. Dependencies are declared directly in `package.json` manifests and are built/installed inside containerized multi-stage Docker builds on Google Cloud Build during deployment to Cloud Run.
+6. **No Autonomous Git Commits (Provide Commit Messages):** Never execute `git commit` or `git push`. The user handles staging, commits, and pushes. Whenever a logical revision is completed, the agent must output a concise, conventional git commit message for the user to copy.
 
 ### Phase 0 Repository Scaffold
 Before writing feature code, ensure the following directory structure and documentation files are present:
@@ -110,6 +111,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 2. **Environment Variables (Cloud Run UI):**
    | Variable | Description / Purpose |
    | :--- | :--- |
+   | `INSTANCE_CONNECTION_NAME` | Cloud SQL instance connection name (e.g. `PROJECT_ID:REGION:INSTANCE_NAME`). Explicitly targets the Unix socket `/cloudsql/<INSTANCE_CONNECTION_NAME>`. Essential for multi-tenant isolation and portable client forks. |
    | `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Web Client ID (token verification & served to frontend via `/api/v1/auth/config`) |
    | `DB_USER` | PostgreSQL user (e.g. `erp-workflows`) |
    | `DB_NAME` | PostgreSQL database name (e.g. `erp`) |

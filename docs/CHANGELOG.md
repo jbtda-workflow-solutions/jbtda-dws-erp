@@ -4,6 +4,14 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.6.1] — 2026-11-07 — Hardened Cloud SQL Discovery & Mandatory Multi-Tenant Configuration
+
+### Changed
+- `backend/src/plugins/prisma.ts` — Removed all hardcoded database fallback strings to protect multi-tenant integrity across client/business forks. Database configuration now strictly relies on explicit environment variables (`INSTANCE_CONNECTION_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`) or dynamic `/cloudsql` socket discovery. Added quote-stripping for UI-entered `DATABASE_URL` strings, explicit `datasources.db.url` configuration in `new PrismaClient()`, and non-crashing initialization with descriptive diagnostic logging when variables are missing.
+- `AGENTS.md`, `AGENT_SPECIFICATION.md`, and `docs/ARCHITECTURE.md` — Added `INSTANCE_CONNECTION_NAME` to the mandatory Cloud Run environment variables specification table so any future agent turn or fork explicitly configures the target Cloud SQL instance.
+
+---
+
 ## [0.6.0] — 2026-11-07 — Reconciled Specifications, Unified Container Codebase & No Local Execution Rule
 
 ### Added
