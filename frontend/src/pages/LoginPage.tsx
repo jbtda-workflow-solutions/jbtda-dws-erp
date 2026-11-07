@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useGoogleLogin } from '@react-oauth/google';
+import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '@/hooks/useAuth';
 import { ApiError } from '@/api/client';
 
@@ -13,32 +13,6 @@ export function LoginPage() {
   const { loginWithGoogle } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const handleGoogleLogin = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      // @react-oauth/google returns an access token by default.
-      // We need the ID token — use the code flow with id_token response.
-      // This component uses the implicit flow returning id_token via credential.
-    },
-    onError: () => {
-      setError('Google sign-in was cancelled or failed. Please try again.');
-      setLoading(false);
-    },
-    flow: 'implicit',
-  });
-
-  // Use the credential-based popup (returns id_token directly)
-  const handleCredentialLogin = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      setError(null);
-      // tokenResponse from implicit flow has access_token but not id_token.
-      // We use GoogleLogin component instead (see below).
-    },
-    onError: () => {
-      setError('Google sign-in failed. Please try again.');
-      setLoading(false);
-    },
-  });
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
@@ -103,8 +77,6 @@ export function LoginPage() {
 // ---------------------------------------------------------------------------
 // Google Sign-In Button (using @react-oauth/google GoogleLogin component)
 // ---------------------------------------------------------------------------
-
-import { GoogleLogin } from '@react-oauth/google';
 
 interface GoogleSignInButtonProps {
   loading: boolean;

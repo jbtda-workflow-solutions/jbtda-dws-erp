@@ -139,6 +139,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
         ├── App.tsx            # Main router and shell layout
         ├── index.css          # Tailwind base & component stylesheets
         ├── main.tsx           # React DOM root mounting point
+        ├── vite-env.d.ts      # Vite client type definitions
         ├── api/
         │   └── client.ts      # Typed API client wrapper with credentials
         ├── components/

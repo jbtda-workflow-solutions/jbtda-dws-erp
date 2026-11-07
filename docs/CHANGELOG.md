@@ -13,7 +13,9 @@ Chronological log of all changes, schema diffs, and new dependencies.
 - `AGENT_SPECIFICATION.md` — Added Mandatory Agent Rule 5: Zero local installation or host execution.
 - `backend/package.json` — Added dependency `@fastify/static`.
 - `backend/src/routes/auth.ts` — Added `GET /api/v1/auth/config` to dynamically supply `GOOGLE_CLIENT_ID` to the frontend without requiring build-time arguments.
-- `frontend/src/main.tsx` — Added runtime auth configuration resolution so Google Sign-In automatically uses the Cloud Run runtime client ID.
+- `frontend/src/vite-env.d.ts` — Added Vite client type definitions for TypeScript compilation.
+- `frontend/src/pages/LoginPage.tsx` — Cleaned up unused Google login hook stubs (`handleGoogleLogin`, `handleCredentialLogin`) to satisfy strict TypeScript `noUnusedLocals` compiler rules during Docker builds.
+- `backend/src/server.ts` & `backend/src/routes/auth.ts` — Implemented resilient database error fallbacks: `/healthz` returns 200 with non-blocking DB connectivity status, and auth routes return descriptive 503 errors if Cloud SQL is unreachable, ensuring the container and frontend interface always load regardless of database availability.
 - `backend/src/server.ts` — Added `@fastify/static` plugin registration, multi-path asset resolution (`resolveFrontendDistPath()`), explicit `GET /` handler, and SPA client-side routing fallback handler (`index.html` fallback for non-API routes). Enhanced Content Security Policy (CSP) directives for Google Fonts, Google OAuth avatars, and inline styling.
 
 ### Changed

@@ -6,7 +6,7 @@ import './index.css';
 
 function Root() {
   const [clientId, setClientId] = useState<string>(
-    (import.meta.env['VITE_GOOGLE_CLIENT_ID'] as string | undefined) || '',
+    ((import.meta as unknown as { env?: Record<string, string> }).env?.['VITE_GOOGLE_CLIENT_ID']) || '',
   );
   const [loading, setLoading] = useState(!clientId);
 

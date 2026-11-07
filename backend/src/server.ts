@@ -128,8 +128,18 @@ async function buildServer() {
 
   // -------------------------------------------------------------------------
   // Health check (unauthenticated — used by Cloud Run)
+  // Always returns 200 so container stays healthy, with DB connectivity status
   // -------------------------------------------------------------------------
-  fastify.get('/healthz', async () => ({ status: 'ok' }));
+  fastify.get('/healthz', async () => {
+    let dbStatus = 'disconnected';
+    try {
+      await fastify.prisma.$queryRaw`SELECT 1`;
+      dbStatus = 'connected';
+    } catch {
+      dbStatus = 'unreachable';
+    }
+    return { status: 'ok', database: dbStatus };
+  });
 
   // -------------------------------------------------------------------------
   // Static React SPA serving & SPA fallback handler

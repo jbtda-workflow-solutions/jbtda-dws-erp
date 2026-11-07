@@ -76,20 +76,27 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     // -----------------------------------------------------------------------
     // 3. Upsert user (immutable key: google_sub)
     // -----------------------------------------------------------------------
-    const user = await fastify.prisma.user.upsert({
-      where: { googleSub },
-      create: { googleSub, email, name, avatarUrl },
-      update: { email, name, avatarUrl },
-    });
+    let user;
+    let memberships;
+    try {
+      user = await fastify.prisma.user.upsert({
+        where: { googleSub },
+        create: { googleSub, email, name, avatarUrl },
+        update: { email, name, avatarUrl },
+      });
 
-    // -----------------------------------------------------------------------
-    // 4. Check for existing organization membership
-    // -----------------------------------------------------------------------
-    const memberships = await fastify.prisma.organizationMember.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: 'asc' },
-      take: 1,
-    });
+      memberships = await fastify.prisma.organizationMember.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'asc' },
+        take: 1,
+      });
+    } catch (err: unknown) {
+      fastify.log.error({ err }, 'Database error during Google auth flow');
+      const msg = err instanceof Error ? err.message : 'Database error';
+      return reply.code(503).send({
+        error: `Database unavailable: ${msg}. Please ensure Cloud SQL is connected and database tables are initialized.`,
+      });
+    }
 
     if (memberships.length > 0 && memberships[0] !== undefined) {
       // User already belongs to an org — issue full session
@@ -176,32 +183,40 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     const session = getSession(request, secret);
     if (!session) return reply.code(401).send({ error: 'Invalid session' });
 
-    const user = await fastify.prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { id: true, email: true, name: true, avatarUrl: true },
-    });
+    try {
+      const user = await fastify.prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { id: true, email: true, name: true, avatarUrl: true },
+      });
 
-    if (!user) return reply.code(401).send({ error: 'User not found' });
+      if (!user) return reply.code(401).send({ error: 'User not found' });
 
-    if (!session.organizationId) {
+      if (!session.organizationId) {
+        return reply.code(200).send({
+          status: 'onboarding',
+          user,
+        });
+      }
+
+      const org = await fastify.prisma.organization.findUnique({
+        where: { id: session.organizationId },
+        select: { id: true, name: true, abn: true },
+      });
+
       return reply.code(200).send({
-        status: 'onboarding',
+        status: 'authenticated',
         user,
+        organization: org,
+        organizationId: session.organizationId,
+        role: session.role,
+      });
+    } catch (err: unknown) {
+      fastify.log.error({ err }, 'Database error during auth/me lookup');
+      const msg = err instanceof Error ? err.message : 'Database error';
+      return reply.code(503).send({
+        error: `Database unavailable: ${msg}.`,
       });
     }
-
-    const org = await fastify.prisma.organization.findUnique({
-      where: { id: session.organizationId },
-      select: { id: true, name: true, abn: true },
-    });
-
-    return reply.code(200).send({
-      status: 'authenticated',
-      user,
-      organization: org,
-      organizationId: session.organizationId,
-      role: session.role,
-    });
   });
 
   // -----------------------------------------------------------------------
