@@ -275,7 +275,7 @@ export function ContactsPage() {
       {/* Create / Edit Modal */}
       {isModalOpen && (
         <ContactFormModal
-          isOpen={isModalOpen}
+          open={isModalOpen}
           contact={editingContact}
           onClose={() => setIsModalOpen(false)}
           onSaved={handleSaved}
@@ -323,14 +323,14 @@ function formatAbn(abn: string): string {
 // ---------------------------------------------------------------------------
 
 interface ContactFormModalProps {
-  isOpen: boolean;
+  open: boolean;
   contact: Contact | null;
   onClose: () => void;
   onSaved: (contact: Contact) => void;
 }
 
 function ContactFormModal({
-  isOpen,
+  open,
   contact,
   onClose,
   onSaved,
@@ -415,7 +415,7 @@ function ContactFormModal({
 
   return (
     <Modal
-      isOpen={isOpen}
+      open={open}
       onClose={onClose}
       title={isEditing ? 'Edit Contact' : 'New Contact'}
       description={

@@ -4,6 +4,14 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.7.1] — 2026-11-07 — Fixed Frontend TypeScript Compiler Errors
+
+### Changed
+- `frontend/src/pages/ContactsPage.tsx` — Renamed `isOpen` prop to `open` when passing to `<Modal>` component, matching the `ModalProps` interface definition.
+- `frontend/src/pages/PlaceholderPages.tsx` — Replaced unused and undefined `Users` icon fallback with typed `icon: LucideIcon` in the `ComingSoon` component to satisfy strict TypeScript compilation in Docker builds.
+
+---
+
 ## [0.7.0] — 2026-11-07 — Phase 3 Contacts Directory (API & UI)
 
 ### Added

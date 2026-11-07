@@ -1,4 +1,4 @@
-import { Receipt, FileSpreadsheet, BookOpen } from 'lucide-react';
+import { Receipt, FileSpreadsheet, BookOpen, LucideIcon } from 'lucide-react';
 
 export function InvoicesPage() {
   return (
@@ -47,11 +47,11 @@ export function LedgerPage() {
 // ---------------------------------------------------------------------------
 
 function ComingSoon({
-  icon: Icon = Users,
+  icon: Icon,
   label,
   phase,
 }: {
-  icon?: typeof Users;
+  icon: LucideIcon;
   label: string;
   phase: string;
 }) {
