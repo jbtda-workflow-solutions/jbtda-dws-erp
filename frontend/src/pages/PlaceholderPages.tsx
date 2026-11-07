@@ -1,4 +1,4 @@
-import { Receipt, FileSpreadsheet, BookOpen, LucideIcon } from 'lucide-react';
+import { Receipt, BookOpen, LucideIcon } from 'lucide-react';
 
 export function InvoicesPage() {
   return (

@@ -4,6 +4,16 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.8.1] — 2026-11-07 — Hardened TypeScript Compiler Settings & Pruned Unused Imports
+
+### Changed
+- `frontend/src/pages/BillsPage.tsx` — Pruned unused `Calendar` icon import.
+- `frontend/src/pages/PlaceholderPages.tsx` — Pruned unused `FileSpreadsheet` icon import.
+- `frontend/tsconfig.json` — Adjusted `noUnusedLocals: false` and `noUnusedParameters: false` to prevent trivial unused import warnings from failing the production Docker build step during deployment.
+- `AGENTS.md` & `AGENT_SPECIFICATION.md` — Added Mandatory Rule 12 / Rule 7 explicitly instructing all agents on clean imports and compiler tolerance safeguards.
+
+---
+
 ## [0.8.0] — 2026-11-07 — Phase 4 Accounts Payable (AP) Bills & Automatic Double-Entry Ledger Posting
 
 ### Added

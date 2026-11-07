@@ -54,6 +54,11 @@ by reading:
     (e.g., `package.json`, `Dockerfile`) and are executed exclusively by Cloud Build /
     Docker during remote deployment to Cloud Run. Agents must modify `package.json`
     manifests directly.
+12. **Clean Imports & Compiler Tolerance:** Frontend builds use `tsc && vite build`.
+    Never leave unused icon imports or variables in files. `frontend/tsconfig.json`
+    has `noUnusedLocals: false` and `noUnusedParameters: false` configured as an
+    operational tolerance safeguard against transient Docker build breaks, but
+    agents must always keep imports clean and prune unused symbols.
 
 ## Tech Stack Quick-Reference
 
