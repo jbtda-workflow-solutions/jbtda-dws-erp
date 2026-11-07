@@ -93,3 +93,61 @@ export const orgApi = {
     request<{ organization: Organization; role: string }>('POST', '/organizations', data),
 };
 
+// ---------------------------------------------------------------------------
+// Contacts
+// ---------------------------------------------------------------------------
+
+export type ContactType = 'CUSTOMER' | 'VENDOR' | 'BOTH';
+
+export interface Contact {
+  id: string;
+  organizationId: string;
+  type: ContactType;
+  name: string;
+  email: string | null;
+  abn: string | null;
+  paymentTermsDays: number;
+  requiresInvoiceForPayment: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateContactInput {
+  type: ContactType;
+  name: string;
+  email?: string | null;
+  abn?: string | null;
+  paymentTermsDays?: number;
+  requiresInvoiceForPayment?: boolean;
+}
+
+export interface UpdateContactInput {
+  type?: ContactType;
+  name?: string;
+  email?: string | null;
+  abn?: string | null;
+  paymentTermsDays?: number;
+  requiresInvoiceForPayment?: boolean;
+  isActive?: boolean;
+}
+
+export const contactApi = {
+  list: (params?: { type?: ContactType; search?: string; isActive?: boolean }) => {
+    const query = new URLSearchParams();
+    if (params?.type) query.set('type', params.type);
+    if (params?.search) query.set('search', params.search);
+    if (params?.isActive !== undefined) query.set('isActive', String(params.isActive));
+    const qs = query.toString();
+    return request<{ contacts: Contact[] }>('GET', `/contacts${qs ? `?${qs}` : ''}`);
+  },
+
+  get: (id: string) => request<{ contact: Contact }>('GET', `/contacts/${id}`),
+
+  create: (data: CreateContactInput) =>
+    request<{ contact: Contact }>('POST', '/contacts', data),
+
+  update: (id: string, data: UpdateContactInput) =>
+    request<{ contact: Contact }>('PATCH', `/contacts/${id}`, data),
+};
+

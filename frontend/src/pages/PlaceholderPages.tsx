@@ -1,18 +1,4 @@
-import { Users } from 'lucide-react';
-
-export function ContactsPage() {
-  return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-medium tracking-tight text-slate-900">Contacts</h1>
-        <p className="text-sm font-light text-slate-500 mt-1">
-          Manage customers and vendors.
-        </p>
-      </div>
-      <ComingSoon icon={Users} label="Contacts module" phase="Phase F3" />
-    </div>
-  );
-}
+import { Receipt, FileSpreadsheet, BookOpen } from 'lucide-react';
 
 export function InvoicesPage() {
   return (
@@ -23,7 +9,7 @@ export function InvoicesPage() {
           Create and manage customer invoices.
         </p>
       </div>
-      <ComingSoon label="Invoices module" phase="Phase F5" />
+      <ComingSoon icon={Receipt} label="Invoices module" phase="Phase F5" />
     </div>
   );
 }
@@ -37,7 +23,7 @@ export function BillsPage() {
           Record bills from vendors.
         </p>
       </div>
-      <ComingSoon label="Bills module" phase="Phase F4" />
+      <ComingSoon icon={FileSpreadsheet} label="Bills module" phase="Phase F4" />
     </div>
   );
 }
@@ -51,7 +37,7 @@ export function LedgerPage() {
           Double-entry journal entries.
         </p>
       </div>
-      <ComingSoon label="General Ledger module" phase="Phase F6" />
+      <ComingSoon icon={BookOpen} label="General Ledger module" phase="Phase F6" />
     </div>
   );
 }

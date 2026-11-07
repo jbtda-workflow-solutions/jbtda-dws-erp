@@ -4,6 +4,31 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.7.0] — 2026-11-07 — Phase 3 Contacts Directory (API & UI)
+
+### Added
+- `backend/src/routes/contacts.ts` — Implemented Contacts CRUD API:
+  - `GET /api/v1/contacts`: Filter by contact type (`CUSTOMER`, `VENDOR`, `BOTH`), active state, or search string (name, email, ABN digits), scoped strictly to `organizationId`.
+  - `POST /api/v1/contacts`: Create new contact with optional ATO modulus 89 ABN validation, custom payment terms in days (0–365), and invoice requirement policy (`requiresInvoiceForPayment`). Protected by `requireRole(ADMIN, ACCOUNTANT, AR_SPECIALIST, AP_SPECIALIST)`.
+  - `GET /api/v1/contacts/:id`: Fetch single contact details with row-level multi-tenant boundary.
+  - `PATCH /api/v1/contacts/:id`: Update contact details, payment terms, or toggle active/inactive status.
+- `frontend/src/api/client.ts` — Added typed `contactApi` client methods (`list`, `get`, `create`, `update`) and TypeScript interfaces.
+- `frontend/src/pages/ContactsPage.tsx` — Full-featured Contacts Directory UI:
+  - Tabbed filtering for Customer, Vendor, and Both types.
+  - Debounced real-time search across names, emails, and formatted ABNs.
+  - Interactive Create/Edit modal with live Australian Business Number (ABN) validation.
+  - Net payment terms and invoice requirement policy controls.
+  - Status toggle (`Active` / `Inactive`).
+
+### Changed
+- `backend/src/server.ts` — Registered `contactRoutes` plugin under `/api/v1`.
+- `frontend/src/App.tsx` — Replaced placeholder route with production `ContactsPage` component.
+- `frontend/src/pages/PlaceholderPages.tsx` — Removed `ContactsPage` stub.
+- `AGENTS.md` — Updated living directory tree with `backend/src/routes/contacts.ts` and `frontend/src/pages/ContactsPage.tsx`.
+- `docs/STAGES_ROADMAP.md` — Marked Phase 3 and Phase F3 as completed.
+
+---
+
 ## [0.6.2] — 2026-11-07 — Reverted Premature Database Mock Fallbacks & Enforced Fail-Fast Startup
 
 ### Changed

@@ -119,6 +119,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   └── prisma.ts      # Fastify PrismaClient plugin with Cloud SQL discovery
 │       ├── routes/
 │       │   ├── auth.ts        # POST /api/v1/auth/google, GET /api/v1/auth/me, DELETE /logout
+│       │   ├── contacts.ts    # GET /api/v1/contacts, POST, GET /:id, PATCH /:id
 │       │   └── organizations.ts # POST /api/v1/organizations (ABN check & CoA seeding)
 │       └── server.ts          # Fastify server entry point, static serving, plugins
 ├── docs/                      # Technical Documentation
@@ -157,6 +158,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
         ├── lib/
         │   └── utils.ts       # Utility helper functions
         └── pages/
+            ├── ContactsPage.tsx      # Contacts directory (list, filter, create, edit modal)
             ├── DashboardPage.tsx     # Landing dashboard page
             ├── LoginPage.tsx         # Google sign-in landing page
             ├── OnboardingModal.tsx   # First-time organization creation modal

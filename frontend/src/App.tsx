@@ -4,8 +4,8 @@ import { LoginPage } from '@/pages/LoginPage';
 import { OnboardingModal } from '@/pages/OnboardingModal';
 import { AppShell } from '@/components/AppShell';
 import { DashboardPage } from '@/pages/DashboardPage';
+import { ContactsPage } from '@/pages/ContactsPage';
 import {
-  ContactsPage,
   InvoicesPage,
   BillsPage,
   LedgerPage,
