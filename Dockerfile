@@ -1,21 +1,28 @@
 # -----------------------------------------------------------------------------
-# Root Dockerfile for GCP Cloud Run Deployment
-# Builds the Fastify + TypeScript + Prisma Backend API
+# Root Dockerfile for GCP Cloud Run Deployment (Unified Monolith)
+# Builds the React SPA Frontend and Fastify Backend API into a single image
 # -----------------------------------------------------------------------------
 
-# Stage 1: Build & Dependencies
-FROM node:20-alpine AS builder
+# Stage 1: Build Frontend SPA
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app/frontend
 
-WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm install
+
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: Build Backend API
+FROM node:20-alpine AS backend-builder
+WORKDIR /app/backend
 
 # OpenSSL is required by Prisma CLI and engine
 RUN apk add --no-cache openssl
 
 # Copy backend dependencies definition
-COPY backend/package.json backend/package-lock.json* ./backend/
-COPY backend/prisma ./backend/prisma
-
-WORKDIR /app/backend
+COPY backend/package.json backend/package-lock.json* ./
+COPY backend/prisma ./prisma
 
 # Install all dependencies (including devDependencies for build)
 RUN npm install
@@ -34,11 +41,10 @@ RUN npm run build
 RUN npm prune --production
 
 # -----------------------------------------------------------------------------
-# Stage 2: Production Runtime (Cloud Run)
+# Stage 3: Production Runtime (Cloud Run)
 # -----------------------------------------------------------------------------
 FROM node:20-alpine AS runner
-
-WORKDIR /app/backend
+WORKDIR /app
 
 RUN apk add --no-cache openssl
 
@@ -49,12 +55,16 @@ ENV HOST=0.0.0.0
 # Run as non-root user for security
 USER node
 
-# Copy production node_modules, generated Prisma client, and compiled dist
-COPY --chown=node:node --from=builder /app/backend/node_modules ./node_modules
-COPY --chown=node:node --from=builder /app/backend/prisma ./prisma
-COPY --chown=node:node --from=builder /app/backend/dist ./dist
-COPY --chown=node:node --from=builder /app/backend/package.json ./package.json
+# Copy backend production artifacts
+COPY --chown=node:node --from=backend-builder /app/backend/node_modules ./backend/node_modules
+COPY --chown=node:node --from=backend-builder /app/backend/prisma ./backend/prisma
+COPY --chown=node:node --from=backend-builder /app/backend/dist ./backend/dist
+COPY --chown=node:node --from=backend-builder /app/backend/package.json ./backend/package.json
 
+# Copy frontend static build for Fastify @fastify/static serving
+COPY --chown=node:node --from=frontend-builder /app/frontend/dist ./frontend/dist
+
+WORKDIR /app/backend
 EXPOSE 8080
 
 CMD ["node", "dist/server.js"]

@@ -1,6 +1,9 @@
 node_modules
+**/node_modules
 dist
+**/dist
 build
+**/build
 .git
 .gitignore
 .env
@@ -8,5 +11,4 @@ build
 *.log
 npm-debug.log*
 .DS_Store
-frontend/
 

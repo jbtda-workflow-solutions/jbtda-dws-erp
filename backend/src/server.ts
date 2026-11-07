@@ -4,11 +4,12 @@
  * Plugin registration order:
  *  1. @fastify/cookie  — required by auth session helpers
  *  2. @fastify/helmet  — security headers
- *  3. @fastify/cors    — CORS for the React SPA
+ *  3. @fastify/cors    — CORS for development / external origins
  *  4. @fastify/sensible — HTTP error helpers
  *  5. prisma           — PrismaClient decorated on fastify instance
  *  6. auth             — no-op plugin (exports preHandler factories)
- *  7. routes           — API route handlers
+ *  7. routes           — API route handlers (/api/v1/*)
+ *  8. @fastify/static  — Static React SPA serving & SPA fallback handler
  */
 
 import Fastify from 'fastify';
@@ -16,14 +17,27 @@ import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
+import fastifyStatic from '@fastify/static';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import prismaPlugin from './plugins/prisma.js';
 import authPlugin from './plugins/auth.js';
 import authRoutes from './routes/auth.js';
 import organizationRoutes from './routes/organizations.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const PORT = Number(process.env['PORT'] ?? 8080);
 const HOST = process.env['HOST'] ?? '0.0.0.0';
+
+// Resolve frontend static directory (in container: /app/frontend/dist)
+const frontendDistPath = process.env['FRONTEND_DIST_PATH'] ??
+  (fs.existsSync(path.resolve(__dirname, '../../frontend/dist'))
+    ? path.resolve(__dirname, '../../frontend/dist')
+    : path.resolve(process.cwd(), '../frontend/dist'));
 
 async function buildServer() {
   const isProduction = process.env['NODE_ENV'] === 'production';
@@ -48,18 +62,25 @@ async function buildServer() {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", 'https://accounts.google.com'],
         frameSrc: ["'self'", 'https://accounts.google.com'],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        imgSrc: ["'self'", 'data:', 'https://*.googleusercontent.com'],
+        connectSrc: ["'self'", 'https://accounts.google.com'],
       },
     },
   });
 
   // -------------------------------------------------------------------------
-  // CORS — allow the Vite dev server and production frontend origin
+  // CORS — allow the Vite dev server and external frontend origin if configured
+  // In unified production, frontend and backend share the exact same origin.
   // -------------------------------------------------------------------------
-  await fastify.register(cors, {
-    origin: process.env['FRONTEND_ORIGIN'] ?? 'http://localhost:5173',
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  });
+  if (!isProduction || process.env['FRONTEND_ORIGIN']) {
+    await fastify.register(cors, {
+      origin: process.env['FRONTEND_ORIGIN'] ?? 'http://localhost:5173',
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    });
+  }
 
   // -------------------------------------------------------------------------
   // Cookie parser (required for session helpers)
@@ -97,6 +118,31 @@ async function buildServer() {
   // Health check (unauthenticated — used by Cloud Run)
   // -------------------------------------------------------------------------
   fastify.get('/healthz', async () => ({ status: 'ok' }));
+
+  // -------------------------------------------------------------------------
+  // Static React SPA serving & SPA fallback handler
+  // -------------------------------------------------------------------------
+  if (fs.existsSync(frontendDistPath)) {
+    await fastify.register(fastifyStatic, {
+      root: frontendDistPath,
+      prefix: '/',
+    });
+
+    fastify.setNotFoundHandler((request, reply) => {
+      // If request was meant for an API route, return standard 404 JSON
+      if (request.url.startsWith('/api')) {
+        return reply.status(404).send({
+          statusCode: 404,
+          error: 'Not Found',
+          message: `Route ${request.method}:${request.url} not found`,
+        });
+      }
+      // Otherwise, serve index.html for client-side React Router
+      return reply.sendFile('index.html');
+    });
+  } else {
+    fastify.log.warn(`Frontend static assets not found at ${frontendDistPath}. Serving API routes only.`);
+  }
 
   return fastify;
 }

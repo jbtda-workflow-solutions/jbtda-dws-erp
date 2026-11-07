@@ -18,6 +18,7 @@ You are operating as a senior full-stack software architect, cloud engineer, and
 2. **Persistent Documentation First:** Every architectural decision, data model change, API contract, and security constraint must be documented in dedicated markdown files in the `/docs` directory before or immediately upon implementation.
 3. **Changelog Maintenance:** Any task that introduces a new route, migration, dependency, or schema modification must append an entry to `docs/CHANGELOG.md`.
 4. **Clean-Slate Baseline:** The database is a fresh testing environment. Generate clean baseline Prisma migrations with standard `snake_case` PostgreSQL naming conventions.
+5. **Zero Local Installation or Host Execution:** Do NOT run `npm install`, package managers, or dev servers on the local host development machine. The application is never executed, installed, or demoed locally. Dependencies are declared directly in `package.json` manifests and are built/installed inside containerized multi-stage Docker builds on Google Cloud Build during deployment to Cloud Run.
 
 ### Phase 0 Repository Scaffold
 Before writing feature code, ensure the following directory structure and documentation files are present:
@@ -39,34 +40,33 @@ Before writing feature code, ensure the following directory structure and docume
 
 ---
 
-## 2. System Architecture & GCP Topology
+## 2. System Architecture & GCP Topology (Unified Monolith)
 
-The application is deployed entirely within Google Cloud Platform using managed, serverless infrastructure:
+The application is deployed as a single, unified container on Google Cloud Run to eliminate cross-origin (CORS) complexity and ensure robust `SameSite=Strict` cookie security:
 
 ```
-                              ┌────────────────────────────────────────┐
-                              │      GCP Cloud Storage + Cloud CDN     │
-                              │         (or Firebase Hosting)          │
-                              │       Static React SPA (Vite/TS)       │
-                              └───────────────────┬────────────────────┘
-                                                  │ HTTPS (REST / JSON)
-                                                  ▼
-                              ┌────────────────────────────────────────┐
-                              │         GCP Cloud Run Service          │
-                              │       Fastify + TypeScript + Prisma    │
-                              └───────┬────────────────────────────┬───┘
-                                      │                            │
-                Direct Queries (ACID) │                            │ Async Webhooks
-                (Cloud SQL Proxy)     │                            │ (X-Webhook-Secret)
-                                      ▼                            ▼
-                           ┌──────────────┐               ┌────────────────┐
-                           │GCP Cloud SQL │               │ GCP Cloud Run  │
-                           │ (PostgreSQL) │               │(n8n Automation)│
-                           └──────────────┘               └────────┬───────┘
-                                                                   │
-                                                                   ▼
-                                                           External Services
-                                                           (Email, Plaid)
+                          ┌────────────────────────────────────────┐
+                          │         GCP Cloud Run Service          │
+                          │                                        │
+                          │  ┌──────────────────────────────────┐  │
+                          │  │    Static React SPA (Vite/TS)    │  │
+                          │  │  (Served via @fastify/static)    │  │
+                          │  └──────────────────────────────────┘  │
+                          │                                        │
+                          │     Fastify + TypeScript + Prisma      │
+                          └───────┬────────────────────────────┬───┘
+                                  │                            │
+            Direct Queries (ACID) │                            │ Async Webhooks
+            (Cloud SQL Proxy)     │                            │ (X-Webhook-Secret)
+                                  ▼                            ▼
+                         ┌──────────────┐               ┌────────────────┐
+                         │GCP Cloud SQL │               │ GCP Cloud Run  │
+                         │ (PostgreSQL) │               │(n8n Automation)│
+                         └──────────────┘               └────────┬───────┘
+                                                                 │
+                                                                 ▼
+                                                         External Services
+                                                         (Email, Plaid)
 ```
 
 ### Stack Components
@@ -75,15 +75,21 @@ The application is deployed entirely within Google Cloud Platform using managed,
    - Single Page Application (React 18/19, TypeScript, Vite, Tailwind CSS).
    - Component primitives: Radix UI / shadcn/ui patterns with Lucide React icons.
    - Dynamic code-splitting via `React.lazy()` for module boundaries (Contacts, AP, AR, Ledger).
-   - Hosted as static assets on GCP Cloud Storage + Cloud CDN or Firebase Hosting.
+   - **Delivery:** Compiled at build time (`dist/`) and served directly by the Fastify backend from the root path (`GET /`). Not hosted separately.
+   - **API Client:** Makes relative requests to the backend (e.g., `fetch('/api/v1/auth/google')`), avoiding CORS preflight checks entirely.
 
 2. **Core Backend API (`/backend`):**
    - **Framework:** Fastify with TypeScript.
    - **ORM:** Prisma ORM with PostgreSQL client.
+   - **Routing Isolation:**
+     - Serve the React static build directory using `@fastify/static` at the root `/`.
+     - Mount all core API logic under `/api/v1/`.
+     - SPA Fallback: Any `GET` request failing to match `/api/*` returns `index.html` to allow React Router to handle client-side routing.
    - **Statelessness:** No local session caches. Autoscales horizontally across Cloud Run replicas.
    - **Connection Pool Ceiling:** Explicitly configure Prisma connection limits:
      `DATABASE_URL="postgresql://user:pass@host/db?connection_limit=7&pool_timeout=10"`
      This prevents multiple Cloud Run containers from exhausting Cloud SQL connection limits.
+   - **Containerization:** Built via a multi-stage root `Dockerfile` that compiles the React app, compiles the TypeScript API, and packages both into a single unprivileged Node 20 runtime listening on `$PORT`.
 
 3. **Database (Cloud SQL PostgreSQL):**
    - Managed PostgreSQL instance with private VPC connection or Cloud SQL Auth Proxy.

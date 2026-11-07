@@ -44,6 +44,13 @@ by reading:
    and append an entry to `docs/CHANGELOG.md` to keep the source of truth accurate.
 10. **No Autonomous Git Commits:** Never run `git commit` or `git push` on behalf
     of the user. The user will manage git staging, commits, and pushes manually.
+11. **No Local Installation or Execution:** Never run `npm install`, `npm run dev`,
+    or any dependency installation/execution commands on the local host development
+    machine. The development machine is not used to run, demo, or execute the project.
+    All dependencies and build steps are declared directly in configuration files
+    (e.g., `package.json`, `Dockerfile`) and are executed exclusively by Cloud Build /
+    Docker during remote deployment to Cloud Run. Agents must modify `package.json`
+    manifests directly.
 
 ## Tech Stack Quick-Reference
 
@@ -59,4 +66,67 @@ by reading:
 
 ## Directory Layout (Living Source of Truth)
 
-*(The directory layout tracks the codebase state. See `AGENT_SPECIFICATION.md` for functional outlines).*
+```text
+.
+├── .dockerignore              # Docker build ignore rules
+├── .gitignore                 # Root git ignore rules
+├── AGENTS.md                  # Root agent instructions and execution constraints
+├── AGENT_SPECIFICATION.md     # Master system specification (Unified Monolith architecture)
+├── Dockerfile                 # Multi-stage production container build (frontend + backend)
+├── backend/                   # Core Modular Monolith API (Fastify + TypeScript + Prisma)
+│   ├── package.json           # Backend dependencies and scripts
+│   ├── tsconfig.json          # TypeScript base configuration
+│   ├── tsconfig.build.json    # TypeScript compiler configuration for production build
+│   ├── prisma/
+│   │   └── schema.prisma      # PostgreSQL schema, enums, models
+│   └── src/
+│       ├── lib/
+│       │   ├── abn.ts         # ATO ABN checksum validation algorithm
+│       │   └── gst.ts         # Integer-cent Australian GST calculation utilities
+│       ├── plugins/
+│       │   ├── auth.ts        # Fastify auth plugin, session cookies, requireAuth hooks
+│       │   └── prisma.ts      # Fastify PrismaClient plugin with Cloud SQL discovery
+│       ├── routes/
+│       │   ├── auth.ts        # POST /api/v1/auth/google, GET /api/v1/auth/me, DELETE /logout
+│       │   └── organizations.ts # POST /api/v1/organizations (ABN check & CoA seeding)
+│       └── server.ts          # Fastify server entry point, static serving, plugins
+├── docs/                      # Technical Documentation
+│   ├── ARCHITECTURE.md        # Topology, service boundaries, and Cloud Run configuration
+│   ├── CHANGELOG.md           # Chronological change log and schema diffs
+│   ├── DATABASE_SCHEMA.md     # PostgreSQL tables, relations, and migration log
+│   ├── DESIGN_SYSTEM.md       # Typography, Tailwind tokens, and table conventions
+│   ├── INTEGRATIONS.md        # Async webhook payloads and n8n contracts
+│   ├── SECURITY.md            # Auth mechanics, RBAC matrix, and crypto standards
+│   └── STAGES_ROADMAP.md      # Detailed breakdown of Stage 1 through Stage 3
+└── frontend/                  # React SPA (Vite + TypeScript + Tailwind)
+    ├── index.html             # HTML entry point with Inter & Open Sans font links
+    ├── package.json           # Frontend dependencies and scripts
+    ├── postcss.config.js      # PostCSS configuration for Tailwind
+    ├── tailwind.config.ts     # Brand palette and styling tokens
+    ├── tsconfig.json          # TypeScript client configuration
+    ├── tsconfig.node.json     # TypeScript Vite runner configuration
+    ├── vite.config.ts         # Vite server with /api proxy to Fastify backend
+    ├── public/
+    │   └── favicon.svg        # Brand favicon
+    └── src/
+        ├── App.tsx            # Main router and shell layout
+        ├── index.css          # Tailwind base & component stylesheets
+        ├── main.tsx           # React DOM root mounting point
+        ├── api/
+        │   └── client.ts      # Typed API client wrapper with credentials
+        ├── components/
+        │   ├── AppShell.tsx   # Authenticated layout with header and sidebar navigation
+        │   └── ui/
+        │       ├── Button.tsx # Brand button component
+        │       ├── Input.tsx  # Form input component
+        │       └── Modal.tsx  # Accessible dialog modal component
+        ├── hooks/
+        │   └── useAuth.tsx    # Global auth context, state, and provider
+        ├── lib/
+        │   └── utils.ts       # Utility helper functions
+        └── pages/
+            ├── DashboardPage.tsx     # Landing dashboard page
+            ├── LoginPage.tsx         # Google sign-in landing page
+            ├── OnboardingModal.tsx   # First-time organization creation modal
+            └── PlaceholderPages.tsx  # Route placeholder components
+```

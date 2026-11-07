@@ -26,6 +26,13 @@ const RequestBody = z.object({
 const authRoutes: FastifyPluginAsync = async (fastify) => {
   const googleClient = new OAuth2Client(process.env['GOOGLE_CLIENT_ID']);
 
+  // -------------------------------------------------------------------------
+  // Public auth configuration (exposes client ID to frontend SPA at runtime)
+  // -------------------------------------------------------------------------
+  fastify.get('/api/v1/auth/config', async () => ({
+    googleClientId: process.env['GOOGLE_CLIENT_ID'] ?? '',
+  }));
+
   fastify.post('/api/v1/auth/google', async (request, reply) => {
     // -----------------------------------------------------------------------
     // 1. Parse & validate body

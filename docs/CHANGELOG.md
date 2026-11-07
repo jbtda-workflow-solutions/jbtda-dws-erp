@@ -4,6 +4,26 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.6.0] — 2026-11-07 — Reconciled Specifications, Unified Container Codebase & No Local Execution Rule
+
+### Added
+- `AGENTS.md` — Added Mandatory Rule 11: Explicit prohibition of `npm install` and local host execution. All dependencies and build steps are declared in configuration files and executed remotely in Cloud Build / Docker during deployment. Restored the full living directory layout.
+- `AGENT_SPECIFICATION.md` — Added Mandatory Agent Rule 5: Zero local installation or host execution.
+- `backend/package.json` — Added dependency `@fastify/static`.
+- `backend/src/routes/auth.ts` — Added `GET /api/v1/auth/config` to dynamically supply `GOOGLE_CLIENT_ID` to the frontend without requiring build-time arguments.
+- `frontend/src/main.tsx` — Added runtime auth configuration resolution so Google Sign-In automatically uses the Cloud Run runtime client ID.
+- `backend/src/server.ts` — Added `@fastify/static` plugin registration and SPA client-side routing fallback handler (`index.html` fallback for non-API routes). Enhanced Content Security Policy (CSP) directives for Google Fonts, Google OAuth avatars, and inline styling.
+
+### Changed
+- `AGENT_SPECIFICATION.md` — Reconciled Section 2 with `docs/ARCHITECTURE.md` and `AGENTS.md` to specify the Unified Monolith architecture (React SPA served by Fastify on Cloud Run, eliminating Firebase and CORS requirements).
+- `Dockerfile` — Upgraded to a multi-stage build that compiles `/frontend` (Vite) and `/backend` (TypeScript) into a single production container image for Cloud Run deployment.
+- `.dockerignore` — Removed `frontend/` exclusion to allow Docker to copy and compile frontend assets during remote builds.
+
+### Removed
+- `docs/AGENT_SPECIFICATION.md` — Removed redundant, truncated specification stub in favor of single master `AGENT_SPECIFICATION.md` in the root.
+
+---
+
 ## [0.5.0] — 2026-11-01 — Architectural Shift to Single Unified Container
 
 ### Changed
