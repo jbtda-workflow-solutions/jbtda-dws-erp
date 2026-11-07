@@ -67,17 +67,20 @@ async function buildServer() {
 
   // -------------------------------------------------------------------------
   // Security headers
+  // Note: crossOriginOpenerPolicy must be 'same-origin-allow-popups' to permit
+  // the Google Identity Services popup to postMessage credentials back to the opener.
   // -------------------------------------------------------------------------
   await fastify.register(helmet, {
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", 'https://accounts.google.com'],
+        scriptSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com'],
         frameSrc: ["'self'", 'https://accounts.google.com'],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://accounts.google.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com'],
         imgSrc: ["'self'", 'data:', 'https://*.googleusercontent.com'],
-        connectSrc: ["'self'", 'https://accounts.google.com'],
+        connectSrc: ["'self'", 'https://accounts.google.com', 'https://*.googleapis.com'],
       },
     },
   });

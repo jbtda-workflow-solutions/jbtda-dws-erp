@@ -16,7 +16,7 @@ Chronological log of all changes, schema diffs, and new dependencies.
 - `frontend/src/vite-env.d.ts` — Added Vite client type definitions for TypeScript compilation.
 - `frontend/src/pages/LoginPage.tsx` — Cleaned up unused Google login hook stubs (`handleGoogleLogin`, `handleCredentialLogin`) to satisfy strict TypeScript `noUnusedLocals` compiler rules during Docker builds.
 - `backend/src/server.ts` & `backend/src/routes/auth.ts` — Implemented resilient database error fallbacks: `/healthz` returns 200 with non-blocking DB connectivity status, and auth routes return descriptive 503 errors if Cloud SQL is unreachable, ensuring the container and frontend interface always load regardless of database availability.
-- `backend/src/server.ts` — Added `@fastify/static` plugin registration, multi-path asset resolution (`resolveFrontendDistPath()`), explicit `GET /` handler, and SPA client-side routing fallback handler (`index.html` fallback for non-API routes). Enhanced Content Security Policy (CSP) directives for Google Fonts, Google OAuth avatars, and inline styling.
+- `backend/src/server.ts` — Added `@fastify/static` plugin registration, multi-path asset resolution (`resolveFrontendDistPath()`), explicit `GET /` handler, and SPA client-side routing fallback handler (`index.html` fallback for non-API routes). Configured `crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }` to allow Google Identity Services OAuth popup callbacks to communicate with the app window. Enhanced Content Security Policy (CSP) directives for Google Fonts, Google OAuth avatars, and inline styling.
 
 ### Changed
 - `backend/.gitignore` — Removed ignore rule for `prisma/migrations` so database schema migrations are tracked in git and deployable in CI/CD.
