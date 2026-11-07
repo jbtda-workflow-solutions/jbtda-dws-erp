@@ -131,17 +131,15 @@ async function buildServer() {
 
   // -------------------------------------------------------------------------
   // Health check (unauthenticated — used by Cloud Run)
-  // Always returns 200 so container stays healthy, with DB connectivity status
+  // Fails with 503 if database connection is unhealthy
   // -------------------------------------------------------------------------
-  fastify.get('/healthz', async () => {
-    let dbStatus = 'disconnected';
+  fastify.get('/healthz', async (_request, reply) => {
     try {
       await fastify.prisma.$queryRaw`SELECT 1`;
-      dbStatus = 'connected';
+      return { status: 'ok', database: 'connected' };
     } catch {
-      dbStatus = 'unreachable';
+      return reply.code(503).send({ status: 'error', database: 'unreachable' });
     }
-    return { status: 'ok', database: dbStatus };
   });
 
   // -------------------------------------------------------------------------

@@ -100,16 +100,24 @@ export function resolveDatabaseUrl(): string | undefined {
 
 const prismaPlugin: FastifyPluginAsync = fp(async (fastify) => {
   const dbUrl = resolveDatabaseUrl();
+  if (!dbUrl) {
+    const missing: string[] = [];
+    if (!process.env['DB_USER'] && !process.env['POSTGRES_USER']) missing.push('DB_USER');
+    if (!process.env['DB_PASSWORD'] && !process.env['DB_PASS'] && !process.env['POSTGRES_PASSWORD']) missing.push('DB_PASSWORD');
+    if (!process.env['DB_NAME'] && !process.env['POSTGRES_DB']) missing.push('DB_NAME');
+    if (!process.env['INSTANCE_CONNECTION_NAME'] && !process.env['DB_HOST']) missing.push('INSTANCE_CONNECTION_NAME/DB_HOST');
 
-  // If a valid connection string was formed, ensure it is in process.env
-  // Otherwise, set a mock/dummy URL so PrismaClient initialization never crashes during boot
-  const activeUrl = dbUrl ?? 'postgresql://missing_config:missing_config@localhost:5432/unconfigured';
-  process.env['DATABASE_URL'] = activeUrl;
+    throw new Error(
+      `Database configuration missing: [${missing.join(', ')}]. DATABASE_URL or Cloud SQL connection variables must be configured.`,
+    );
+  }
+
+  process.env['DATABASE_URL'] = dbUrl;
 
   const prisma = new PrismaClient({
     datasources: {
       db: {
-        url: activeUrl,
+        url: dbUrl,
       },
     },
     log:
@@ -118,25 +126,12 @@ const prismaPlugin: FastifyPluginAsync = fp(async (fastify) => {
         : ['warn', 'error'],
   });
 
-  if (dbUrl) {
-    // Mask password when logging for diagnostic debugging
-    const maskedUrl = dbUrl.replace(/:([^@/]+)@/, ':****@');
-    fastify.log.info({ dbUrl: maskedUrl }, 'Attempting PostgreSQL connection');
-    try {
-      await prisma.$connect();
-      fastify.log.info('Connected to PostgreSQL database');
-    } catch (err) {
-      fastify.log.warn({ err }, 'Prisma failed to connect during startup; will retry on queries');
-    }
-  } else {
-    const missing: string[] = [];
-    if (!process.env['DB_USER'] && !process.env['POSTGRES_USER']) missing.push('DB_USER');
-    if (!process.env['DB_PASSWORD'] && !process.env['DB_PASS'] && !process.env['POSTGRES_PASSWORD']) missing.push('DB_PASSWORD');
-    if (!process.env['DB_NAME'] && !process.env['POSTGRES_DB']) missing.push('DB_NAME');
-    fastify.log.warn(
-      `Database connection variables are missing: [${missing.join(', ')}]. DATABASE_URL was not configured. Database operations will return 503 until configured.`,
-    );
-  }
+  // Mask password when logging for diagnostic debugging
+  const maskedUrl = dbUrl.replace(/:([^@/]+)@/, ':****@');
+  fastify.log.info({ dbUrl: maskedUrl }, 'Connecting to PostgreSQL database');
+
+  await prisma.$connect();
+  fastify.log.info('Connected to PostgreSQL database');
 
   fastify.decorate('prisma', prisma);
 

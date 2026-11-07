@@ -4,6 +4,14 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.6.2] — 2026-11-07 — Reverted Premature Database Mock Fallbacks & Enforced Fail-Fast Startup
+
+### Changed
+- `backend/src/plugins/prisma.ts` — Removed all mock/dummy database URL fallbacks and soft warning states. Prisma now fails fast at startup if database environment variables are missing, preventing unauthenticated half-initialized states.
+- `backend/src/server.ts` — Restored `/healthz` to return HTTP 503 if Cloud SQL is unreachable, ensuring Cloud Run accurately reflects container database health.
+
+---
+
 ## [0.6.1] — 2026-11-07 — Hardened Cloud SQL Discovery & Mandatory Multi-Tenant Configuration
 
 ### Changed
