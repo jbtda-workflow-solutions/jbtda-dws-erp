@@ -1,18 +1,4 @@
-import { Receipt, BookOpen, LucideIcon } from 'lucide-react';
-
-export function InvoicesPage() {
-  return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-medium tracking-tight text-slate-900">Invoices</h1>
-        <p className="text-sm font-light text-slate-500 mt-1">
-          Create and manage customer invoices.
-        </p>
-      </div>
-      <ComingSoon icon={Receipt} label="Invoices module" phase="Phase F5" />
-    </div>
-  );
-}
+import { BookOpen, LucideIcon } from 'lucide-react';
 
 export function LedgerPage() {
   return (

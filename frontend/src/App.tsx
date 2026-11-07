@@ -6,10 +6,8 @@ import { AppShell } from '@/components/AppShell';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { ContactsPage } from '@/pages/ContactsPage';
 import { BillsPage } from '@/pages/BillsPage';
-import {
-  InvoicesPage,
-  LedgerPage,
-} from '@/pages/PlaceholderPages';
+import { InvoicesPage } from '@/pages/InvoicesPage';
+import { LedgerPage } from '@/pages/PlaceholderPages';
 
 // ---------------------------------------------------------------------------
 // Root guard — renders the correct view based on auth status

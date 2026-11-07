@@ -169,6 +169,16 @@ export interface BillLineItem {
   totalCents: number;
 }
 
+export interface PaymentOut {
+  id: string;
+  organizationId: string;
+  billId: string;
+  paymentDate: string;
+  amountCents: number;
+  reference: string | null;
+  createdAt: string;
+}
+
 export interface Bill {
   id: string;
   organizationId: string;
@@ -189,6 +199,7 @@ export interface Bill {
   amountPaidCents: number;
   notes: string | null;
   lineItems?: BillLineItem[];
+  paymentsOut?: PaymentOut[];
   createdAt: string;
   updatedAt: string;
 }
@@ -222,5 +233,96 @@ export const billApi = {
 
   create: (data: CreateBillInput) =>
     request<{ bill: Bill }>('POST', '/bills', data),
+
+  recordPayment: (
+    billId: string,
+    data: { paymentDate: string; amountCents: number; reference?: string | null },
+  ) =>
+    request<{ paymentOut: PaymentOut; bill: Bill; journalEntry?: any }>(
+      'POST',
+      `/bills/${billId}/payments`,
+      data,
+    ),
+
+  listPayments: (billId: string) =>
+    request<{ payments: PaymentOut[] }>('GET', `/bills/${billId}/payments`),
+};
+
+// ---------------------------------------------------------------------------
+// Invoices
+// ---------------------------------------------------------------------------
+
+export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIALLY_PAID' | 'PAID' | 'VOID';
+
+export interface InvoiceLineItem {
+  id: string;
+  invoiceId: string;
+  organizationId: string;
+  description: string;
+  amountCents: number;
+  taxTreatment: TaxTreatment;
+  gstCents: number;
+  totalCents: number;
+}
+
+export interface Invoice {
+  id: string;
+  organizationId: string;
+  contactId: string;
+  contact?: {
+    id: string;
+    name: string;
+    email: string | null;
+    abn: string | null;
+    paymentTermsDays: number;
+  };
+  invoiceNumber: string;
+  issueDate: string;
+  dueDate: string;
+  status: InvoiceStatus;
+  subtotalCents: number;
+  gstCents: number;
+  totalCents: number;
+  amountPaidCents: number;
+  notes: string | null;
+  lineItems?: InvoiceLineItem[];
+  paymentsIn?: any[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateInvoiceLineItemInput {
+  description: string;
+  amountCents: number;
+  taxTreatment: TaxTreatment;
+}
+
+export interface CreateInvoiceInput {
+  contactId: string;
+  invoiceNumber?: string;
+  issueDate: string;
+  dueDate: string;
+  notes?: string | null;
+  lineItems: CreateInvoiceLineItemInput[];
+}
+
+export const invoiceApi = {
+  list: (params?: { status?: InvoiceStatus; contactId?: string; search?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.contactId) query.set('contactId', params.contactId);
+    if (params?.search) query.set('search', params.search);
+    const qs = query.toString();
+    return request<{ invoices: Invoice[] }>('GET', `/invoices${qs ? `?${qs}` : ''}`);
+  },
+
+  get: (id: string) =>
+    request<{ invoice: Invoice; journalEntry?: any }>('GET', `/invoices/${id}`),
+
+  create: (data: CreateInvoiceInput) =>
+    request<{ invoice: Invoice }>('POST', '/invoices', data),
+
+  issue: (id: string) =>
+    request<{ invoice: Invoice; journalEntry?: any }>('POST', `/invoices/${id}/issue`),
 };
 

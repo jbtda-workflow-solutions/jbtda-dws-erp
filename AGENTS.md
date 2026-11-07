@@ -124,8 +124,9 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   └── prisma.ts      # Fastify PrismaClient plugin with Cloud SQL discovery
 │       ├── routes/
 │       │   ├── auth.ts        # POST /api/v1/auth/google, GET /api/v1/auth/me, DELETE /logout
-│       │   ├── bills.ts       # GET /api/v1/bills, POST, GET /:id (AP & automatic GL posting)
+│       │   ├── bills.ts       # GET /api/v1/bills, POST, GET /:id, POST /:id/payments (AP & GL posting)
 │       │   ├── contacts.ts    # GET /api/v1/contacts, POST, GET /:id, PATCH /:id
+│       │   ├── invoices.ts    # GET /api/v1/invoices, POST, GET /:id, POST /:id/issue (AR & GL posting)
 │       │   └── organizations.ts # POST /api/v1/organizations (ABN check & CoA seeding)
 │       └── server.ts          # Fastify server entry point, static serving, plugins
 ├── docs/                      # Technical Documentation
@@ -164,10 +165,11 @@ The application relies strictly on Google Cloud Run container configuration (zer
         ├── lib/
         │   └── utils.ts       # Utility helper functions
         └── pages/
-            ├── BillsPage.tsx         # Accounts Payable bills (list, line items, GL modal)
+            ├── BillsPage.tsx         # Accounts Payable bills (list, line items, payments out, GL modal)
             ├── ContactsPage.tsx      # Contacts directory (list, filter, create, edit modal)
             ├── DashboardPage.tsx     # Landing dashboard page
+            ├── InvoicesPage.tsx      # Customer Invoices (list, draft, issue with GL posting, line items)
             ├── LoginPage.tsx         # Google sign-in landing page
             ├── OnboardingModal.tsx   # First-time organization creation modal
-            └── PlaceholderPages.tsx  # Route placeholder components
+            └── PlaceholderPages.tsx  # Route placeholder components (Ledger)
 ```

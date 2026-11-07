@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
-  FileSpreadsheet,
   Plus,
   Search,
   Building2,
@@ -10,6 +9,7 @@ import {
   Clock,
   Eye,
   FileText,
+  CreditCard,
 } from 'lucide-react';
 import {
   billApi,
@@ -18,6 +18,7 @@ import {
   type BillStatus,
   type TaxTreatment,
   type Contact,
+  type PaymentOut,
   ApiError,
 } from '@/api/client';
 import { Button } from '@/components/ui/Button';
@@ -277,6 +278,11 @@ export function BillsPage() {
         <BillDetailModal
           billId={selectedBillId}
           onClose={() => setSelectedBillId(null)}
+          onBillUpdated={(updated) => {
+            setBills((prev) =>
+              prev.map((b) => (b.id === updated.id ? updated : b)),
+            );
+          }}
         />
       )}
     </div>
@@ -710,13 +716,15 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
 interface BillDetailModalProps {
   billId: string;
   onClose: () => void;
+  onBillUpdated?: (bill: Bill) => void;
 }
 
-function BillDetailModal({ billId, onClose }: BillDetailModalProps) {
+function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProps) {
   const [bill, setBill] = useState<Bill | null>(null);
   const [journalEntry, setJournalEntry] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isPayModalOpen, setIsPayModalOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -736,113 +744,104 @@ function BillDetailModal({ billId, onClose }: BillDetailModalProps) {
     void load();
   }, [billId]);
 
+  const handlePaymentSuccess = (updatedBill: Bill) => {
+    setBill(updatedBill);
+    if (onBillUpdated) onBillUpdated(updatedBill);
+    setIsPayModalOpen(false);
+  };
+
+  const balanceDue = bill ? bill.totalCents - bill.amountPaidCents : 0;
+  const canPay = bill && (bill.status === 'AWAITING_PAYMENT' || bill.status === 'PARTIALLY_PAID') && balanceDue > 0;
+
   return (
-    <Modal
-      open={Boolean(billId)}
-      onClose={onClose}
-      title="Bill Details & General Ledger Posting"
-      description="View vendor bill information and the automatic double-entry transaction record."
-      maxWidth="max-w-2xl"
-    >
-      {loading ? (
-        <div className="py-12 flex flex-col items-center justify-center gap-2">
-          <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />
-          <p className="text-xs text-slate-500">Loading details…</p>
-        </div>
-      ) : error || !bill ? (
-        <div className="p-4 rounded-lg bg-red-50 text-red-700 text-xs">
-          {error ?? 'Bill not found'}
-        </div>
-      ) : (
-        <div className="space-y-5 mt-4 text-xs">
-          {/* Header Summary */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
-            <div>
-              <p className="text-slate-400">Vendor</p>
-              <p className="font-medium text-slate-900 mt-0.5">{bill.contact?.name}</p>
-            </div>
-            <div>
-              <p className="text-slate-400">Reference</p>
-              <p className="font-mono text-slate-900 mt-0.5">{bill.reference ?? '—'}</p>
-            </div>
-            <div>
-              <p className="text-slate-400">Issue Date</p>
-              <p className="text-slate-900 mt-0.5">{formatDate(bill.issueDate)}</p>
-            </div>
-            <div>
-              <p className="text-slate-400">Due Date</p>
-              <p className="text-slate-900 mt-0.5">{formatDate(bill.dueDate)}</p>
-            </div>
+    <>
+      <Modal
+        open={Boolean(billId)}
+        onClose={onClose}
+        title="Bill Details & General Ledger Posting"
+        description="View vendor bill information, payment history, and double-entry transaction record."
+        maxWidth="max-w-2xl"
+      >
+        {loading ? (
+          <div className="py-12 flex flex-col items-center justify-center gap-2">
+            <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />
+            <p className="text-xs text-slate-500">Loading details…</p>
           </div>
-
-          {/* Line items list */}
-          <div className="space-y-2">
-            <p className="font-medium text-slate-900">Line Items</p>
-            <div className="border border-slate-200 rounded-xl overflow-hidden">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                  <tr>
-                    <th className="py-2.5 px-3">Description</th>
-                    <th className="py-2.5 px-3">Tax Treatment</th>
-                    <th className="py-2.5 px-3 text-right">Subtotal</th>
-                    <th className="py-2.5 px-3 text-right">GST</th>
-                    <th className="py-2.5 px-3 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {bill.lineItems?.map((li) => (
-                    <tr key={li.id}>
-                      <td className="py-2 px-3 text-slate-800">{li.description}</td>
-                      <td className="py-2 px-3 text-slate-500">
-                        {li.taxTreatment.replace('_', ' ')}
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono text-slate-600">
-                        {formatCents(li.amountCents)}
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono text-slate-600">
-                        {formatCents(li.gstCents)}
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono text-slate-900 font-medium">
-                        {formatCents(li.totalCents)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        ) : error || !bill ? (
+          <div className="p-4 rounded-lg bg-red-50 text-red-700 text-xs">
+            {error ?? 'Bill not found'}
           </div>
-
-          {/* Double-Entry GL record */}
-          {journalEntry && (
-            <div className="space-y-2 pt-2 border-t border-slate-100">
-              <div className="flex items-center gap-1.5 font-medium text-slate-900">
-                <FileText className="w-3.5 h-3.5 text-forest-700" />
-                <span>Double-Entry Journal Entry ({journalEntry.referenceType})</span>
+        ) : (
+          <div className="space-y-5 mt-4 text-xs">
+            {/* Header Summary */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
+              <div>
+                <p className="text-slate-400">Vendor</p>
+                <p className="font-medium text-slate-900 mt-0.5">{bill.contact?.name}</p>
               </div>
+              <div>
+                <p className="text-slate-400">Reference</p>
+                <p className="font-mono text-slate-900 mt-0.5">{bill.reference ?? '—'}</p>
+              </div>
+              <div>
+                <p className="text-slate-400">Issue Date</p>
+                <p className="text-slate-900 mt-0.5">{formatDate(bill.issueDate)}</p>
+              </div>
+              <div>
+                <p className="text-slate-400">Due Date</p>
+                <p className="text-slate-900 mt-0.5">{formatDate(bill.dueDate)}</p>
+              </div>
+            </div>
+
+            {/* Financial Balance Summary */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
+              <div>
+                <p className="text-slate-400">Total Payable</p>
+                <p className="font-mono font-medium text-slate-900 mt-0.5">{formatCents(bill.totalCents)}</p>
+              </div>
+              <div>
+                <p className="text-slate-400">Amount Paid</p>
+                <p className="font-mono font-medium text-emerald-700 mt-0.5">{formatCents(bill.amountPaidCents)}</p>
+              </div>
+              <div>
+                <p className="text-slate-400">Balance Due</p>
+                <p className="font-mono font-bold text-forest-950 mt-0.5">{formatCents(balanceDue)}</p>
+              </div>
+              <div>
+                <p className="text-slate-400">Status</p>
+                <div className="mt-0.5"><BillStatusBadge status={bill.status} /></div>
+              </div>
+            </div>
+
+            {/* Line items list */}
+            <div className="space-y-2">
+              <p className="font-medium text-slate-900">Line Items</p>
               <div className="border border-slate-200 rounded-xl overflow-hidden">
                 <table className="w-full text-left">
                   <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                     <tr>
-                      <th className="py-2 px-3">Account</th>
-                      <th className="py-2 px-3 text-right">Debit</th>
-                      <th className="py-2 px-3 text-right">Credit</th>
+                      <th className="py-2.5 px-3">Description</th>
+                      <th className="py-2.5 px-3">Tax Treatment</th>
+                      <th className="py-2.5 px-3 text-right">Subtotal</th>
+                      <th className="py-2.5 px-3 text-right">GST</th>
+                      <th className="py-2.5 px-3 text-right">Total</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 font-mono">
-                    {journalEntry.lines?.map((line: any) => (
-                      <tr key={line.id}>
-                        <td className="py-2 px-3 font-sans text-slate-800">
-                          {line.account?.code} - {line.account?.name}
+                  <tbody className="divide-y divide-slate-100">
+                    {bill.lineItems?.map((li) => (
+                      <tr key={li.id}>
+                        <td className="py-2 px-3 text-slate-800">{li.description}</td>
+                        <td className="py-2 px-3 text-slate-500">
+                          {li.taxTreatment.replace('_', ' ')}
                         </td>
-                        <td className="py-2 px-3 text-right text-slate-700">
-                          {line.entryType === 'DEBIT'
-                            ? formatCents(line.amountCents)
-                            : '—'}
+                        <td className="py-2 px-3 text-right font-mono text-slate-600">
+                          {formatCents(li.amountCents)}
                         </td>
-                        <td className="py-2 px-3 text-right text-slate-700">
-                          {line.entryType === 'CREDIT'
-                            ? formatCents(line.amountCents)
-                            : '—'}
+                        <td className="py-2 px-3 text-right font-mono text-slate-600">
+                          {formatCents(li.gstCents)}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-slate-900 font-medium">
+                          {formatCents(li.totalCents)}
                         </td>
                       </tr>
                     ))}
@@ -850,15 +849,234 @@ function BillDetailModal({ billId, onClose }: BillDetailModalProps) {
                 </table>
               </div>
             </div>
-          )}
 
-          <div className="flex justify-end pt-3 border-t border-slate-100">
-            <Button variant="outline" onClick={onClose}>
-              Close
-            </Button>
+            {/* Payments Out History */}
+            {bill.paymentsOut && bill.paymentsOut.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <div className="flex items-center gap-1.5 font-medium text-slate-900">
+                  <CreditCard className="w-3.5 h-3.5 text-forest-700" />
+                  <span>Payments Recorded ({bill.paymentsOut.length})</span>
+                </div>
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2 px-3">Payment Date</th>
+                        <th className="py-2 px-3">Bank Reference</th>
+                        <th className="py-2 px-3 text-right">Amount Paid</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-mono">
+                      {bill.paymentsOut.map((p: PaymentOut) => (
+                        <tr key={p.id}>
+                          <td className="py-2 px-3 text-slate-800 font-sans">{formatDate(p.paymentDate)}</td>
+                          <td className="py-2 px-3 text-slate-600">{p.reference ?? '—'}</td>
+                          <td className="py-2 px-3 text-right text-emerald-700 font-medium">
+                            {formatCents(p.amountCents)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Double-Entry GL record */}
+            {journalEntry && (
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <div className="flex items-center gap-1.5 font-medium text-slate-900">
+                  <FileText className="w-3.5 h-3.5 text-forest-700" />
+                  <span>Double-Entry Journal Entry ({journalEntry.referenceType})</span>
+                </div>
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2 px-3">Account</th>
+                        <th className="py-2 px-3 text-right">Debit</th>
+                        <th className="py-2 px-3 text-right">Credit</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-mono">
+                      {journalEntry.lines?.map((line: any) => (
+                        <tr key={line.id}>
+                          <td className="py-2 px-3 font-sans text-slate-800">
+                            {line.account?.code} - {line.account?.name}
+                          </td>
+                          <td className="py-2 px-3 text-right text-slate-700">
+                            {line.entryType === 'DEBIT'
+                              ? formatCents(line.amountCents)
+                              : '—'}
+                          </td>
+                          <td className="py-2 px-3 text-right text-slate-700">
+                            {line.entryType === 'CREDIT'
+                              ? formatCents(line.amountCents)
+                              : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
+              {canPay && (
+                <Button
+                  onClick={() => setIsPayModalOpen(true)}
+                  className="inline-flex items-center gap-1.5"
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>Record Payment</span>
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
+      </Modal>
+
+      {/* Payment Modal */}
+      {isPayModalOpen && bill && (
+        <RecordPaymentModal
+          open={isPayModalOpen}
+          bill={bill}
+          onClose={() => setIsPayModalOpen(false)}
+          onPaymentRecorded={handlePaymentSuccess}
+        />
       )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Record Payment Modal (Phase 5)
+// ---------------------------------------------------------------------------
+
+interface RecordPaymentModalProps {
+  open: boolean;
+  bill: Bill;
+  onClose: () => void;
+  onPaymentRecorded: (updatedBill: Bill) => void;
+}
+
+function RecordPaymentModal({
+  open,
+  bill,
+  onClose,
+  onPaymentRecorded,
+}: RecordPaymentModalProps) {
+  const remainingCents = bill.totalCents - bill.amountPaidCents;
+  const [paymentDate, setPaymentDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [amount, setAmount] = useState((remainingCents / 100).toFixed(2));
+  const [reference, setReference] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const parsedAmountCents = Math.round((parseFloat(amount) || 0) * 100);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (parsedAmountCents <= 0) {
+      setError('Payment amount must be greater than $0.00.');
+      return;
+    }
+
+    if (parsedAmountCents > remainingCents) {
+      setError(
+        `Payment amount cannot exceed the balance due (${formatCents(remainingCents)}).`,
+      );
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await billApi.recordPayment(bill.id, {
+        paymentDate,
+        amountCents: parsedAmountCents,
+        reference: reference.trim() || null,
+      });
+      onPaymentRecorded(res.bill);
+    } catch (err) {
+      if (err instanceof ApiError) setError(err.message);
+      else setError('Failed to record payment.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Record Payment Out"
+      description={`Record an outgoing payment to ${bill.contact?.name} for bill ${bill.reference ?? bill.id.slice(0, 8)}.`}
+      maxWidth="max-w-md"
+    >
+      <form onSubmit={handleSubmit} className="space-y-4 mt-3">
+        {error && (
+          <div className="p-3 rounded-lg bg-red-50 text-red-700 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 flex items-center justify-between text-xs">
+          <span className="text-slate-500">Remaining Balance:</span>
+          <span className="font-mono font-bold text-forest-950">
+            {formatCents(remainingCents)}
+          </span>
+        </div>
+
+        <Input
+          label="Payment Date"
+          type="date"
+          value={paymentDate}
+          onChange={(e) => setPaymentDate(e.target.value)}
+          required
+        />
+
+        <Input
+          label="Amount Paid ($ AUD)"
+          type="number"
+          step="0.01"
+          min="0.01"
+          max={(remainingCents / 100).toFixed(2)}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+        />
+
+        <Input
+          label="Bank Transaction Reference (Optional)"
+          placeholder="e.g. EFT-10941, Direct Debit"
+          value={reference}
+          onChange={(e) => setReference(e.target.value)}
+        />
+
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? 'Recording…' : 'Record Payment & Post GL'}
+          </Button>
+        </div>
+      </form>
     </Modal>
   );
 }

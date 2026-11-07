@@ -42,6 +42,16 @@ const ParamsWithId = z.object({
   id: z.string().uuid(),
 });
 
+const RecordPaymentBody = z.object({
+  paymentDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  amountCents: z.number().int().positive(),
+  reference: z.string().trim().max(100).nullable().optional(),
+});
+
+const CreatePaymentOutBody = RecordPaymentBody.extend({
+  billId: z.string().uuid(),
+});
+
 /**
  * Helper to serialize BigInt fields to numbers/strings in JSON response
  */
@@ -357,6 +367,348 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(200).send({
         bill: serializeBill(bill),
         journalEntry: journalEntry ? serializeBill(journalEntry) : null,
+      });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // POST /api/v1/bills/:id/payments — Record a Payment Out against a bill
+  // Allowed roles: ADMIN, ACCOUNTANT, AP_SPECIALIST
+  // -------------------------------------------------------------------------
+  fastify.post(
+    '/api/v1/bills/:id/payments',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST),
+      ],
+    },
+    async (request, reply) => {
+      const paramParse = ParamsWithId.safeParse(request.params);
+      if (!paramParse.success) {
+        return reply.code(400).send({ error: 'Invalid bill ID format' });
+      }
+
+      const bodyParse = RecordPaymentBody.safeParse(request.body);
+      if (!bodyParse.success) {
+        return reply.code(400).send({
+          error: 'Validation failed',
+          details: bodyParse.error.flatten().fieldErrors,
+        });
+      }
+
+      const { id: billId } = paramParse.data;
+      const { paymentDate, amountCents, reference } = bodyParse.data;
+      const organizationId = request.user.organizationId!;
+
+      // 1. Fetch bill and verify existence
+      const bill = await fastify.prisma.bill.findFirst({
+        where: { id: billId, organizationId },
+        include: { contact: true },
+      });
+
+      if (!bill) {
+        return reply.code(404).send({ error: 'Bill not found' });
+      }
+
+      if (bill.status === BillStatus.PAID) {
+        return reply.code(400).send({ error: 'This bill has already been fully paid.' });
+      }
+
+      if (bill.status === BillStatus.VOID) {
+        return reply.code(400).send({ error: 'Cannot record payment against a VOID bill.' });
+      }
+
+      // 2. Validate amount against remaining unpaid balance
+      const remainingCents = bill.totalCents - bill.amountPaidCents;
+      const amountBigInt = BigInt(amountCents);
+
+      if (amountBigInt > remainingCents) {
+        return reply.code(400).send({
+          error: `Payment amount (${amountCents} cents) exceeds remaining balance (${Number(remainingCents)} cents).`,
+        });
+      }
+
+      // 3. Fetch Accounts: 2000 (Accounts Payable) & 1000 (Operating Bank Account)
+      const accounts = await fastify.prisma.account.findMany({
+        where: {
+          organizationId,
+          code: { in: ['2000', '1000'] },
+          isActive: true,
+        },
+      });
+
+      const apAccount = accounts.find((a) => a.code === '2000');
+      const bankAccount = accounts.find((a) => a.code === '1000');
+
+      if (!apAccount || !bankAccount) {
+        return reply.code(500).send({
+          error: 'Required Chart of Accounts entries (1000 Operating Bank Account, 2000 Accounts Payable) are missing.',
+        });
+      }
+
+      // 4. Atomic Transaction: PaymentOut + Bill status/amount update + JournalEntry + JournalLines
+      const result = await fastify.prisma.$transaction(async (tx) => {
+        const newAmountPaid = bill.amountPaidCents + amountBigInt;
+        const newStatus =
+          newAmountPaid === bill.totalCents ? BillStatus.PAID : BillStatus.PARTIALLY_PAID;
+
+        const paymentOut = await tx.paymentOut.create({
+          data: {
+            organizationId,
+            billId: bill.id,
+            paymentDate: new Date(paymentDate),
+            amountCents: amountBigInt,
+            reference: reference ?? null,
+          },
+        });
+
+        const updatedBill = await tx.bill.update({
+          where: { id: bill.id },
+          data: {
+            amountPaidCents: newAmountPaid,
+            status: newStatus,
+          },
+          include: {
+            contact: true,
+            lineItems: true,
+            paymentsOut: true,
+          },
+        });
+
+        // Double-entry GL lines:
+        // - DEBIT Accounts Payable (2000) for amountBigInt (reduces AP liability)
+        // - CREDIT Operating Bank Account (1000) for amountBigInt (reduces cash asset)
+        const journalLinesData = [
+          {
+            organizationId,
+            accountId: apAccount.id,
+            entryType: EntryType.DEBIT,
+            amountCents: amountBigInt,
+          },
+          {
+            organizationId,
+            accountId: bankAccount.id,
+            entryType: EntryType.CREDIT,
+            amountCents: amountBigInt,
+          },
+        ];
+
+        // Invariant check: Debit sum === Credit sum
+        const debitSum = journalLinesData
+          .filter((l) => l.entryType === EntryType.DEBIT)
+          .reduce((sum, l) => sum + l.amountCents, 0n);
+
+        const creditSum = journalLinesData
+          .filter((l) => l.entryType === EntryType.CREDIT)
+          .reduce((sum, l) => sum + l.amountCents, 0n);
+
+        if (debitSum !== creditSum) {
+          throw new Error(
+            `General Ledger imbalance on payment: Debits (${debitSum}) != Credits (${creditSum})`,
+          );
+        }
+
+        const journalEntry = await tx.journalEntry.create({
+          data: {
+            organizationId,
+            description: `Payment for bill from ${bill.contact.name}${bill.reference ? ` (${bill.reference})` : ''}`,
+            referenceType: 'PAYMENT_OUT',
+            referenceId: paymentOut.id,
+            postedAt: new Date(paymentDate),
+            lines: {
+              create: journalLinesData,
+            },
+          },
+          include: {
+            lines: {
+              include: { account: true },
+            },
+          },
+        });
+
+        return { paymentOut, bill: updatedBill, journalEntry };
+      });
+
+      return reply.code(201).send({
+        paymentOut: serializeBill(result.paymentOut),
+        bill: serializeBill(result.bill),
+        journalEntry: serializeBill(result.journalEntry),
+      });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // GET /api/v1/bills/:id/payments — List payments recorded for a bill
+  // -------------------------------------------------------------------------
+  fastify.get(
+    '/api/v1/bills/:id/payments',
+    { preHandler: [requireOrgAuth] },
+    async (request, reply) => {
+      const paramParse = ParamsWithId.safeParse(request.params);
+      if (!paramParse.success) {
+        return reply.code(400).send({ error: 'Invalid bill ID format' });
+      }
+
+      const { id: billId } = paramParse.data;
+      const organizationId = request.user.organizationId!;
+
+      const payments = await fastify.prisma.paymentOut.findMany({
+        where: { billId, organizationId },
+        orderBy: { paymentDate: 'desc' },
+      });
+
+      return reply.code(200).send({ payments: serializeBill(payments) });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // POST /api/v1/payments-out — Top-level alias for recording Payments Out
+  // Allowed roles: ADMIN, ACCOUNTANT, AP_SPECIALIST
+  // -------------------------------------------------------------------------
+  fastify.post(
+    '/api/v1/payments-out',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST),
+      ],
+    },
+    async (request, reply) => {
+      const bodyParse = CreatePaymentOutBody.safeParse(request.body);
+      if (!bodyParse.success) {
+        return reply.code(400).send({
+          error: 'Validation failed',
+          details: bodyParse.error.flatten().fieldErrors,
+        });
+      }
+
+      const { billId, paymentDate, amountCents, reference } = bodyParse.data;
+      const organizationId = request.user.organizationId!;
+
+      const bill = await fastify.prisma.bill.findFirst({
+        where: { id: billId, organizationId },
+        include: { contact: true },
+      });
+
+      if (!bill) {
+        return reply.code(404).send({ error: 'Bill not found' });
+      }
+
+      if (bill.status === BillStatus.PAID) {
+        return reply.code(400).send({ error: 'This bill has already been fully paid.' });
+      }
+
+      if (bill.status === BillStatus.VOID) {
+        return reply.code(400).send({ error: 'Cannot record payment against a VOID bill.' });
+      }
+
+      const remainingCents = bill.totalCents - bill.amountPaidCents;
+      const amountBigInt = BigInt(amountCents);
+
+      if (amountBigInt > remainingCents) {
+        return reply.code(400).send({
+          error: `Payment amount (${amountCents} cents) exceeds remaining balance (${Number(remainingCents)} cents).`,
+        });
+      }
+
+      const accounts = await fastify.prisma.account.findMany({
+        where: {
+          organizationId,
+          code: { in: ['2000', '1000'] },
+          isActive: true,
+        },
+      });
+
+      const apAccount = accounts.find((a) => a.code === '2000');
+      const bankAccount = accounts.find((a) => a.code === '1000');
+
+      if (!apAccount || !bankAccount) {
+        return reply.code(500).send({
+          error: 'Required Chart of Accounts entries (1000 Operating Bank Account, 2000 Accounts Payable) are missing.',
+        });
+      }
+
+      const result = await fastify.prisma.$transaction(async (tx) => {
+        const newAmountPaid = bill.amountPaidCents + amountBigInt;
+        const newStatus =
+          newAmountPaid === bill.totalCents ? BillStatus.PAID : BillStatus.PARTIALLY_PAID;
+
+        const paymentOut = await tx.paymentOut.create({
+          data: {
+            organizationId,
+            billId: bill.id,
+            paymentDate: new Date(paymentDate),
+            amountCents: amountBigInt,
+            reference: reference ?? null,
+          },
+        });
+
+        const updatedBill = await tx.bill.update({
+          where: { id: bill.id },
+          data: {
+            amountPaidCents: newAmountPaid,
+            status: newStatus,
+          },
+          include: {
+            contact: true,
+            lineItems: true,
+            paymentsOut: true,
+          },
+        });
+
+        const journalLinesData = [
+          {
+            organizationId,
+            accountId: apAccount.id,
+            entryType: EntryType.DEBIT,
+            amountCents: amountBigInt,
+          },
+          {
+            organizationId,
+            accountId: bankAccount.id,
+            entryType: EntryType.CREDIT,
+            amountCents: amountBigInt,
+          },
+        ];
+
+        const debitSum = journalLinesData
+          .filter((l) => l.entryType === EntryType.DEBIT)
+          .reduce((sum, l) => sum + l.amountCents, 0n);
+
+        const creditSum = journalLinesData
+          .filter((l) => l.entryType === EntryType.CREDIT)
+          .reduce((sum, l) => sum + l.amountCents, 0n);
+
+        if (debitSum !== creditSum) {
+          throw new Error(
+            `General Ledger imbalance on payment: Debits (${debitSum}) != Credits (${creditSum})`,
+          );
+        }
+
+        const journalEntry = await tx.journalEntry.create({
+          data: {
+            organizationId,
+            description: `Payment for bill from ${bill.contact.name}${bill.reference ? ` (${bill.reference})` : ''}`,
+            referenceType: 'PAYMENT_OUT',
+            referenceId: paymentOut.id,
+            postedAt: new Date(paymentDate),
+            lines: {
+              create: journalLinesData,
+            },
+          },
+          include: {
+            lines: {
+              include: { account: true },
+            },
+          },
+        });
+
+        return { paymentOut, bill: updatedBill, journalEntry };
+      });
+
+      return reply.code(201).send({
+        paymentOut: serializeBill(result.paymentOut),
+        bill: serializeBill(result.bill),
+        journalEntry: serializeBill(result.journalEntry),
       });
     },
   );

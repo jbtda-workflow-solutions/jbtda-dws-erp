@@ -4,6 +4,52 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.9.0] — 2026-11-07 — Phase 5 Payments Out & Phase 6 Customer Invoices (AR) with Automated Ledger Posting
+
+### Added
+- `backend/src/routes/bills.ts`:
+  - `POST /api/v1/bills/:id/payments` & `POST /api/v1/payments-out`: Implemented Payments Out API with General Ledger double-entry posting:
+    - Validates payment date, positive integer amount in cents, and ensures amount does not exceed remaining unpaid balance.
+    - Transitions bill status to `PARTIALLY_PAID` or `PAID`.
+    - Automatically creates a `PaymentOut` record and posts a balanced double-entry `JournalEntry`:
+      - **DEBIT:** `2000 - Accounts Payable` (reduces AP liability)
+      - **CREDIT:** `1000 - Operating Bank Account` (reduces cash asset)
+      - Strictly enforces $\sum \text{Debits} == \sum \text{Credits}$.
+    - Protected by `requireRole(ADMIN, ACCOUNTANT, AP_SPECIALIST)`.
+  - `GET /api/v1/bills/:id/payments`: List payments recorded against a bill.
+- `backend/src/routes/invoices.ts`:
+  - Implemented Accounts Receivable (AR) Invoices API:
+    - `GET /api/v1/invoices`: List organization invoices filterable by status (`DRAFT`, `ISSUED`, `PARTIALLY_PAID`, `PAID`, `VOID`), customer ID, or search string.
+    - `POST /api/v1/invoices`: Create customer invoice in `DRAFT` status with dynamic line items and integer-cent Australian GST calculation (`calculateGST`, `sumGSTResults`). Automatically generates sequential `invoiceNumber` (e.g. `INV-1001`) per organization. Validates contact is `CUSTOMER` or `BOTH`.
+    - `GET /api/v1/invoices/:id`: Fetch invoice details, line items, and associated General Ledger journal entry.
+    - `POST /api/v1/invoices/:id/issue`: Issue draft invoice and post to General Ledger in an atomic transaction:
+      - **DEBIT:** `1200 - Accounts Receivable` (Gross Total amount in cents)
+      - **CREDIT:** `4000 - Sales Revenue` (Subtotal amount in cents)
+      - **CREDIT:** `2100 - GST Collected (Sales)` (GST amount in cents, if $> 0$)
+      - Strictly enforces $\sum \text{Debits} == \sum \text{Credits}$.
+      - Protected by `requireRole(ADMIN, ACCOUNTANT, AR_SPECIALIST)`.
+- `frontend/src/api/client.ts`:
+  - Added `PaymentOut` interface, `billApi.recordPayment`, and `billApi.listPayments`.
+  - Added `InvoiceStatus`, `InvoiceLineItem`, `Invoice`, `CreateInvoiceInput`, and `invoiceApi` (`list`, `get`, `create`, `issue`).
+- `frontend/src/pages/InvoicesPage.tsx`:
+  - Implemented full Accounts Receivable customer invoices UI:
+    - Invoices table with search, status filter tabs, formatted integer AUD amounts (subtotal, GST, total), and status badges.
+    - "New Invoice" modal with customer picker (filtered to `CUSTOMER` and `BOTH`), terms-based due date calculation, dynamic line items (add/remove rows, description, amount, tax treatment), and live subtotal/GST/total breakdown.
+    - Detail inspection modal displaying customer information, line item breakdown, draft issuance banner, and double-entry General Ledger debit/credit balance entries upon issuance.
+    - One-click "Issue Invoice & Post GL" action button for draft invoices.
+- `frontend/src/pages/BillsPage.tsx`:
+  - Added "Record Payment" button and interactive modal allowing users to record outgoing payments against bills with live balance validation.
+  - Added "Payments Recorded" history table in the bill details modal displaying past payments, payment dates, bank references, and amounts.
+
+### Changed
+- `backend/src/server.ts` — Registered `invoiceRoutes` under `/api/v1`.
+- `frontend/src/App.tsx` — Replaced placeholder `/invoices` route with production `InvoicesPage` component.
+- `frontend/src/pages/PlaceholderPages.tsx` — Removed `InvoicesPage` stub (leaving `LedgerPage` for Phase F6).
+- `AGENTS.md` — Updated living directory tree with new routes and page components.
+- `docs/STAGES_ROADMAP.md` — Marked Phase 5, Phase 6, and Phase F5 as completed.
+
+---
+
 ## [0.8.1] — 2026-11-07 — Hardened TypeScript Compiler Settings & Pruned Unused Imports
 
 ### Changed
