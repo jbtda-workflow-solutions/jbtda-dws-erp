@@ -20,8 +20,8 @@ No external file dependencies.
 - [x] Phase 4: Bills API (create with line items, list, get with journal entries, and atomic double-entry ledger posting)
 - [x] Phase 5: Payments Out API with ledger posting (`POST /api/v1/bills/:id/payments`, `GET /api/v1/bills/:id/payments`, `POST /api/v1/payments-out`)
 - [x] Phase 6: Invoices API with automatic ledger posting on issuance (`GET /api/v1/invoices`, `POST /api/v1/invoices`, `GET /api/v1/invoices/:id`, `POST /api/v1/invoices/:id/issue`)
-- [ ] Phase 7: Payments In API with invoice matching logic
-- [ ] Phase 8: General Ledger read API (journal entries + lines)
+- [x] Phase 7: Payments In API with invoice matching logic (`POST /api/v1/invoices/:id/payments`, `GET /api/v1/invoices/:id/payments`, `POST /api/v1/payments-in`)
+- [x] Phase 8: General Ledger read API (`GET /api/v1/ledger`, `GET /api/v1/ledger/accounts`)
 
 ### Frontend Milestones
 
@@ -30,7 +30,7 @@ No external file dependencies.
 - [x] Phase F3: Contacts directory (list with filters, create/edit modal with live ABN validator)
 - [x] Phase F4: Bills module (list with filters, create bill with dynamic line items & live GST computation, view details & journal entry)
 - [x] Phase F5: Invoices module (list with filters, create draft invoice with dynamic line items & live GST computation, view details, issue invoice with GL posting, and Pay Bill modal)
-- [ ] Phase F6: General Ledger view (read-only journal list)
+- [x] Phase F6: General Ledger view (audit trail journal list, filterable by date/account/event, plus trial balance account totals)
 
 ### Acceptance Criteria for Stage 1 Complete
 

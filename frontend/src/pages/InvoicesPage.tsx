@@ -11,6 +11,7 @@ import {
   FileText,
   Send,
   FileSpreadsheet,
+  CreditCard,
 } from 'lucide-react';
 import {
   invoiceApi,
@@ -19,6 +20,7 @@ import {
   type InvoiceStatus,
   type TaxTreatment,
   type Contact,
+  type PaymentIn,
   ApiError,
 } from '@/api/client';
 import { Button } from '@/components/ui/Button';
@@ -54,6 +56,7 @@ export function InvoicesPage() {
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
 
   const fetchInvoices = async () => {
     setLoading(true);
@@ -255,15 +258,28 @@ export function InvoicesPage() {
                       <InvoiceStatusBadge status={inv.status} />
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setSelectedInvoiceId(inv.id)}
-                        className="inline-flex items-center gap-1.5 text-xs py-1 h-7"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>View</span>
-                      </Button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {(inv.status === 'ISSUED' || inv.status === 'PARTIALLY_PAID') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setPaymentInvoice(inv)}
+                            className="inline-flex items-center gap-1 text-xs py-1 h-7 text-forest-800 border-forest-200 hover:bg-forest-50"
+                          >
+                            <CreditCard className="w-3.5 h-3.5 text-forest-700" />
+                            <span>Record Payment</span>
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedInvoiceId(inv.id)}
+                          className="inline-flex items-center gap-1.5 text-xs py-1 h-7"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View</span>
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -288,6 +304,23 @@ export function InvoicesPage() {
           invoiceId={selectedInvoiceId}
           onClose={() => setSelectedInvoiceId(null)}
           onInvoiceUpdated={handleInvoiceUpdated}
+          onRecordPayment={(inv) => {
+            setSelectedInvoiceId(null);
+            setPaymentInvoice(inv);
+          }}
+        />
+      )}
+
+      {/* Record Payment Modal */}
+      {paymentInvoice && (
+        <RecordPaymentInModal
+          open={Boolean(paymentInvoice)}
+          onClose={() => setPaymentInvoice(null)}
+          invoice={paymentInvoice}
+          onPaymentRecorded={(updatedInv) => {
+            handleInvoiceUpdated(updatedInv);
+            setPaymentInvoice(null);
+          }}
         />
       )}
     </div>
@@ -744,15 +777,18 @@ interface InvoiceDetailModalProps {
   invoiceId: string;
   onClose: () => void;
   onInvoiceUpdated?: (invoice: Invoice) => void;
+  onRecordPayment?: (invoice: Invoice) => void;
 }
 
 function InvoiceDetailModal({
   invoiceId,
   onClose,
   onInvoiceUpdated,
+  onRecordPayment,
 }: InvoiceDetailModalProps) {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [journalEntry, setJournalEntry] = useState<any | null>(null);
+  const [payments, setPayments] = useState<PaymentIn[]>([]);
   const [loading, setLoading] = useState(true);
   const [issuing, setIssuing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -762,9 +798,13 @@ function InvoiceDetailModal({
       setLoading(true);
       setError(null);
       try {
-        const res = await invoiceApi.get(invoiceId);
-        setInvoice(res.invoice);
-        setJournalEntry(res.journalEntry);
+        const [invRes, pmtRes] = await Promise.all([
+          invoiceApi.get(invoiceId),
+          invoiceApi.getPayments(invoiceId).catch(() => ({ payments: [] })),
+        ]);
+        setInvoice(invRes.invoice);
+        setJournalEntry(invRes.journalEntry);
+        setPayments(pmtRes.payments);
       } catch (err) {
         if (err instanceof ApiError) setError(err.message);
         else setError('Failed to load invoice details.');
@@ -793,13 +833,15 @@ function InvoiceDetailModal({
   };
 
   const isDraft = invoice?.status === 'DRAFT';
+  const remainingDueCents = invoice ? invoice.totalCents - invoice.amountPaidCents : 0;
+  const canPay = invoice?.status === 'ISSUED' || invoice?.status === 'PARTIALLY_PAID';
 
   return (
     <Modal
       open={Boolean(invoiceId)}
       onClose={onClose}
       title={`Invoice ${invoice?.invoiceNumber ?? ''}`}
-      description="View invoice line items, issuance status, and the double-entry General Ledger record."
+      description="View invoice line items, customer payment status, and the double-entry General Ledger record."
       maxWidth="max-w-2xl"
     >
       {loading ? (
@@ -838,7 +880,7 @@ function InvoiceDetailModal({
           </div>
 
           {/* Financial Totals */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
             <div>
               <p className="text-slate-400">Subtotal</p>
               <p className="font-mono font-medium text-slate-900 mt-0.5">
@@ -858,10 +900,16 @@ function InvoiceDetailModal({
               </p>
             </div>
             <div>
-              <p className="text-slate-400">Status</p>
-              <div className="mt-0.5">
-                <InvoiceStatusBadge status={invoice.status} />
-              </div>
+              <p className="text-slate-400">Paid to Date</p>
+              <p className="font-mono font-medium text-emerald-700 mt-0.5">
+                {formatCents(invoice.amountPaidCents)}
+              </p>
+            </div>
+            <div>
+              <p className="text-slate-400">Balance Due</p>
+              <p className={`font-mono font-bold mt-0.5 ${remainingDueCents > 0 ? 'text-amber-800' : 'text-slate-900'}`}>
+                {formatCents(remainingDueCents)}
+              </p>
             </div>
           </div>
 
@@ -901,6 +949,42 @@ function InvoiceDetailModal({
               </table>
             </div>
           </div>
+
+          {/* Payments Received History */}
+          {payments.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-1.5 font-medium text-slate-900">
+                <CreditCard className="w-3.5 h-3.5 text-forest-700" />
+                <span>Customer Payments Received ({payments.length})</span>
+              </div>
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                    <tr>
+                      <th className="py-2 px-3">Payment Date</th>
+                      <th className="py-2 px-3">Reference / Transaction</th>
+                      <th className="py-2 px-3 text-right">Amount Received</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-mono">
+                    {payments.map((p) => (
+                      <tr key={p.id}>
+                        <td className="py-2 px-3 font-sans text-slate-800">
+                          {formatDate(p.paymentDate)}
+                        </td>
+                        <td className="py-2 px-3 font-sans text-slate-600">
+                          {p.reference || '—'}
+                        </td>
+                        <td className="py-2 px-3 text-right font-medium text-emerald-700">
+                          {formatCents(p.amountCents)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Draft notice or Double-Entry GL record */}
           {isDraft ? (
@@ -956,19 +1040,157 @@ function InvoiceDetailModal({
             <Button variant="outline" onClick={onClose} disabled={issuing}>
               Close
             </Button>
-            {isDraft && (
-              <Button
-                onClick={handleIssueInvoice}
-                disabled={issuing}
-                className="inline-flex items-center gap-1.5"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>{issuing ? 'Issuing…' : 'Issue Invoice & Post GL'}</span>
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {canPay && onRecordPayment && (
+                <Button
+                  variant="outline"
+                  onClick={() => onRecordPayment(invoice)}
+                  className="inline-flex items-center gap-1.5 text-forest-800 border-forest-200 hover:bg-forest-50"
+                >
+                  <CreditCard className="w-3.5 h-3.5 text-forest-700" />
+                  <span>Record Payment</span>
+                </Button>
+              )}
+              {isDraft && (
+                <Button
+                  onClick={handleIssueInvoice}
+                  disabled={issuing}
+                  className="inline-flex items-center gap-1.5"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{issuing ? 'Issuing…' : 'Issue Invoice & Post GL'}</span>
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Record Customer Payment In Modal
+// ---------------------------------------------------------------------------
+
+interface RecordPaymentInModalProps {
+  open: boolean;
+  onClose: () => void;
+  invoice: Invoice;
+  onPaymentRecorded: (invoice: Invoice) => void;
+}
+
+function RecordPaymentInModal({
+  open,
+  onClose,
+  invoice,
+  onPaymentRecorded,
+}: RecordPaymentInModalProps) {
+  const remainingCents = invoice.totalCents - invoice.amountPaidCents;
+  const [paymentDate, setPaymentDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [amount, setAmount] = useState((remainingCents / 100).toFixed(2));
+  const [reference, setReference] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    const parsedAmountCents = Math.round(parseFloat(amount) * 100);
+    if (isNaN(parsedAmountCents) || parsedAmountCents <= 0) {
+      setError('Please enter a valid positive payment amount.');
+      return;
+    }
+
+    if (parsedAmountCents > remainingCents) {
+      setError(
+        `Payment amount cannot exceed remaining balance of ${formatCents(remainingCents)}.`,
+      );
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await invoiceApi.recordPayment(invoice.id, {
+        paymentDate,
+        amountCents: parsedAmountCents,
+        reference: reference.trim() || null,
+      });
+      onPaymentRecorded(res.invoice);
+    } catch (err) {
+      if (err instanceof ApiError) setError(err.message);
+      else setError('Failed to record customer payment.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Record Customer Payment"
+      description={`Record incoming payment from ${invoice.contact?.name} for invoice ${invoice.invoiceNumber}.`}
+      maxWidth="max-w-md"
+    >
+      <form onSubmit={handleSubmit} className="space-y-4 mt-3">
+        {error && (
+          <div className="p-3 rounded-lg bg-red-50 text-red-700 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 flex items-center justify-between text-xs">
+          <span className="text-slate-500">Remaining Balance:</span>
+          <span className="font-mono font-bold text-forest-950">
+            {formatCents(remainingCents)}
+          </span>
+        </div>
+
+        <Input
+          label="Payment Date"
+          type="date"
+          value={paymentDate}
+          onChange={(e) => setPaymentDate(e.target.value)}
+          required
+        />
+
+        <Input
+          label="Amount Received ($ AUD)"
+          type="number"
+          step="0.01"
+          min="0.01"
+          max={(remainingCents / 100).toFixed(2)}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+        />
+
+        <Input
+          label="Bank Transaction Reference (Optional)"
+          placeholder="e.g. Osko / Direct Deposit, Ref #9812"
+          value={reference}
+          onChange={(e) => setReference(e.target.value)}
+        />
+
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? 'Recording…' : 'Record Payment & Post GL'}
+          </Button>
+        </div>
+      </form>
     </Modal>
   );
 }

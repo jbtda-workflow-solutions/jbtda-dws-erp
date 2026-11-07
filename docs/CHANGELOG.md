@@ -4,6 +4,48 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.10.0] — 2026-11-07 — Stage 1 Complete: Phase 7 Payments In, Phase 8 General Ledger API & Phase F6 General Ledger UI
+
+### Added
+- `backend/src/routes/invoices.ts`:
+  - `POST /api/v1/invoices/:id/payments`: Implemented Payments In API for receiving customer payments against an invoice:
+    - Validates positive integer cents and ensures amount does not exceed remaining invoice balance.
+    - Transitions invoice status to `PARTIALLY_PAID` or `PAID`.
+    - Automatically creates a `PaymentIn` record and posts a balanced double-entry `JournalEntry`:
+      - **DEBIT:** `1000 - Operating Bank Account` (increases cash asset)
+      - **CREDIT:** `1200 - Accounts Receivable` (reduces customer AR asset)
+      - Invariant: $\sum \text{Debits} == \sum \text{Credits}$.
+    - Protected by `requireRole(ADMIN, ACCOUNTANT, AR_SPECIALIST)`.
+  - `GET /api/v1/invoices/:id/payments`: List payments received for an invoice.
+  - `POST /api/v1/payments-in`: Top-level endpoint for recording customer payments. Enforces contact `requiresInvoiceForPayment` policy (rejects unallocated payments if contact requires invoice matching).
+- `backend/src/routes/ledger.ts`:
+  - `GET /api/v1/ledger`: Filterable, paginated double-entry audit trail query:
+    - Scoped strictly to `request.user.organizationId` for tenant isolation.
+    - Supports filtering by date range (`startDate`, `endDate`), event type (`BILL`, `PAYMENT_OUT`, `INVOICE`, `PAYMENT_IN`), account (`accountId`), and description search.
+    - Includes nested debit and credit lines with account code, name, and classification.
+    - Computes global debit and credit aggregates and asserts ledger balancing invariant.
+  - `GET /api/v1/ledger/accounts`: Returns Chart of Accounts for the organization with aggregated debits, credits, and net balance calculated according to normal balance convention (DEBIT vs. CREDIT).
+- `backend/src/server.ts`:
+  - Registered `ledgerRoutes` plugin.
+- `frontend/src/api/client.ts`:
+  - Added `PaymentIn`, `RecordPaymentInInput`, `paymentInApi.create`, `invoiceApi.recordPayment`, and `invoiceApi.getPayments`.
+  - Added `JournalEntry`, `JournalLine`, `AccountWithBalance`, `LedgerTotals`, and `ledgerApi` (`list`, `accounts`).
+- `frontend/src/pages/InvoicesPage.tsx`:
+  - Added "Record Payment" action button in table rows and detail modal for issued/partially paid invoices.
+  - Added interactive `RecordPaymentInModal` with live remaining balance calculation and payment date/reference inputs.
+  - Added "Payments Received" history table inside the invoice detail inspection modal.
+- `frontend/src/pages/LedgerPage.tsx`:
+  - Implemented full General Ledger and Trial Balance view (Phase F6):
+    - Real-time KPI cards: Total Journal Entries, Total Debits, Total Credits, and Ledger Health badge confirming $\sum \text{Debits} == \sum \text{Credits}$.
+    - "Journal Entries" tab: Filterable audit log with date range, event type filter, account selector, and search. Each entry displays expandable double-entry lines with account codes and balanced validation status.
+    - "Trial Balance" tab: Complete Chart of Accounts summary showing account code, name, category, normal balance, debit totals, credit totals, net balances, and $0.00 difference balancing footer.
+- `frontend/src/App.tsx`:
+  - Replaced `PlaceholderPages` with `LedgerPage` at `/ledger`.
+- `frontend/src/pages/PlaceholderPages.tsx`:
+  - Removed as all Stage 1 routes are now fully implemented.
+
+---
+
 ## [0.9.0] — 2026-11-07 — Phase 5 Payments Out & Phase 6 Customer Invoices (AR) with Automated Ledger Posting
 
 ### Added

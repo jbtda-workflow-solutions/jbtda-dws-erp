@@ -29,6 +29,7 @@ import organizationRoutes from './routes/organizations.js';
 import contactRoutes from './routes/contacts.js';
 import billRoutes from './routes/bills.js';
 import invoiceRoutes from './routes/invoices.js';
+import ledgerRoutes from './routes/ledger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -134,6 +135,7 @@ async function buildServer() {
   await fastify.register(contactRoutes);
   await fastify.register(billRoutes);
   await fastify.register(invoiceRoutes);
+  await fastify.register(ledgerRoutes);
 
   // -------------------------------------------------------------------------
   // Health check (unauthenticated — used by Cloud Run)

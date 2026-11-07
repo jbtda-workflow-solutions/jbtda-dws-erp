@@ -7,7 +7,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { ContactsPage } from '@/pages/ContactsPage';
 import { BillsPage } from '@/pages/BillsPage';
 import { InvoicesPage } from '@/pages/InvoicesPage';
-import { LedgerPage } from '@/pages/PlaceholderPages';
+import { LedgerPage } from '@/pages/LedgerPage';
 
 // ---------------------------------------------------------------------------
 // Root guard — renders the correct view based on auth status

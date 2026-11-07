@@ -126,7 +126,8 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   ├── auth.ts        # POST /api/v1/auth/google, GET /api/v1/auth/me, DELETE /logout
 │       │   ├── bills.ts       # GET /api/v1/bills, POST, GET /:id, POST /:id/payments (AP & GL posting)
 │       │   ├── contacts.ts    # GET /api/v1/contacts, POST, GET /:id, PATCH /:id
-│       │   ├── invoices.ts    # GET /api/v1/invoices, POST, GET /:id, POST /:id/issue (AR & GL posting)
+│       │   ├── invoices.ts    # GET /api/v1/invoices, POST, GET /:id, POST /:id/issue, POST /:id/payments (AR & GL posting)
+│       │   ├── ledger.ts      # GET /api/v1/ledger (journal entries audit log), GET /api/v1/ledger/accounts
 │       │   └── organizations.ts # POST /api/v1/organizations (ABN check & CoA seeding)
 │       └── server.ts          # Fastify server entry point, static serving, plugins
 ├── docs/                      # Technical Documentation
@@ -168,8 +169,8 @@ The application relies strictly on Google Cloud Run container configuration (zer
             ├── BillsPage.tsx         # Accounts Payable bills (list, line items, payments out, GL modal)
             ├── ContactsPage.tsx      # Contacts directory (list, filter, create, edit modal)
             ├── DashboardPage.tsx     # Landing dashboard page
-            ├── InvoicesPage.tsx      # Customer Invoices (list, draft, issue with GL posting, line items)
+            ├── InvoicesPage.tsx      # Customer Invoices (list, draft, issue with GL posting, payments in)
+            ├── LedgerPage.tsx        # General Ledger audit trail & Trial Balance account totals
             ├── LoginPage.tsx         # Google sign-in landing page
-            ├── OnboardingModal.tsx   # First-time organization creation modal
-            └── PlaceholderPages.tsx  # Route placeholder components (Ledger)
+            └── OnboardingModal.tsx   # First-time organization creation modal
 ```

@@ -324,5 +324,125 @@ export const invoiceApi = {
 
   issue: (id: string) =>
     request<{ invoice: Invoice; journalEntry?: any }>('POST', `/invoices/${id}/issue`),
+
+  recordPayment: (id: string, data: { paymentDate: string; amountCents: number; reference?: string | null }) =>
+    request<{ paymentIn: PaymentIn; invoice: Invoice; journalEntry: any }>('POST', `/invoices/${id}/payments`, data),
+
+  getPayments: (id: string) =>
+    request<{ payments: PaymentIn[] }>('GET', `/invoices/${id}/payments`),
+};
+
+// ---------------------------------------------------------------------------
+// Payments In
+// ---------------------------------------------------------------------------
+
+export interface PaymentIn {
+  id: string;
+  organizationId: string;
+  invoiceId: string | null;
+  contactId: string;
+  paymentDate: string;
+  amountCents: number;
+  reference: string | null;
+  createdAt: string;
+}
+
+export interface RecordPaymentInInput {
+  contactId: string;
+  invoiceId?: string | null;
+  paymentDate: string;
+  amountCents: number;
+  reference?: string | null;
+}
+
+export const paymentInApi = {
+  create: (data: RecordPaymentInInput) =>
+    request<{ paymentIn: PaymentIn; invoice?: Invoice; journalEntry: any }>('POST', '/payments-in', data),
+};
+
+// ---------------------------------------------------------------------------
+// General Ledger
+// ---------------------------------------------------------------------------
+
+export type EntryType = 'DEBIT' | 'CREDIT';
+export type NormalBalance = 'DEBIT' | 'CREDIT';
+export type AccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE';
+
+export interface JournalLineAccount {
+  id: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  normalBalance: NormalBalance;
+}
+
+export interface JournalLine {
+  id: string;
+  journalEntryId: string;
+  organizationId: string;
+  accountId: string;
+  entryType: EntryType;
+  amountCents: number;
+  account: JournalLineAccount;
+}
+
+export interface JournalEntry {
+  id: string;
+  organizationId: string;
+  description: string;
+  referenceType: string;
+  referenceId: string;
+  postedAt: string;
+  lines: JournalLine[];
+}
+
+export interface LedgerTotals {
+  totalDebitsCents: number;
+  totalCreditsCents: number;
+  isBalanced: boolean;
+}
+
+export interface AccountWithBalance {
+  id: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  normalBalance: NormalBalance;
+  description: string | null;
+  isActive: boolean;
+  debitsCents: number;
+  creditsCents: number;
+  netBalanceCents: number;
+  lineCount: number;
+}
+
+export const ledgerApi = {
+  list: (params?: {
+    startDate?: string;
+    endDate?: string;
+    accountId?: string;
+    referenceType?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.accountId) query.set('accountId', params.accountId);
+    if (params?.referenceType) query.set('referenceType', params.referenceType);
+    if (params?.search) query.set('search', params.search);
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+    const qs = query.toString();
+    return request<{
+      entries: JournalEntry[];
+      totalCount: number;
+      totals: LedgerTotals;
+    }>('GET', `/ledger${qs ? `?${qs}` : ''}`);
+  },
+
+  accounts: () =>
+    request<{ accounts: AccountWithBalance[] }>('GET', '/ledger/accounts'),
 };
 

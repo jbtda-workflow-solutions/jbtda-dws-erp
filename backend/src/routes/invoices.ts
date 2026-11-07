@@ -43,6 +43,20 @@ const ParamsWithId = z.object({
   id: z.string().uuid(),
 });
 
+const CreatePaymentInBody = z.object({
+  paymentDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  amountCents: z.number().int().positive(),
+  reference: z.string().trim().max(100).nullable().optional(),
+});
+
+const StandalonePaymentInBody = z.object({
+  contactId: z.string().uuid(),
+  invoiceId: z.string().uuid().nullable().optional(),
+  paymentDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  amountCents: z.number().int().positive(),
+  reference: z.string().trim().max(100).nullable().optional(),
+});
+
 /**
  * Helper to serialize BigInt fields to numbers in JSON responses
  */
@@ -455,6 +469,416 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(200).send({
         invoice: serializeInvoice(result.invoice),
         journalEntry: result.journalEntry ? serializeInvoice(result.journalEntry) : null,
+      });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // POST /api/v1/invoices/:id/payments — Record customer payment received against invoice
+  // Allowed roles: ADMIN, ACCOUNTANT, AR_SPECIALIST
+  // -------------------------------------------------------------------------
+  fastify.post(
+    '/api/v1/invoices/:id/payments',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AR_SPECIALIST),
+      ],
+    },
+    async (request, reply) => {
+      const paramParse = ParamsWithId.safeParse(request.params);
+      if (!paramParse.success) {
+        return reply.code(400).send({ error: 'Invalid invoice ID format' });
+      }
+
+      const bodyParse = CreatePaymentInBody.safeParse(request.body);
+      if (!bodyParse.success) {
+        return reply.code(400).send({
+          error: 'Validation failed',
+          details: bodyParse.error.flatten().fieldErrors,
+        });
+      }
+
+      const { id: invoiceId } = paramParse.data;
+      const { paymentDate, amountCents, reference } = bodyParse.data;
+      const organizationId = request.user.organizationId!;
+
+      const invoice = await fastify.prisma.invoice.findFirst({
+        where: { id: invoiceId, organizationId },
+        include: { contact: true },
+      });
+
+      if (!invoice) {
+        return reply.code(404).send({ error: 'Invoice not found' });
+      }
+
+      if (invoice.status === InvoiceStatus.DRAFT) {
+        return reply.code(400).send({
+          error: 'Cannot record payment against a DRAFT invoice. Issue the invoice first.',
+        });
+      }
+
+      if (invoice.status === InvoiceStatus.PAID) {
+        return reply.code(400).send({
+          error: 'This invoice has already been fully paid.',
+        });
+      }
+
+      if (invoice.status === InvoiceStatus.VOID) {
+        return reply.code(400).send({
+          error: 'Cannot record payment against a VOID invoice.',
+        });
+      }
+
+      const remainingCents = invoice.totalCents - invoice.amountPaidCents;
+      const amountBigInt = BigInt(amountCents);
+
+      if (amountBigInt > remainingCents) {
+        return reply.code(400).send({
+          error: `Payment amount (${amountCents} cents) exceeds remaining balance (${Number(remainingCents)} cents).`,
+        });
+      }
+
+      // Check chart of accounts: 1000 (Operating Bank Account), 1200 (Accounts Receivable)
+      const accounts = await fastify.prisma.account.findMany({
+        where: {
+          organizationId,
+          code: { in: ['1000', '1200'] },
+          isActive: true,
+        },
+      });
+
+      const bankAccount = accounts.find((a) => a.code === '1000');
+      const arAccount = accounts.find((a) => a.code === '1200');
+
+      if (!bankAccount || !arAccount) {
+        return reply.code(500).send({
+          error:
+            'Required Chart of Accounts entries (1000 Operating Bank Account, 1200 Accounts Receivable) are missing.',
+        });
+      }
+
+      // Execute atomic transaction: PaymentIn + Invoice update + JournalEntry
+      const result = await fastify.prisma.$transaction(async (tx) => {
+        const newAmountPaid = invoice.amountPaidCents + amountBigInt;
+        const newStatus =
+          newAmountPaid === invoice.totalCents ? InvoiceStatus.PAID : InvoiceStatus.PARTIALLY_PAID;
+
+        const paymentIn = await tx.paymentIn.create({
+          data: {
+            organizationId,
+            invoiceId: invoice.id,
+            contactId: invoice.contactId,
+            paymentDate: new Date(paymentDate),
+            amountCents: amountBigInt,
+            reference: reference ?? null,
+          },
+        });
+
+        const updatedInvoice = await tx.invoice.update({
+          where: { id: invoice.id },
+          data: {
+            amountPaidCents: newAmountPaid,
+            status: newStatus,
+          },
+          include: {
+            contact: true,
+            lineItems: true,
+          },
+        });
+
+        // Double-entry General Ledger posting:
+        // DEBIT Operating Bank Account (1000) for payment amount
+        // CREDIT Accounts Receivable (1200) for payment amount
+        const journalLinesData = [
+          {
+            organizationId,
+            accountId: bankAccount.id,
+            entryType: EntryType.DEBIT,
+            amountCents: amountBigInt,
+          },
+          {
+            organizationId,
+            accountId: arAccount.id,
+            entryType: EntryType.CREDIT,
+            amountCents: amountBigInt,
+          },
+        ];
+
+        const debitSum = journalLinesData
+          .filter((l) => l.entryType === EntryType.DEBIT)
+          .reduce((sum, l) => sum + l.amountCents, 0n);
+
+        const creditSum = journalLinesData
+          .filter((l) => l.entryType === EntryType.CREDIT)
+          .reduce((sum, l) => sum + l.amountCents, 0n);
+
+        if (debitSum !== creditSum) {
+          throw new Error(
+            `General Ledger imbalance on customer payment: Debits (${debitSum}) != Credits (${creditSum})`,
+          );
+        }
+
+        const journalEntry = await tx.journalEntry.create({
+          data: {
+            organizationId,
+            description: `Payment received for invoice ${invoice.invoiceNumber} from ${invoice.contact.name}`,
+            referenceType: 'PAYMENT_IN',
+            referenceId: paymentIn.id,
+            postedAt: new Date(paymentDate),
+            lines: {
+              create: journalLinesData,
+            },
+          },
+          include: {
+            lines: {
+              include: { account: true },
+            },
+          },
+        });
+
+        return { paymentIn, invoice: updatedInvoice, journalEntry };
+      });
+
+      return reply.code(201).send({
+        paymentIn: serializeInvoice(result.paymentIn),
+        invoice: serializeInvoice(result.invoice),
+        journalEntry: serializeInvoice(result.journalEntry),
+      });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // GET /api/v1/invoices/:id/payments — List payments received for an invoice
+  // -------------------------------------------------------------------------
+  fastify.get(
+    '/api/v1/invoices/:id/payments',
+    { preHandler: [requireOrgAuth] },
+    async (request, reply) => {
+      const paramParse = ParamsWithId.safeParse(request.params);
+      if (!paramParse.success) {
+        return reply.code(400).send({ error: 'Invalid invoice ID format' });
+      }
+
+      const { id: invoiceId } = paramParse.data;
+      const organizationId = request.user.organizationId!;
+
+      const payments = await fastify.prisma.paymentIn.findMany({
+        where: { invoiceId, organizationId },
+        orderBy: { paymentDate: 'desc' },
+      });
+
+      return reply.code(200).send({ payments: serializeInvoice(payments) });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // POST /api/v1/payments-in — Top-level alias for recording Payments In
+  // Enforces contact.requiresInvoiceForPayment policy.
+  // Allowed roles: ADMIN, ACCOUNTANT, AR_SPECIALIST
+  // -------------------------------------------------------------------------
+  fastify.post(
+    '/api/v1/payments-in',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AR_SPECIALIST),
+      ],
+    },
+    async (request, reply) => {
+      const bodyParse = StandalonePaymentInBody.safeParse(request.body);
+      if (!bodyParse.success) {
+        return reply.code(400).send({
+          error: 'Validation failed',
+          details: bodyParse.error.flatten().fieldErrors,
+        });
+      }
+
+      const { contactId, invoiceId, paymentDate, amountCents, reference } = bodyParse.data;
+      const organizationId = request.user.organizationId!;
+
+      const contact = await fastify.prisma.contact.findFirst({
+        where: { id: contactId, organizationId },
+      });
+
+      if (!contact) {
+        return reply.code(404).send({ error: 'Contact not found' });
+      }
+
+      // Policy check: If requiresInvoiceForPayment is true, invoiceId MUST be supplied
+      if (contact.requiresInvoiceForPayment && !invoiceId) {
+        return reply.code(400).send({
+          error:
+            'Contact policy requires incoming payments to be matched against an issued invoice (requiresInvoiceForPayment is true).',
+        });
+      }
+
+      const amountBigInt = BigInt(amountCents);
+
+      const accounts = await fastify.prisma.account.findMany({
+        where: {
+          organizationId,
+          code: { in: ['1000', '1200'] },
+          isActive: true,
+        },
+      });
+
+      const bankAccount = accounts.find((a) => a.code === '1000');
+      const arAccount = accounts.find((a) => a.code === '1200');
+
+      if (!bankAccount || !arAccount) {
+        return reply.code(500).send({
+          error:
+            'Required Chart of Accounts entries (1000 Operating Bank Account, 1200 Accounts Receivable) are missing.',
+        });
+      }
+
+      if (invoiceId) {
+        const invoice = await fastify.prisma.invoice.findFirst({
+          where: { id: invoiceId, organizationId, contactId },
+          include: { contact: true },
+        });
+
+        if (!invoice) {
+          return reply.code(404).send({ error: 'Invoice not found for this contact' });
+        }
+
+        if (invoice.status === InvoiceStatus.DRAFT) {
+          return reply.code(400).send({ error: 'Cannot record payment against a DRAFT invoice.' });
+        }
+
+        if (invoice.status === InvoiceStatus.PAID) {
+          return reply.code(400).send({ error: 'This invoice has already been fully paid.' });
+        }
+
+        if (invoice.status === InvoiceStatus.VOID) {
+          return reply.code(400).send({ error: 'Cannot record payment against a VOID invoice.' });
+        }
+
+        const remainingCents = invoice.totalCents - invoice.amountPaidCents;
+        if (amountBigInt > remainingCents) {
+          return reply.code(400).send({
+            error: `Payment amount (${amountCents} cents) exceeds remaining balance (${Number(remainingCents)} cents).`,
+          });
+        }
+
+        const result = await fastify.prisma.$transaction(async (tx) => {
+          const newAmountPaid = invoice.amountPaidCents + amountBigInt;
+          const newStatus =
+            newAmountPaid === invoice.totalCents ? InvoiceStatus.PAID : InvoiceStatus.PARTIALLY_PAID;
+
+          const paymentIn = await tx.paymentIn.create({
+            data: {
+              organizationId,
+              invoiceId: invoice.id,
+              contactId: contact.id,
+              paymentDate: new Date(paymentDate),
+              amountCents: amountBigInt,
+              reference: reference ?? null,
+            },
+          });
+
+          const updatedInvoice = await tx.invoice.update({
+            where: { id: invoice.id },
+            data: {
+              amountPaidCents: newAmountPaid,
+              status: newStatus,
+            },
+          });
+
+          const journalLinesData = [
+            {
+              organizationId,
+              accountId: bankAccount.id,
+              entryType: EntryType.DEBIT,
+              amountCents: amountBigInt,
+            },
+            {
+              organizationId,
+              accountId: arAccount.id,
+              entryType: EntryType.CREDIT,
+              amountCents: amountBigInt,
+            },
+          ];
+
+          const journalEntry = await tx.journalEntry.create({
+            data: {
+              organizationId,
+              description: `Payment received for invoice ${invoice.invoiceNumber} from ${contact.name}`,
+              referenceType: 'PAYMENT_IN',
+              referenceId: paymentIn.id,
+              postedAt: new Date(paymentDate),
+              lines: {
+                create: journalLinesData,
+              },
+            },
+            include: {
+              lines: {
+                include: { account: true },
+              },
+            },
+          });
+
+          return { paymentIn, invoice: updatedInvoice, journalEntry };
+        });
+
+        return reply.code(201).send({
+          paymentIn: serializeInvoice(result.paymentIn),
+          invoice: serializeInvoice(result.invoice),
+          journalEntry: serializeInvoice(result.journalEntry),
+        });
+      }
+
+      // Standalone payment in (customer deposit without specific invoice)
+      const result = await fastify.prisma.$transaction(async (tx) => {
+        const paymentIn = await tx.paymentIn.create({
+          data: {
+            organizationId,
+            invoiceId: null,
+            contactId: contact.id,
+            paymentDate: new Date(paymentDate),
+            amountCents: amountBigInt,
+            reference: reference ?? null,
+          },
+        });
+
+        const journalLinesData = [
+          {
+            organizationId,
+            accountId: bankAccount.id,
+            entryType: EntryType.DEBIT,
+            amountCents: amountBigInt,
+          },
+          {
+            organizationId,
+            accountId: arAccount.id,
+            entryType: EntryType.CREDIT,
+            amountCents: amountBigInt,
+          },
+        ];
+
+        const journalEntry = await tx.journalEntry.create({
+          data: {
+            organizationId,
+            description: `Unallocated payment received from ${contact.name}`,
+            referenceType: 'PAYMENT_IN',
+            referenceId: paymentIn.id,
+            postedAt: new Date(paymentDate),
+            lines: {
+              create: journalLinesData,
+            },
+          },
+          include: {
+            lines: {
+              include: { account: true },
+            },
+          },
+        });
+
+        return { paymentIn, journalEntry };
+      });
+
+      return reply.code(201).send({
+        paymentIn: serializeInvoice(result.paymentIn),
+        journalEntry: serializeInvoice(result.journalEntry),
       });
     },
   );
