@@ -33,11 +33,23 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env['PORT'] ?? 8080);
 const HOST = process.env['HOST'] ?? '0.0.0.0';
 
-// Resolve frontend static directory (in container: /app/frontend/dist)
-const frontendDistPath = process.env['FRONTEND_DIST_PATH'] ??
-  (fs.existsSync(path.resolve(__dirname, '../../frontend/dist'))
-    ? path.resolve(__dirname, '../../frontend/dist')
-    : path.resolve(process.cwd(), '../frontend/dist'));
+// Resolve frontend static directory across container and local layouts
+function resolveFrontendDistPath(): string | null {
+  const candidates = [
+    process.env['FRONTEND_DIST_PATH'],
+    '/app/frontend/dist',
+    path.resolve(__dirname, '../../frontend/dist'),
+    path.resolve(process.cwd(), '../frontend/dist'),
+    path.resolve(process.cwd(), 'frontend/dist'),
+  ].filter((p): p is string => Boolean(p));
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate) && fs.existsSync(path.join(candidate, 'index.html'))) {
+      return candidate;
+    }
+  }
+  return null;
+}
 
 async function buildServer() {
   const isProduction = process.env['NODE_ENV'] === 'production';
@@ -122,12 +134,20 @@ async function buildServer() {
   // -------------------------------------------------------------------------
   // Static React SPA serving & SPA fallback handler
   // -------------------------------------------------------------------------
-  if (fs.existsSync(frontendDistPath)) {
+  const resolvedDistPath = resolveFrontendDistPath();
+  if (resolvedDistPath) {
+    fastify.log.info(`[JBTDA-DWS-ERP] Serving frontend SPA from: ${resolvedDistPath}`);
     await fastify.register(fastifyStatic, {
-      root: frontendDistPath,
+      root: resolvedDistPath,
       prefix: '/',
     });
 
+    // Explicit root handler
+    fastify.get('/', async (_request, reply) => {
+      return reply.sendFile('index.html');
+    });
+
+    // Client-side routing fallback handler
     fastify.setNotFoundHandler((request, reply) => {
       // If request was meant for an API route, return standard 404 JSON
       if (request.url.startsWith('/api')) {
@@ -141,7 +161,23 @@ async function buildServer() {
       return reply.sendFile('index.html');
     });
   } else {
-    fastify.log.warn(`Frontend static assets not found at ${frontendDistPath}. Serving API routes only.`);
+    fastify.log.warn('[JBTDA-DWS-ERP] Frontend static assets (index.html) not found. Serving API routes only.');
+    fastify.get('/', async (_request, reply) => {
+      return reply.type('text/html').send(`
+        <!doctype html>
+        <html>
+          <head><title>JBTDA-DWS ERP — API Status</title></head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 2.5rem; max-width: 600px; margin: auto;">
+            <h2 style="color: #1e293b;">JBTDA-DWS ERP API is running</h2>
+            <p style="color: #64748b;">The Fastify backend API is active, but the compiled frontend SPA assets were not located in this container image.</p>
+            <ul>
+              <li><strong>Health Check:</strong> <a href="/healthz">/healthz</a></li>
+              <li><strong>Auth Config:</strong> <a href="/api/v1/auth/config">/api/v1/auth/config</a></li>
+            </ul>
+          </body>
+        </html>
+      `);
+    });
   }
 
   return fastify;

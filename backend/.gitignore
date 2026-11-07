@@ -12,7 +12,7 @@ dist/
 .env.*.local
 
 # Prisma
-prisma/migrations/**/migration.sql
+# migrations should be tracked in version control
 
 # Logs
 *.log

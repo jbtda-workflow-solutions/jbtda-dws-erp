@@ -51,6 +51,7 @@ RUN apk add --no-cache openssl
 ENV NODE_ENV=production
 ENV PORT=8080
 ENV HOST=0.0.0.0
+ENV FRONTEND_DIST_PATH=/app/frontend/dist
 
 # Run as non-root user for security
 USER node

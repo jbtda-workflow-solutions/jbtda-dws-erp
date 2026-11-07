@@ -64,6 +64,30 @@ by reading:
 | Hosting | GCP Cloud Run (Single Unified Container serving API + SPA) |
 | Automation | n8n on Cloud Run (async webhooks only) |
 
+## Cloud Run Runtime Configuration (Variables & Secrets)
+
+The application relies strictly on Google Cloud Run container configuration (zero `.env` files in production).
+
+### 1. Cloud SQL Connections (Cloud Run UI)
+- Attached Instance: `PROJECT_ID:REGION:INSTANCE_NAME` (e.g. `digitalworkflowsolutions-erp:us-central1:erp`).
+- Cloud Run automatically mounts the Unix socket into `/cloudsql/<INSTANCE_CONNECTION_NAME>`. The Prisma plugin auto-discovers this path.
+
+### 2. Environment Variables (Cloud Run UI)
+| Variable | Description / Purpose |
+| :--- | :--- |
+| `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Web Client ID (used for token verification & served to frontend via `/api/v1/auth/config`) |
+| `DB_USER` | PostgreSQL database user (e.g. `erp-workflows`) |
+| `DB_NAME` | PostgreSQL database name (e.g. `erp`) |
+| `FRONTEND_ORIGIN` | Allowed origin for CORS (e.g. preview deployment URL or `http://localhost:5173`) |
+| `NODE_ENV` | Set to `production` |
+
+### 3. Secrets Exposed as Environment Variables (Secret Manager)
+| Secret in Secret Manager | Mounted Variable | Purpose |
+| :--- | :--- | :--- |
+| `user_erp-workflows_pass...` | `DB_PASSWORD` | PostgreSQL user password |
+| `erp_session_secret` | `SESSION_SECRET` | 32+ character random secret for signing and encrypting session cookies |
+| `erp_webhook_secret` *(Stage 2)* | `WEBHOOK_SECRET` | 64-character secret for n8n asynchronous webhooks |
+
 ## Directory Layout (Living Source of Truth)
 
 ```text
@@ -78,6 +102,9 @@ by reading:
 │   ├── tsconfig.json          # TypeScript base configuration
 │   ├── tsconfig.build.json    # TypeScript compiler configuration for production build
 │   ├── prisma/
+│   │   ├── migrations/
+│   │   │   └── 001_init/
+│   │   │       └── migration.sql # Initial PostgreSQL schema DDL (14 tables, 8 enums)
 │   │   └── schema.prisma      # PostgreSQL schema, enums, models
 │   └── src/
 │       ├── lib/
