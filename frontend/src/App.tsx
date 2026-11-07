@@ -5,9 +5,9 @@ import { OnboardingModal } from '@/pages/OnboardingModal';
 import { AppShell } from '@/components/AppShell';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { ContactsPage } from '@/pages/ContactsPage';
+import { BillsPage } from '@/pages/BillsPage';
 import {
   InvoicesPage,
-  BillsPage,
   LedgerPage,
 } from '@/pages/PlaceholderPages';
 

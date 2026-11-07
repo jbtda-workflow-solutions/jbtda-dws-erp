@@ -4,6 +4,33 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.8.0] — 2026-11-07 — Phase 4 Accounts Payable (AP) Bills & Automatic Double-Entry Ledger Posting
+
+### Added
+- `backend/src/routes/bills.ts` — Implemented Accounts Payable (AP) Bills API:
+  - `GET /api/v1/bills`: Filter bills by status (`AWAITING_PAYMENT`, `PARTIALLY_PAID`, `PAID`, `VOID`), contactId, or search query. Scoped strictly to `organizationId`.
+  - `POST /api/v1/bills`: Atomic transaction creating Bill, multiple Line Items, and posting double-entry lines to General Ledger:
+    - Calculates integer-cent GST using `calculateGST` (`TAX_EXCLUSIVE`, `TAX_INCLUSIVE`, or `GST_FREE`).
+    - Validates vendor contact and verifies Chart of Accounts (`5000` Operating Expenses, `2200` GST Paid, `2000` Accounts Payable).
+    - Verifies double-entry ledger balance invariant (`Debit sum == Credit sum`).
+    - Protected by `requireRole(ADMIN, ACCOUNTANT, AP_SPECIALIST)`.
+  - `GET /api/v1/bills/:id`: Retrieve bill details, line items, and associated double-entry `journalEntry` records.
+- `frontend/src/api/client.ts` — Added `billApi` client methods (`list`, `get`, `create`) and TypeScript interfaces.
+- `frontend/src/pages/BillsPage.tsx` — Full-featured Accounts Payable UI:
+  - Table showing vendor name, reference, issue and due dates, formatted integer AUD amounts (subtotal, GST, total), and status badges.
+  - Interactive "New Bill" modal with dynamic multi-line item inputs (add/remove rows, description, amount, tax treatment selector).
+  - Real-time client-side calculation preview for subtotal, 10% GST, and total payable amount.
+  - Detail inspection modal displaying line item breakdown and verified General Ledger debit/credit balance entries.
+
+### Changed
+- `backend/src/server.ts` — Registered `billRoutes` plugin under `/api/v1`.
+- `frontend/src/App.tsx` — Replaced placeholder `/bills` route with production `BillsPage` component.
+- `frontend/src/pages/PlaceholderPages.tsx` — Removed `BillsPage` stub.
+- `AGENTS.md` — Updated living directory tree with `backend/src/routes/bills.ts` and `frontend/src/pages/BillsPage.tsx`.
+- `docs/STAGES_ROADMAP.md` — Marked Phase 4 and Phase F4 as completed.
+
+---
+
 ## [0.7.1] — 2026-11-07 — Fixed Frontend TypeScript Compiler Errors
 
 ### Changed

@@ -14,20 +14,6 @@ export function InvoicesPage() {
   );
 }
 
-export function BillsPage() {
-  return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-medium tracking-tight text-slate-900">Bills</h1>
-        <p className="text-sm font-light text-slate-500 mt-1">
-          Record bills from vendors.
-        </p>
-      </div>
-      <ComingSoon icon={FileSpreadsheet} label="Bills module" phase="Phase F4" />
-    </div>
-  );
-}
-
 export function LedgerPage() {
   return (
     <div className="p-6 lg:p-8 space-y-6">

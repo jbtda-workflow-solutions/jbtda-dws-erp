@@ -151,3 +151,76 @@ export const contactApi = {
     request<{ contact: Contact }>('PATCH', `/contacts/${id}`, data),
 };
 
+// ---------------------------------------------------------------------------
+// Bills
+// ---------------------------------------------------------------------------
+
+export type BillStatus = 'AWAITING_PAYMENT' | 'PARTIALLY_PAID' | 'PAID' | 'VOID';
+export type TaxTreatment = 'TAX_EXCLUSIVE' | 'TAX_INCLUSIVE' | 'GST_FREE';
+
+export interface BillLineItem {
+  id: string;
+  billId: string;
+  organizationId: string;
+  description: string;
+  amountCents: number;
+  taxTreatment: TaxTreatment;
+  gstCents: number;
+  totalCents: number;
+}
+
+export interface Bill {
+  id: string;
+  organizationId: string;
+  contactId: string;
+  contact?: {
+    id: string;
+    name: string;
+    email: string | null;
+    abn: string | null;
+  };
+  reference: string | null;
+  issueDate: string;
+  dueDate: string;
+  status: BillStatus;
+  subtotalCents: number;
+  gstCents: number;
+  totalCents: number;
+  amountPaidCents: number;
+  notes: string | null;
+  lineItems?: BillLineItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateBillLineItemInput {
+  description: string;
+  amountCents: number;
+  taxTreatment: TaxTreatment;
+}
+
+export interface CreateBillInput {
+  contactId: string;
+  reference?: string | null;
+  issueDate: string;
+  dueDate: string;
+  notes?: string | null;
+  lineItems: CreateBillLineItemInput[];
+}
+
+export const billApi = {
+  list: (params?: { status?: BillStatus; contactId?: string; search?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.contactId) query.set('contactId', params.contactId);
+    if (params?.search) query.set('search', params.search);
+    const qs = query.toString();
+    return request<{ bills: Bill[] }>('GET', `/bills${qs ? `?${qs}` : ''}`);
+  },
+
+  get: (id: string) => request<{ bill: Bill; journalEntry?: any }>('GET', `/bills/${id}`),
+
+  create: (data: CreateBillInput) =>
+    request<{ bill: Bill }>('POST', '/bills', data),
+};
+
