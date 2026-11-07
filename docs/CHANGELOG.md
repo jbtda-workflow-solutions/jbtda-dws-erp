@@ -38,6 +38,7 @@ Chronological log of all changes, schema diffs, and new dependencies.
     - Detail inspection modal displaying customer information, line item breakdown, draft issuance banner, and double-entry General Ledger debit/credit balance entries upon issuance.
     - One-click "Issue Invoice & Post GL" action button for draft invoices.
 - `frontend/src/pages/BillsPage.tsx`:
+  - Restored `FileSpreadsheet` icon import required by empty state component.
   - Added "Record Payment" button and interactive modal allowing users to record outgoing payments against bills with live balance validation.
   - Added "Payments Recorded" history table in the bill details modal displaying past payments, payment dates, bank references, and amounts.
 
