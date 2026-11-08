@@ -20,6 +20,7 @@ import {
   Lock,
   Building2,
   User,
+  Wallet,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { orgApi, ApiError, type Role } from '@/api/client';
@@ -114,6 +115,20 @@ const NAV_GROUPS: NavGroup[] = [
           'ACCOUNTANT',
           'MANAGER',
           'AP_SPECIALIST',
+          'AUDITOR',
+        ],
+      },
+      {
+        label: 'Expenses & Claims',
+        href: '/expenses',
+        icon: Wallet,
+        allowedRoles: [
+          'ADMIN',
+          'ACCOUNTANT',
+          'MANAGER',
+          'AR_SPECIALIST',
+          'AP_SPECIALIST',
+          'EMPLOYEE',
           'AUDITOR',
         ],
       },

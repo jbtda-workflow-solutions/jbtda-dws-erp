@@ -10,6 +10,7 @@ import { BillsPage } from '@/pages/BillsPage';
 import { InvoicesPage } from '@/pages/InvoicesPage';
 import { AccountsPage } from '@/pages/AccountsPage';
 import { LedgerPage } from '@/pages/LedgerPage';
+import { ExpensesPage } from '@/pages/ExpensesPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 
 // ---------------------------------------------------------------------------
@@ -47,6 +48,7 @@ function AppRoutes() {
         <Route path="/items" element={<ItemsPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/bills" element={<BillsPage />} />
+        <Route path="/expenses" element={<ExpensesPage />} />
         <Route path="/accounts" element={<AccountsPage />} />
         <Route path="/ledger" element={<LedgerPage />} />
         <Route path="/settings" element={<SettingsPage />} />

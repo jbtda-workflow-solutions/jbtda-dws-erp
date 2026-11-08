@@ -4,6 +4,50 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.18.0] — 2026-11-08 — Module 6: Enterprise Expenses — Direct "Spend Money" & Employee Expense Claims
+
+### Added
+- `backend/src/routes/direct-transactions.ts`:
+  - Implemented `GET /api/v1/direct-transactions` with query filters (`type`, `bankAccountId`, `contactId`, `startDate`, `endDate`, `search`).
+  - Implemented `GET /api/v1/direct-transactions/:id` returning transaction details, multi-line account allocations, and associated posted General Ledger entry.
+  - Implemented `POST /api/v1/direct-transactions` recording immediate corporate card/bank purchases (`SPEND_MONEY`) or customer receipts (`RECEIVE_MONEY`).
+  - Enforced accounting period lock date checks via `checkOrganizationLockDate`.
+  - Calculated Australian GST per line (`calculateGST`) and posted atomic double-entry GL journal (`DEBIT Expense/Asset`, `DEBIT 2200 GST Paid`, `CREDIT Selected Bank/Card Account`).
+  - Appended immutable system audit log entries (`DIRECT_TRANSACTION_RECORDED`).
+- `backend/src/routes/expense-claims.ts`:
+  - Implemented complete lifecycle for staff out-of-pocket claims (`DRAFT` $\rightarrow$ `SUBMITTED` $\rightarrow$ `APPROVED` | `REJECTED` $\rightarrow$ `PAID`).
+  - Implemented `GET /api/v1/expense-claims` with role-aware scoping: `EMPLOYEE` is strictly isolated to own claims (`scope=my`); `MANAGER` views team claims (`scope=team`); `ADMIN`/`ACCOUNTANT` view all claims.
+  - Implemented `GET /api/v1/expense-claims/:id`, `POST /api/v1/expense-claims`, `PATCH /api/v1/expense-claims/:id`, and `DELETE /api/v1/expense-claims/:id`.
+  - Implemented `POST /api/v1/expense-claims/:id/submit` transitioning draft claims to `SUBMITTED`.
+  - Implemented `POST /api/v1/expense-claims/:id/approve` with adaptive maker-checker verification (prevents self-approval when `enforceTwoPersonApproval` is enabled) and posted approval GL entry (`DEBIT Expense`, `DEBIT 2200 GST Paid`, `CREDIT 2050 Employee Reimbursements Payable`).
+  - Implemented `POST /api/v1/expense-claims/:id/reject` with mandatory reviewer guidance reason.
+  - Implemented `POST /api/v1/expense-claims/:id/pay` executing single reimbursement payout (`DEBIT 2050`, `CREDIT Bank Account`) and transitioning claim to `PAID`.
+- `backend/src/routes/batch-payments.ts`:
+  - Upgraded batch payment engine to support `expenseClaimPayments` alongside or independent of `billPayments`.
+  - Validated employee EFT banking details (`bankBsb`, `bankAccountNumber`) and generated APCA Cemtex 120-character `.ABA` disbursement lines.
+  - Atomically transitioned claims to `PAID` and posted consolidated GL entry (`DEBIT 2000 A/P` + `DEBIT 2050 Reimbursements Payable`, `CREDIT Bank Account`).
+- `frontend/src/api/client.ts`:
+  - Added TypeScript interfaces: `DirectTransaction`, `DirectTransactionLine`, `CreateDirectTransactionInput`, `ExpenseClaim`, `ExpenseClaimItem`, `ExpenseClaimStatus`, `CreateExpenseClaimInput`.
+  - Exported typed clients: `directTransactionApi` and `expenseClaimApi`.
+  - Extended `batchPaymentApi.create` to accept `expenseClaimPayments`.
+- `frontend/src/pages/ExpensesPage.tsx`:
+  - Created dedicated Corporate Precision workbench with role-aware navigation:
+    - `DIRECT_SPEND`: Filterable table of immediate spend money purchases, "Record Spend Money" modal with multi-line distribution and live GL posting preview.
+    - `APPROVALS`: Manager/Accountant approvals queue with maker-checker indicator, one-click GL approval, and rejection modal with reason guidance.
+    - `REIMBURSEMENTS`: Outstanding approved claims list, banking readiness indicators, single settle modal, and multi-claim batch `.ABA` pay run creation.
+    - `MY_CLAIMS`: All-role personal claims portal with 5-stage `PipelineRibbon` filter, draft editing, receipt lines, and submission workflow.
+    - `MY_BANKING`: Employee self-service reimbursement profile form updating BSB, account number, name, department, and title.
+    - Inspector slide-over drawers for detailed transaction & claim audit trails with attached double-entry GL journals.
+- `frontend/src/App.tsx` & `frontend/src/components/AppShell.tsx`:
+  - Registered `/expenses` client route in `App.tsx`.
+  - Added `Expenses & Claims` navigation item in `AppShell.tsx` under Operations (accessible to all 7 roles).
+- Documentation:
+  - Updated `AGENTS.md` directory layout with new route files and `ExpensesPage.tsx`.
+  - Updated `docs/ARCHITECTURE.md` with Sections 14 and 15 for Direct Transactions and Expense Claims APIs and `/expenses` client route.
+  - Marked Module 6 items complete in `docs/STAGES_ROADMAP.md`.
+
+---
+
 ## [0.17.4] — 2026-11-08 — Zero-Ambiguity Entrypoint & Configuration Protocol Documentation
 
 ### Added

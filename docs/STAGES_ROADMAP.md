@@ -246,14 +246,14 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 ### Module 6: Enterprise Expenses — Direct "Spend Money" & Employee Expense Claims
 **Objective:** Provide a dedicated `/expenses` module handling both immediate corporate card/bank purchases and staff out-of-pocket expense claims with manager approval and `2050 Employee Reimbursements Payable` accounting.
 
-- [ ] **6.1 Direct "Spend Money" Transactions (Bank & Corporate Card Purchases)**:
+- [x] **6.1 Direct "Spend Money" Transactions (Bank & Corporate Card Purchases)**:
   - For immediate purchases (fuel, software subscriptions, merchant receipts) paid via Bank Account or Corporate Credit Card without a prior AP Bill.
   - Multi-line coding to `EXPENSE` / `ASSET` accounts + Tracking Dimensions + GST treatment.
   - **Direct GL Posting**:
     - `DEBIT <Line Item Expense/Asset Account>` (Subtotal Cents + Dimensions)
     - `DEBIT 2200 GST Paid` (GST Cents)
     - `CREDIT <Selected Bank (ASSET) or Corporate Card (LIABILITY) Account>` (Total Cents)
-- [ ] **6.2 Employee Expense Claims & Approval Workflow**:
+- [x] **6.2 Employee Expense Claims & Approval Workflow**:
   - **Employee Self-Service Portal**: Users with the `EMPLOYEE` role (and all other internal roles) can create and submit multi-line out-of-pocket expense claims (date, merchant, description, amount, GST treatment, expense category/account, tracking dimension).
   - Lifecycle: `DRAFT` $\rightarrow$ `SUBMITTED` $\rightarrow$ `APPROVED` / `REJECTED` $\rightarrow$ `PAID`.
   - **Manager / Accountant Approval & GL Posting**:
@@ -261,13 +261,13 @@ Development proceeds strictly **one module at a time**. We complete the backend 
       - `DEBIT <Line Item Expense Account>` (Subtotal Cents + Dimensions)
       - `DEBIT 2200 GST Paid` (GST Cents)
       - `CREDIT 2050 Employee Reimbursements Payable` (Total Cents)
-- [ ] **6.3 Employee Reimbursement Payouts**:
+- [x] **6.3 Employee Reimbursement Payouts**:
   - Settle approved expense claims individually or include them in a **Batch Payment & `.ABA` File Run**:
     - `DEBIT 2050 Employee Reimbursements Payable` (Amount Paid)
     - `CREDIT <Selected Operating Bank Account>` (Amount Paid)
-- [ ] **6.4 Module 6 Frontend UI (`/expenses`)**:
+- [x] **6.4 Module 6 Frontend UI (`/expenses`)**:
   - Role-aware interface:
-    - `EMPLOYEE` users see only **"My Expense Claims"** (Submit Claim, Pending Approval, Reimbursed History).
+    - `EMPLOYEE` users see only **"My Expense Claims"** (Submit Claim, Pending Approval, Reimbursed History) and **"My Reimbursement Banking"**.
     - `MANAGER`, `ACCOUNTANT`, and `ADMIN` users see **"My Claims"**, **"Team Approvals Queue"**, **"Reimbursement Payouts"**, and **"Direct Spend Money (Card/Bank)"**.
 
 ---

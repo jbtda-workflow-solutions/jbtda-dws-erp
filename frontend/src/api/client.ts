@@ -1184,7 +1184,8 @@ export const batchPaymentApi = {
     paymentDate: string;
     bankAccountId?: string;
     description?: string;
-    billPayments: Array<{ billId: string; amountCents?: number }>;
+    billPayments?: Array<{ billId: string; amountCents?: number }>;
+    expenseClaimPayments?: Array<{ expenseClaimId: string; amountCents?: number }>;
   }) =>
     request<{ message: string; batchPayment: BatchPayment; paymentsCount: number }>(
       'POST',
@@ -1612,3 +1613,252 @@ export const accountsApi = {
 };
 
 export const accountApi = accountsApi;
+
+// ---------------------------------------------------------------------------
+// Module 6: Direct Transactions (Spend Money / Receive Money)
+// ---------------------------------------------------------------------------
+
+export type DirectTransactionType = 'SPEND_MONEY' | 'RECEIVE_MONEY';
+
+export interface DirectTransactionLine {
+  id: string;
+  directTransactionId: string;
+  description: string;
+  accountId: string;
+  account?: Account;
+  taxTreatment: TaxTreatment;
+  amountCents: number;
+  taxAmountCents: number;
+  trackingCategoryOptionId?: string | null;
+  trackingCategoryOption?: TrackingOption | null;
+  createdAt?: string;
+}
+
+export interface DirectTransaction {
+  id: string;
+  organizationId: string;
+  type: DirectTransactionType;
+  transactionNumber: string;
+  transactionDate: string;
+  bankAccountId: string;
+  bankAccount?: Account;
+  contactId?: string | null;
+  contact?: Contact | null;
+  reference?: string | null;
+  description?: string | null;
+  subtotalCents: number;
+  taxTotalCents: number;
+  totalAmountCents: number;
+  journalEntryId?: string | null;
+  journalEntry?: JournalEntry | null;
+  lines: DirectTransactionLine[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateDirectTransactionLineInput {
+  description: string;
+  accountId: string;
+  taxTreatment?: TaxTreatment;
+  amountCents: number;
+  trackingOptionId?: string | null;
+  trackingCategoryOptionId?: string | null;
+}
+
+export interface CreateDirectTransactionInput {
+  type?: DirectTransactionType;
+  transactionDate: string;
+  bankAccountId: string;
+  contactId?: string | null;
+  reference?: string | null;
+  description?: string | null;
+  lines: CreateDirectTransactionLineInput[];
+}
+
+export const directTransactionApi = {
+  list: (params?: {
+    type?: DirectTransactionType;
+    bankAccountId?: string;
+    contactId?: string;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.type) query.set('type', params.type);
+    if (params?.bankAccountId) query.set('bankAccountId', params.bankAccountId);
+    if (params?.contactId) query.set('contactId', params.contactId);
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.search) query.set('search', params.search);
+    const qs = query.toString();
+    return request<{ directTransactions: DirectTransaction[] }>(
+      'GET',
+      `/direct-transactions${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  get: (id: string) =>
+    request<{ directTransaction: DirectTransaction }>('GET', `/direct-transactions/${id}`),
+
+  create: (data: CreateDirectTransactionInput) =>
+    request<{
+      message: string;
+      directTransaction: DirectTransaction;
+      journalEntryId: string;
+    }>('POST', '/direct-transactions', data),
+};
+
+// ---------------------------------------------------------------------------
+// Module 6: Employee Expense Claims & Reimbursements
+// ---------------------------------------------------------------------------
+
+export type ExpenseClaimStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'PAID';
+
+export interface ExpenseClaimItem {
+  id: string;
+  expenseClaimId: string;
+  expenseDate: string;
+  merchant?: string | null;
+  description: string;
+  accountId: string;
+  account?: Account;
+  taxTreatment: TaxTreatment;
+  amountCents: number;
+  taxAmountCents: number;
+  receiptUrl?: string | null;
+  trackingCategoryOptionId?: string | null;
+  trackingCategoryOption?: TrackingOption | null;
+  createdAt?: string;
+}
+
+export interface ExpenseClaim {
+  id: string;
+  organizationId: string;
+  claimNumber: string;
+  memberId: string;
+  member?: MemberProfile;
+  title: string;
+  description?: string | null;
+  status: ExpenseClaimStatus;
+  totalAmountCents: number;
+  taxTotalCents: number;
+  submittedAt?: string | null;
+  approvedAt?: string | null;
+  approvedById?: string | null;
+  approvedBy?: MemberProfile | null;
+  rejectedAt?: string | null;
+  rejectedById?: string | null;
+  rejectedBy?: MemberProfile | null;
+  rejectionReason?: string | null;
+  paidAt?: string | null;
+  journalEntryId?: string | null;
+  journalEntry?: JournalEntry | null;
+  paymentJournalEntryId?: string | null;
+  paymentJournalEntry?: JournalEntry | null;
+  batchPaymentId?: string | null;
+  batchPayment?: BatchPayment | null;
+  items: ExpenseClaimItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateExpenseClaimItemInput {
+  expenseDate: string;
+  merchant: string;
+  description: string;
+  accountId?: string;
+  taxTreatment?: TaxTreatment;
+  amountCents: number;
+  receiptUrl?: string | null;
+  trackingOptionId?: string | null;
+  trackingCategoryOptionId?: string | null;
+}
+
+export interface CreateExpenseClaimInput {
+  title: string;
+  notes?: string | null;
+  description?: string | null;
+  submitNow?: boolean;
+  items: CreateExpenseClaimItemInput[];
+}
+
+export interface UpdateExpenseClaimInput {
+  title?: string;
+  notes?: string | null;
+  description?: string | null;
+  submitNow?: boolean;
+  items?: Array<CreateExpenseClaimItemInput & { id?: string }>;
+}
+
+export const expenseClaimApi = {
+  list: (params?: {
+    status?: ExpenseClaimStatus | 'ALL';
+    memberId?: string;
+    scope?: 'my' | 'team' | 'all';
+    search?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.memberId) query.set('memberId', params.memberId);
+    if (params?.scope) query.set('scope', params.scope);
+    if (params?.search) query.set('search', params.search);
+    const qs = query.toString();
+    return request<{ expenseClaims: ExpenseClaim[] }>(
+      'GET',
+      `/expense-claims${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  get: (id: string) =>
+    request<{ expenseClaim: ExpenseClaim }>('GET', `/expense-claims/${id}`),
+
+  create: (data: CreateExpenseClaimInput) =>
+    request<{ message: string; expenseClaim: ExpenseClaim }>('POST', '/expense-claims', data),
+
+  update: (id: string, data: UpdateExpenseClaimInput) =>
+    request<{ message: string; expenseClaim: ExpenseClaim }>(
+      'PATCH',
+      `/expense-claims/${id}`,
+      data,
+    ),
+
+  delete: (id: string) =>
+    request<{ message: string; deletedId: string }>('DELETE', `/expense-claims/${id}`),
+
+  submit: (id: string) =>
+    request<{ message: string; expenseClaim: ExpenseClaim }>(
+      'POST',
+      `/expense-claims/${id}/submit`,
+    ),
+
+  approve: (id: string) =>
+    request<{
+      message: string;
+      expenseClaim: ExpenseClaim;
+      journalEntryId: string;
+    }>('POST', `/expense-claims/${id}/approve`),
+
+  reject: (id: string, rejectionReason: string) =>
+    request<{ message: string; expenseClaim: ExpenseClaim }>(
+      'POST',
+      `/expense-claims/${id}/reject`,
+      { rejectionReason },
+    ),
+
+  pay: (
+    id: string,
+    data?: { bankAccountId?: string; paymentDate?: string; reference?: string },
+  ) =>
+    request<{
+      message: string;
+      expenseClaim: ExpenseClaim;
+      journalEntryId: string;
+    }>('POST', `/expense-claims/${id}/pay`, data || {}),
+};
+

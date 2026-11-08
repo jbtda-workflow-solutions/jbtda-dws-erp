@@ -247,10 +247,30 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
 | :--- | :--- | :--- | :--- | :--- |
 | `GET` | `/api/v1/batch-payments` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Lists batch payment runs. |
-| `POST` | `/api/v1/batch-payments` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Groups multiple approved bills into a batch payment. Creates payment records. |
+| `POST` | `/api/v1/batch-payments` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Groups multiple approved bills and/or employee reimbursement claims into a batch payment. Creates payment records, updates claims to `PAID`, and posts consolidated GL entry (`DEBIT 2000 A/P` + `DEBIT 2050 Reimbursements Payable`, `CREDIT Bank`). |
 | `GET` | `/api/v1/batch-payments/:id/aba` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Generates and downloads Australian APCA CEMTEX 120-character `.ABA` payment file. |
 
-### 14. General Ledger & Financial Reporting API (`/api/v1/ledger/*`)
+### 14. Direct Transactions API (`/api/v1/direct-transactions/*`)
+| Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/direct-transactions` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST`, `AUDITOR` | Lists direct spend money / receive money transactions with bank account, contact, date, and search filters. |
+| `POST` | `/api/v1/direct-transactions` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Records immediate bank/card spend or receive transaction. Calculates Australian GST, validates accounting period lock date, and atomically posts double-entry General Ledger journal (`DEBIT Expense/Asset`, `DEBIT 2200 GST Paid`, `CREDIT Bank/Card Account`). |
+| `GET` | `/api/v1/direct-transactions/:id` | Cookie Session | Read Roles | Fetches direct transaction details, multi-line account distributions, and associated posted GL journal. |
+
+### 15. Employee Expense Claims & Reimbursements API (`/api/v1/expense-claims/*`)
+| Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/expense-claims` | Cookie Session | All Roles (Scoped) | Lists expense claims. `EMPLOYEE` is strictly isolated to own claims (`scope=my`); `MANAGER` accesses team claims (`scope=team`); `ADMIN`/`ACCOUNTANT` access all organizational claims. |
+| `POST` | `/api/v1/expense-claims` | Cookie Session | All Roles | Creates draft or submitted out-of-pocket expense claim with multi-line merchant receipts, account allocations, GST, and tracking categories. |
+| `GET` | `/api/v1/expense-claims/:id` | Cookie Session | All Roles (Scoped) | Fetches expense claim details, receipts, approval timestamps, and attached GL journal entries. |
+| `PATCH` | `/api/v1/expense-claims/:id` | Cookie Session | Claimant / Finance | Updates draft expense claim items and summary details. |
+| `DELETE` | `/api/v1/expense-claims/:id` | Cookie Session | Claimant / Finance | Deletes draft expense claim. |
+| `POST` | `/api/v1/expense-claims/:id/submit` | Cookie Session | Claimant / Finance | Submits draft claim for manager approval (`DRAFT` $\rightarrow$ `SUBMITTED`). |
+| `POST` | `/api/v1/expense-claims/:id/approve` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER` | Approves claim. Enforces maker-checker rule when two-person approval is enabled. Posts GL journal (`DEBIT Expense`, `DEBIT 2200 GST Paid`, `CREDIT 2050 Employee Reimbursements Payable`). |
+| `POST` | `/api/v1/expense-claims/:id/reject` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER` | Rejects claim with mandatory reason guidance (`SUBMITTED` $\rightarrow$ `REJECTED`). |
+| `POST` | `/api/v1/expense-claims/:id/pay` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Settles approved claim via direct payment: posts settlement GL entry (`DEBIT 2050 Employee Reimbursements Payable`, `CREDIT Bank Account`) and marks claim `PAID`. |
+
+### 16. General Ledger & Financial Reporting API (`/api/v1/ledger/*`)
 | Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
 | :--- | :--- | :--- | :--- | :--- |
 | `GET` | `/api/v1/ledger` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Lists journal entries with account, date range, and reference type filters. |
@@ -272,6 +292,7 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `/items` | Authenticated | `<ItemsPage />` | Products & Services catalog workbench. |
 | `/invoices` | Authenticated | `<InvoicesPage />` | Customer Invoices, Quotes, and Credit Notes workbench. |
 | `/bills` | Authenticated | `<BillsPage />` | Accounts Payable Bills, Purchase Orders, Vendor Credits, and Batch Payments workbench. |
+| `/expenses` | Authenticated | `<ExpensesPage />` | Direct Spend Money, Out-of-Pocket Expense Claims, Approvals Queue, and Reimbursement Payouts workbench. |
 | `/accounts` | Authenticated | `<AccountsPage />` | Chart of Accounts and Tracking Dimensions workbench. |
 | `/ledger` | Authenticated | `<LedgerPage />` | General Ledger audit trail and financial reports (Trial Balance, P&L, Balance Sheet). |
 | `/settings` | Authenticated | `<SettingsPage />` | Organization profile, lock dates, EFT banking, team members, invites, and system audit logs. |
