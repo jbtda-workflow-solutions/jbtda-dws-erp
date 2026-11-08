@@ -9,8 +9,14 @@ DROP SCHEMA IF EXISTS public CASCADE;
 CREATE SCHEMA public;
 
 -- Grant schema-level permissions
-ALTER SCHEMA public OWNER TO erp_admin;
 GRANT ALL ON SCHEMA public TO erp_admin;
+GRANT ALL ON SCHEMA public TO public;
+
+-- Best-effort: grant role membership and transfer schema ownership if permitted
+DO $$ BEGIN
+  EXECUTE format('GRANT erp_admin TO %I', CURRENT_USER);
+  ALTER SCHEMA public OWNER TO erp_admin;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- Enable pgcrypto for UUID generation
 CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA public;
@@ -769,11 +775,20 @@ CREATE TABLE "journal_lines" (
 -- Step 11: Set Ownership and Grant All Privileges
 -- =============================================================================
 
--- Owner and Runtime User: erp_admin
+-- Grant all permissions to erp_admin on all created objects
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO erp_admin;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO erp_admin;
+GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO erp_admin;
+
+-- Set default privileges for both current user and future objects in schema public
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO erp_admin;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO erp_admin;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO erp_admin;
+
+DO $$ BEGIN
+  EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public GRANT ALL ON TABLES TO erp_admin', CURRENT_USER);
+  EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public GRANT ALL ON SEQUENCES TO erp_admin', CURRENT_USER);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- Verify table count (should return 34)
 SELECT count(*) AS total_tables_created FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';

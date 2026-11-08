@@ -668,6 +668,26 @@ export type AccountType =
   | 'REVENUE'
   | 'EXPENSE';
 
+export type JournalStatus = 'POSTED' | 'PENDING_APPROVAL' | 'DRAFT' | 'REVERSED';
+
+export interface TrackingOption {
+  id: string;
+  trackingCategoryId: string;
+  name: string;
+  code?: string | null;
+  isActive: boolean;
+}
+
+export interface TrackingCategory {
+  id: string;
+  organizationId: string;
+  name: string;
+  isActive: boolean;
+  options: TrackingOption[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface JournalLineAccount {
   id: string;
   code: string;
@@ -681,18 +701,32 @@ export interface JournalLine {
   journalEntryId: string;
   organizationId: string;
   accountId: string;
+  trackingOptionId?: string | null;
+  description?: string | null;
   entryType: EntryType;
   amountCents: number;
   account: JournalLineAccount;
+  trackingOption?: {
+    id: string;
+    name: string;
+    trackingCategory?: { id: string; name: string };
+  } | null;
 }
 
 export interface JournalEntry {
   id: string;
   organizationId: string;
+  entryNumber?: string | null;
   description: string;
   referenceType: string;
   referenceId: string;
+  status: JournalStatus;
+  reversesEntryId?: string | null;
+  reversedById?: string | null;
+  createdByUserId?: string | null;
+  approvedByUserId?: string | null;
   postedAt: string;
+  createdAt?: string;
   lines: JournalLine[];
 }
 
@@ -700,6 +734,34 @@ export interface LedgerTotals {
   totalDebitsCents: number;
   totalCreditsCents: number;
   isBalanced: boolean;
+}
+
+export interface LedgerStatusCounts {
+  POSTED: number;
+  PENDING_APPROVAL: number;
+  DRAFT: number;
+  REVERSED: number;
+  ALL: number;
+}
+
+export interface RecurringSchedule {
+  id: string;
+  organizationId: string;
+  scheduleType: string;
+  name: string;
+  frequency: 'WEEKLY' | 'FORTNIGHTLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY';
+  startDate: string;
+  nextRunDate: string;
+  lastRunDate?: string | null;
+  autoPost: boolean;
+  isActive: boolean;
+  templatePayloadJson: string;
+  template?: {
+    description: string;
+    lines: CreateManualJournalLineInput[];
+  };
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AccountWithBalance {
@@ -713,6 +775,8 @@ export interface AccountWithBalance {
   systemKey?: string | null;
   parentId?: string | null;
   isBankAccount?: boolean;
+  bankBsb?: string | null;
+  bankAccountNumber?: string | null;
   defaultTaxTreatment?: TaxTreatment;
   isActive: boolean;
   debitsCents: number;
@@ -721,21 +785,40 @@ export interface AccountWithBalance {
   lineCount: number;
 }
 
+export interface CreateManualJournalLineInput {
+  accountId: string;
+  trackingOptionId?: string | null;
+  entryType: EntryType;
+  amountCents: number;
+  description?: string | null;
+}
+
+export interface CreateManualJournalEntryInput {
+  description: string;
+  postedAt?: string;
+  status?: 'POSTED' | 'DRAFT' | 'PENDING_APPROVAL';
+  lines: CreateManualJournalLineInput[];
+}
+
 export const ledgerApi = {
   list: (params?: {
+    status?: string;
     startDate?: string;
     endDate?: string;
     accountId?: string;
+    trackingOptionId?: string;
     referenceType?: string;
     search?: string;
     limit?: number;
     offset?: number;
   }) => {
     const query = new URLSearchParams();
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
     if (params?.startDate) query.set('startDate', params.startDate);
     if (params?.endDate) query.set('endDate', params.endDate);
     if (params?.accountId) query.set('accountId', params.accountId);
-    if (params?.referenceType) query.set('referenceType', params.referenceType);
+    if (params?.trackingOptionId) query.set('trackingOptionId', params.trackingOptionId);
+    if (params?.referenceType && params.referenceType !== 'ALL') query.set('referenceType', params.referenceType);
     if (params?.search) query.set('search', params.search);
     if (params?.limit) query.set('limit', String(params.limit));
     if (params?.offset) query.set('offset', String(params.offset));
@@ -743,15 +826,83 @@ export const ledgerApi = {
     return request<{
       entries: JournalEntry[];
       totalCount: number;
+      statusCounts: LedgerStatusCounts;
       totals: LedgerTotals;
     }>('GET', `/ledger${qs ? `?${qs}` : ''}`);
   },
+
+  get: (id: string) =>
+    request<{
+      entry: JournalEntry;
+      reversesEntry?: {
+        id: string;
+        entryNumber: string | null;
+        description: string;
+        postedAt: string;
+        status: JournalStatus;
+      } | null;
+      reversedByEntry?: {
+        id: string;
+        entryNumber: string | null;
+        description: string;
+        postedAt: string;
+        status: JournalStatus;
+      } | null;
+    }>('GET', `/ledger/${id}`),
 
   accounts: () =>
     request<{ accounts: AccountWithBalance[] }>('GET', '/ledger/accounts'),
 
   createManualEntry: (data: CreateManualJournalEntryInput) =>
     request<{ entry: JournalEntry }>('POST', '/ledger/entries', data),
+
+  approve: (id: string) =>
+    request<{ entry: JournalEntry }>('POST', `/ledger/${id}/approve`),
+
+  reverse: (id: string, data?: { reversalDate?: string; reason?: string }) =>
+    request<{ original: JournalEntry; reversal: JournalEntry }>(
+      'POST',
+      `/ledger/${id}/reverse`,
+      data ?? {},
+    ),
+
+  deleteEntry: (id: string) =>
+    request<{ ok: boolean; message: string }>('DELETE', `/ledger/${id}`),
+
+  listRecurring: () =>
+    request<{ schedules: RecurringSchedule[] }>('GET', '/ledger/recurring'),
+
+  createRecurring: (data: {
+    name: string;
+    frequency: 'WEEKLY' | 'FORTNIGHTLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY';
+    startDate: string;
+    autoPost: boolean;
+    template: {
+      description: string;
+      lines: CreateManualJournalLineInput[];
+    };
+  }) =>
+    request<{ schedule: RecurringSchedule }>('POST', '/ledger/recurring', data),
+
+  updateRecurring: (
+    id: string,
+    data: {
+      name?: string;
+      frequency?: 'WEEKLY' | 'FORTNIGHTLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY';
+      autoPost?: boolean;
+      isActive?: boolean;
+    },
+  ) =>
+    request<{ schedule: RecurringSchedule }>('PATCH', `/ledger/recurring/${id}`, data),
+
+  deleteRecurring: (id: string) =>
+    request<{ ok: boolean }>('DELETE', `/ledger/recurring/${id}`),
+
+  runRecurring: (id: string) =>
+    request<{ ok: boolean; message: string; entry: JournalEntry }>(
+      'POST',
+      `/ledger/recurring/${id}/run`,
+    ),
 };
 
 // ---------------------------------------------------------------------------
@@ -783,8 +934,8 @@ export interface UpdateAccountInput {
 }
 
 export interface DecommissionAccountInput {
-  targetAccountId: string;
-  memo?: string;
+  targetAccountId?: string | null;
+  postedAt?: string;
 }
 
 export const accountsApi = {
@@ -796,28 +947,58 @@ export const accountsApi = {
     const qs = query.toString();
     return request<{ accounts: AccountWithBalance[] }>('GET', `/accounts${qs ? `?${qs}` : ''}`);
   },
+
   create: (data: CreateAccountInput) =>
     request<{ account: AccountWithBalance }>('POST', '/accounts', data),
+
   update: (id: string, data: UpdateAccountInput) =>
     request<{ account: AccountWithBalance }>('PATCH', `/accounts/${id}`, data),
+
+  delete: (id: string) =>
+    request<{ ok: boolean; message: string }>('DELETE', `/accounts/${id}`),
+
   decommission: (id: string, data: DecommissionAccountInput) =>
-    request<{ sweepJournalEntryId?: string; balanceSweptCents: number; account: AccountWithBalance }>(
+    request<{ sweepJournalId?: string | null; account: AccountWithBalance }>(
       'POST',
       `/accounts/${id}/decommission`,
       data,
     ),
+
   seed: () =>
     request<{ ok: boolean; message: string }>('POST', '/accounts/seed'),
+
+  listTrackingCategories: () =>
+    request<{ categories: TrackingCategory[] }>('GET', '/tracking-categories'),
+
+  createTrackingCategory: (data: {
+    name: string;
+    options?: Array<{ name: string; code?: string | null }>;
+  }) =>
+    request<{ category: TrackingCategory }>('POST', '/tracking-categories', data),
+
+  addTrackingOption: (
+    categoryId: string,
+    data: { name: string; code?: string | null },
+  ) =>
+    request<{ option: TrackingOption }>(
+      'POST',
+      `/tracking-categories/${categoryId}/options`,
+      data,
+    ),
+
+  updateTrackingOption: (
+    optionId: string,
+    data: { name?: string; code?: string | null; isActive?: boolean },
+  ) =>
+    request<{ option: TrackingOption }>(
+      'PATCH',
+      `/tracking-options/${optionId}`,
+      data,
+    ),
+
+  deleteTrackingCategory: (categoryId: string) =>
+    request<{ ok: boolean; message: string }>(
+      'DELETE',
+      `/tracking-categories/${categoryId}`,
+    ),
 };
-
-export interface CreateManualJournalLineInput {
-  accountId: string;
-  entryType: EntryType;
-  amountCents: number;
-}
-
-export interface CreateManualJournalEntryInput {
-  description: string;
-  postedAt: string;
-  lines: CreateManualJournalLineInput[];
-}

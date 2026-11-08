@@ -149,27 +149,27 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 
 ---
 
-### Module 2: The Financial Spine — Chart of Accounts, Dimensions & General Ledger Engine
+### Module 2: The Financial Spine — Chart of Accounts, Dimensions & General Ledger Engine (✅ COMPLETED)
 **Objective:** Build an enterprise-grade General Ledger engine with full Chart of Accounts management, hierarchical sub-accounts, Tracking Dimensions (Cost Centers), approval-gated manual journals, journal reversals, and recurring journal schedules.
 
-- [ ] **2.1 Chart of Accounts Management (`/accounts` & `/api/v1/accounts`)**:
+- [x] **2.1 Chart of Accounts Management (`/accounts` & `/api/v1/accounts`)**:
   - Full CRUD for GL accounts (`code`, `name`, `type`, `normalBalance`, `parentId`, `defaultTaxTreatment`, `isBankAccount`, `bankBsb`, `bankAccountNumber`, `isActive`).
   - System Account Protection: Block deletion or code/type mutation on the 10 protected `isSystem` accounts.
   - Decommissioning & Balance Sweep: If a user deletes/decommissions a custom sub-account that has a non-zero balance, offer an automated **Sweep & Archive** action that posts a balancing journal transferring its balance to its parent/main account and marks the sub-account inactive.
-- [ ] **2.2 Tracking Categories / Cost Centers (`/api/v1/tracking-categories`)**:
+- [x] **2.2 Tracking Categories / Cost Centers (`/api/v1/tracking-categories`)**:
   - Create and manage Tracking Categories (e.g., `Department`, `Project`, `Fleet Vehicle`) and their selectable Options (e.g., `Sales`, `Engineering`, `Truck-01`).
   - UI management tab within `/accounts` (or `/settings`).
-- [ ] **2.3 Core `LedgerPostingService` & Period Lock Enforcement**:
+- [x] **2.3 Core `LedgerPostingService` & Period Lock Enforcement**:
   - Centralized TypeScript service that validates and posts all journal entries across the entire monolith:
     - Enforces $\sum \text{Debits} == \sum \text{Credits}$ in integer cents.
     - Rejects postings dated on or before `organization.lockDate`.
     - Validates all `accountId` and `trackingOptionId` foreign keys belong to `organizationId` and are `isActive: true`.
-- [ ] **2.4 Manual Adjusting Journals, Approvals, Reversals & Recurring Schedules (`/ledger`)**:
+- [x] **2.4 Manual Adjusting Journals, Approvals, Reversals & Recurring Schedules (`/ledger`)**:
   - Lifecycle: `DRAFT` $\rightarrow$ `PENDING_APPROVAL` $\rightarrow$ `POSTED` $\rightarrow$ `REVERSED`.
   - Smart Approval: `ADMIN`/`ACCOUNTANT` can post immediately or save as draft; others submit for approval.
   - **1-Click Reversal**: Reverse any posted manual journal (creates an immutable contra-journal linked via `reversesEntryId`).
   - **Recurring Journal Templates**: Configure monthly/quarterly recurring journals (e.g., depreciation, prepayments amortization).
-- [ ] **2.5 Module 2 Frontend UI**:
+- [x] **2.5 Module 2 Frontend UI**:
   - Dedicated **Chart of Accounts Page (`/accounts`)** grouped by classification (`ASSET`, `LIABILITY`, `EQUITY`, `REVENUE`, `EXPENSE`), showing live running balances, system lock badges, sub-account indentation, Create/Edit modals, Balance Sweep modal, and Tracking Dimensions manager.
   - Enhanced **General Ledger Page (`/ledger`)** with journal status tabs (`Posted`, `Pending Approval`, `Drafts`, `Recurring`), dimensional filtering, journal detail inspection, 1-click reversal, and multi-line Manual Journal composer with dimension tags.
 

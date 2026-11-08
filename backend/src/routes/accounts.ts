@@ -822,6 +822,145 @@ const accountRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.send({ option: updated });
     },
   );
+
+  // -------------------------------------------------------------------------
+  // DELETE /api/v1/accounts/:id — Safe delete (only for custom accounts with 0 lines)
+  // -------------------------------------------------------------------------
+  fastify.delete<{
+    Params: { id: string };
+  }>(
+    '/api/v1/accounts/:id',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+    },
+    async (request, reply) => {
+      const organizationId = request.user.organizationId!;
+      const { id } = request.params;
+
+      const account = await fastify.prisma.account.findFirst({
+        where: { id, organizationId },
+        include: {
+          children: { select: { id: true } },
+          journalLines: { select: { id: true }, take: 1 },
+        },
+      });
+
+      if (!account) {
+        return reply.code(404).send({ error: 'Account not found.' });
+      }
+
+      if (account.isSystem) {
+        return reply.code(403).send({
+          error: `Account ${account.code} (${account.name}) is a protected system account and cannot be deleted.`,
+        });
+      }
+
+      if (account.children.length > 0) {
+        return reply.code(400).send({
+          error: `Cannot delete account ${account.code} because it has ${account.children.length} sub-account(s). Please delete or reassign sub-accounts first.`,
+        });
+      }
+
+      if (account.journalLines.length > 0) {
+        return reply.code(400).send({
+          error: `Account ${account.code} has historical journal activity and cannot be deleted directly. Use the Decommission & Balance Sweep action to safely sweep its balance and retire it.`,
+        });
+      }
+
+      await fastify.prisma.$transaction(async (tx) => {
+        await tx.account.delete({ where: { id: account.id } });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'ACCOUNT_DELETED',
+          entityType: 'ACCOUNT',
+          entityId: account.id,
+          summary: `Deleted custom GL account ${account.code} — ${account.name}`,
+          metadata: { code: account.code, name: account.name },
+        });
+      });
+
+      return reply.send({ ok: true, message: `Account ${account.code} deleted successfully.` });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // DELETE /api/v1/tracking-categories/:id — Archive or delete category
+  // -------------------------------------------------------------------------
+  fastify.delete<{
+    Params: { id: string };
+  }>(
+    '/api/v1/tracking-categories/:id',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+    },
+    async (request, reply) => {
+      const organizationId = request.user.organizationId!;
+      const { id } = request.params;
+
+      const category = await fastify.prisma.trackingCategory.findFirst({
+        where: { id, organizationId },
+        include: { options: true },
+      });
+
+      if (!category) {
+        return reply.code(404).send({ error: 'Tracking category not found.' });
+      }
+
+      const optionIds = category.options.map((o) => o.id);
+      const usedCount = await fastify.prisma.journalLine.count({
+        where: {
+          organizationId,
+          trackingOptionId: { in: optionIds },
+        },
+      });
+
+      await fastify.prisma.$transaction(async (tx) => {
+        if (usedCount > 0) {
+          // If used historically, mark category and options as inactive
+          await tx.trackingCategory.update({
+            where: { id: category.id },
+            data: { isActive: false },
+          });
+          await tx.trackingOption.updateMany({
+            where: { trackingCategoryId: category.id },
+            data: { isActive: false },
+          });
+
+          await recordAuditLog(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            action: 'TRACKING_CATEGORY_ARCHIVED',
+            entityType: 'TRACKING_CATEGORY',
+            entityId: category.id,
+            summary: `Archived tracking dimension "${category.name}" (retained for historical reporting)`,
+          });
+        } else {
+          // If zero historical activity, cleanly delete
+          await tx.trackingCategory.delete({
+            where: { id: category.id },
+          });
+
+          await recordAuditLog(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            action: 'TRACKING_CATEGORY_DELETED',
+            entityType: 'TRACKING_CATEGORY',
+            entityId: category.id,
+            summary: `Deleted tracking dimension "${category.name}"`,
+          });
+        }
+      });
+
+      return reply.send({
+        ok: true,
+        message: usedCount > 0
+          ? `Dimension "${category.name}" was archived because it is referenced in past journals.`
+          : `Dimension "${category.name}" was deleted successfully.`,
+      });
+    },
+  );
 };
 
 export default accountRoutes;

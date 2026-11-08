@@ -119,8 +119,9 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │   │   ├── migrations/
 │   │   │   ├── 001_init/
 │   │   │   │   └── migration.sql # Initial PostgreSQL schema DDL (14 tables, 8 enums)
-│   │   │   └── 002_enterprise_foundation/
-│   │   │       └── migration.sql # Unified 8-Module Enterprise PostgreSQL DDL
+│   │   │   ├── 002_enterprise_foundation/
+│   │   │   │   └── migration.sql # Unified 8-Module Enterprise PostgreSQL DDL
+│   │   │   └── rebuild_all_schema.sql # Complete standalone PostgreSQL DDL for clean rebuilds
 │   │   └── schema.prisma      # Unified Enterprise PostgreSQL schema, enums, models
 │   └── src/
 │       ├── lib/

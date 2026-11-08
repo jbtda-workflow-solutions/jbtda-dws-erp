@@ -4,6 +4,49 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.15.0] — 2026-11-08 — Module 2 Complete: Financial Spine, GL Engine, 1-Click Reversals & Recurring Schedules
+
+### Added
+- `backend/src/lib/ledger-posting.ts`:
+  - Complete, centralized general ledger posting service (`checkOrganizationLockDate`, `validateJournalLines`, `getNextJournalEntryNumber`, `postJournalEntry`, `reverseJournalEntry`, `approveJournalEntry`).
+  - Strict integer-cent double-entry balance validation ($\sum \text{Debits} == \sum \text{Credits}$).
+  - Accounting period lock date validation preventing creation or backdating of journals on or before closed periods.
+  - Organization isolation and active state verification on all `accountId` and `trackingOptionId` references.
+  - Linked immutable contra-journal reversals via `reversesEntryId` and `reversedById`.
+- `backend/src/routes/accounts.ts`:
+  - Chart of Accounts CRUD endpoints with balance calculations and protection of the 10 System Accounts.
+  - Balance sweep decommissioning endpoint (`POST /api/v1/accounts/:id/decommission`) transferring residual balances to parent/main accounts.
+  - Tracking Categories / Cost Centers endpoints (`/api/v1/tracking-categories`, `/:id/options`, `/tracking-options/:id`).
+- `backend/src/routes/ledger.ts`:
+  - Manual Adjusting Journal creation with status routing (`DRAFT`, `PENDING_APPROVAL`, `POSTED`).
+  - Smart Approval workflow: `ADMIN` and `ACCOUNTANT` can post directly or save drafts; other roles submit for approval.
+  - 1-Click Reversal endpoint (`POST /api/v1/ledger/:id/reverse`) generating balanced contra-entries linked bidirectionally.
+  - Journal entry inspection endpoint (`GET /api/v1/ledger/:id`) resolving linked reversal entries.
+  - Recurring journal schedule management (`GET/POST/PATCH/DELETE /api/v1/ledger/recurring`) and manual execution trigger (`/run`).
+- `frontend/src/pages/AccountsPage.tsx`:
+  - Module 2 Chart of Accounts workbench with tabs for Accounts and Tracking Dimensions.
+  - Balance sweep modal, account creation modal, dimension management modal, and system account seeder.
+- `frontend/src/pages/LedgerPage.tsx`:
+  - Fully enhanced General Ledger workbench following Corporate Precision design guidelines.
+  - Status tabs with live counter badges (`Posted`, `Pending Approval`, `Drafts`, `Reversed`, `All Entries`, `Recurring Schedules`, `Trial Balance`).
+  - Right-hand slide-over `Drawer.tsx` inspector for comprehensive journal line details, debit/credit aggregates, audit metadata, and contra-reversal links.
+  - 1-Click Reversal modal with custom reversal date and reason.
+  - Multi-line Manual Journal composer modal with live debit/credit balancing, GL account picker, and dimension tagging.
+  - Recurring Schedules management view with frequency tags, auto-post badges, "Run Now" execution trigger, and schedule creator modal.
+- `frontend/src/api/client.ts`:
+  - Full TypeScript API client definitions for `accountsApi`, `trackingApi`, `ledgerApi`, recurring schedules, and journal reversal relations.
+
+### Changed
+- `backend/src/routes/ledger.ts`:
+  - Strengthened `ManualJournalLineInput` schema to accept empty string `trackingOptionId` from HTML form elements and transform them cleanly to `null`.
+  - Added lookups for `reversesEntry` and `reversedByEntry` in journal inspection.
+- `backend/prisma/migrations/rebuild_all_schema.sql`:
+  - Hardened schema creation DDL with resilient `ALTER SCHEMA public OWNER` blocks and explicit function privilege grants.
+- `docs/STAGES_ROADMAP.md`:
+  - Marked Module 2 checklist items (2.1 to 2.5) as completed `[x]`.
+
+---
+
 ## [0.14.0] — 2026-11-08 — Database Wipe Resilience, Auto-Healing System Accounts, Dedicated Chart of Accounts Workbench & Definitive Rebuild DDL
 
 ### Added
