@@ -37,6 +37,9 @@ Chronological log of all changes, schema diffs, and new dependencies.
   - Rebuilt with Corporate Precision Design System styling and KPI summary cards (Active Contacts, Customers, Suppliers, Total Receivables, Total Payables).
   - Added slide-over `Drawer.tsx` for Contact 360 inspection showing aging breakdown, Australian EFT banking card, and chronological transaction activity feed.
   - Upgraded Create/Edit Contact modal with ABN validation feedback, Australian EFT remittance fields, and filtered GL default account pickers.
+  - Aligned `Drawer` and `Modal` props (`width="xl"`, `maxWidth="max-w-2xl"`) with precision design system interfaces.
+- `frontend/src/pages/ItemsPage.tsx`:
+  - Aligned `Drawer` and `Modal` props (`width="lg"`, `maxWidth="max-w-2xl"`).
 - `frontend/src/App.tsx`:
   - Mounted `/items` route mapping to `<ItemsPage />`.
 - `frontend/src/components/AppShell.tsx`:

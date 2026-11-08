@@ -527,7 +527,7 @@ export function ItemsPage() {
         open={Boolean(drawerItemId)}
         onClose={() => setDrawerItemId(null)}
         title={selectedDrawerItem ? `${selectedDrawerItem.code} — ${selectedDrawerItem.name}` : 'Item Details'}
-        size="md"
+        width="lg"
       >
         {selectedDrawerItem && (
           <div className="space-y-6">
@@ -663,7 +663,7 @@ export function ItemsPage() {
         open={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={editingItem ? `Edit Item: ${editingItem.code}` : 'New Products & Services Catalog Item'}
-        size="lg"
+        maxWidth="max-w-2xl"
       >
         <form onSubmit={handleSubmitModal} className="space-y-4">
           {modalFormError && (

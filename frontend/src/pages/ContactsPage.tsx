@@ -533,7 +533,7 @@ export function ContactsPage() {
         open={Boolean(drawerContactId)}
         onClose={() => setDrawerContactId(null)}
         title={drawerData?.contact.name ?? 'Contact 360° Profile'}
-        size="lg"
+        width="xl"
       >
         {drawerLoading ? (
           <div className="py-24 flex flex-col items-center justify-center gap-2">
@@ -779,7 +779,7 @@ export function ContactsPage() {
         open={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={editingContact ? `Edit Contact: ${editingContact.name}` : 'New Commercial Contact'}
-        size="lg"
+        maxWidth="max-w-2xl"
       >
         <form onSubmit={handleSubmitModal} className="space-y-4">
           {modalFormError && (
