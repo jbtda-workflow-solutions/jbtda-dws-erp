@@ -23,6 +23,12 @@ Chronological log of all changes, schema diffs, and new dependencies.
   - Safe Archive / Delete confirmation modal with usage alerts.
 
 ### Changed
+- `backend/src/routes/accounts.ts`:
+  - Fixed account relation name in `deleteAccount` from `children` to `subAccounts` matching `schema.prisma`.
+- `backend/src/routes/auth.ts`:
+  - Imported and used `SESSION_COOKIE_NAME` from auth plugin in `GET /api/v1/auth/me` and `DELETE /api/v1/auth/logout`.
+- `backend/src/routes/ledger.ts`:
+  - Guarded `statusCounts.ALL` aggregation against `noUncheckedIndexedAccess` compiler check.
 - `backend/src/routes/contacts.ts`:
   - Re-architected with full Master Data schema alignment: `legalName`, `phone`, `billingAddress`, `paymentTermsDays`, `requiresInvoiceForPayment`, default revenue/expense accounts, and Australian EFT banking (`bankBsb`, `bankAccountNumber`, `bankAccountName`).
   - Enforced ATO ABN checksum algorithm (`isValidAbn`) and Australian BSB format standardization (`cleanBsb` to `XXX-XXX`).

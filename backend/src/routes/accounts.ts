@@ -840,7 +840,7 @@ const accountRoutes: FastifyPluginAsync = async (fastify) => {
       const account = await fastify.prisma.account.findFirst({
         where: { id, organizationId },
         include: {
-          children: { select: { id: true } },
+          subAccounts: { select: { id: true } },
           journalLines: { select: { id: true }, take: 1 },
         },
       });
@@ -855,9 +855,9 @@ const accountRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      if (account.children.length > 0) {
+      if (account.subAccounts.length > 0) {
         return reply.code(400).send({
-          error: `Cannot delete account ${account.code} because it has ${account.children.length} sub-account(s). Please delete or reassign sub-accounts first.`,
+          error: `Cannot delete account ${account.code} because it has ${account.subAccounts.length} sub-account(s). Please delete or reassign sub-accounts first.`,
         });
       }
 

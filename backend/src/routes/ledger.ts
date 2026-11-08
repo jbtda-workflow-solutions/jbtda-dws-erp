@@ -227,6 +227,7 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
         }),
       ]);
 
+      let totalAll = 0;
       const statusCounts: Record<string, number> = {
         POSTED: 0,
         PENDING_APPROVAL: 0,
@@ -237,8 +238,9 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
 
       for (const item of statusCountsRaw) {
         statusCounts[item.status] = item._count.status;
-        statusCounts.ALL += item._count.status;
+        totalAll += item._count.status;
       }
+      statusCounts['ALL'] = totalAll;
 
       // Calculate posted debit and credit aggregates across all posted lines
       const postedLines = await fastify.prisma.journalLine.findMany({

@@ -13,7 +13,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { Prisma, User } from '@prisma/client';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
-import { getSession, requireAuth, setSession } from '../plugins/auth.js';
+import { getSession, requireAuth, setSession, SESSION_COOKIE_NAME } from '../plugins/auth.js';
 import { recordAuditLog } from '../lib/audit.js';
 
 type MemberWithOrg = Prisma.OrganizationMemberGetPayload<{
@@ -431,7 +431,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   // DELETE /api/v1/auth/logout
   // -------------------------------------------------------------------------
   fastify.delete('/api/v1/auth/logout', async (_request, reply) => {
-    void reply.clearCookie('erp_session', { path: '/' });
+    void reply.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
     return reply.code(200).send({ status: 'logged_out' });
   });
 };
