@@ -62,11 +62,21 @@ const ParamsWithId = z.object({
 });
 
 function serializeCreditNote<T extends Record<string, any>>(data: T): any {
-  return JSON.parse(
+  const serialized = JSON.parse(
     JSON.stringify(data, (_key, value) =>
       typeof value === 'bigint' ? Number(value) : value,
     ),
   );
+  if (
+    serialized &&
+    typeof serialized === 'object' &&
+    'totalCents' in serialized &&
+    'amountAppliedCents' in serialized
+  ) {
+    serialized.remainingCents =
+      Number(serialized.totalCents ?? 0) - Number(serialized.amountAppliedCents ?? 0);
+  }
+  return serialized;
 }
 
 export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
@@ -117,14 +127,9 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
               abn: true,
             },
           },
-          lines: {
-            include: {
-              account: { select: { id: true, code: true, name: true } },
-              trackingOption: { select: { id: true, name: true } },
-            },
-          },
+          lineItems: true,
         },
-        orderBy: [{ creditNoteDate: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ issueDate: 'desc' }, { createdAt: 'desc' }],
       });
 
       return reply.code(200).send({ creditNotes: serializeCreditNote(creditNotes) });
@@ -216,24 +221,21 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
             contactId,
             invoiceId: invoiceId ?? null,
             creditNoteNumber,
-            reference: reference ?? null,
-            creditNoteDate: parsedIssueDate,
+            issueDate: parsedIssueDate,
             status: CreditNoteStatus.DRAFT,
             subtotalCents: totalResult.subtotalCents,
-            taxCents: totalResult.gstCents,
+            gstCents: totalResult.gstCents,
             totalCents: totalResult.totalCents,
-            remainingCents: totalResult.totalCents,
+            amountAppliedCents: 0n,
             notes: notes ?? null,
-            lines: {
+            createdByUserId: request.user.userId,
+            lineItems: {
               create: processedLines.map((li) => ({
                 organizationId,
-                lineNumber: li.lineNumber,
-                itemId: li.itemId,
                 description: li.description,
-                quantity: 1,
-                unitPriceCents: li.amountCents,
-                subtotalCents: li.amountCents,
-                taxCents: li.gstCents,
+                amountCents: li.amountCents,
+                taxTreatment: li.taxTreatment,
+                gstCents: li.gstCents,
                 totalCents: li.totalCents,
                 accountId: li.accountId,
                 trackingOptionId: li.trackingOptionId,
@@ -242,13 +244,13 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
           },
           include: {
             contact: true,
-            lines: true,
+            lineItems: true,
           },
         });
 
         await recordAuditLog(tx, {
           organizationId,
-          actorUserId: request.user.userId || request.user.id,
+          actorUserId: request.user.userId,
           action: 'CREDIT_NOTE_CREATED',
           entityType: 'CREDIT_NOTE',
           entityId: cn.id,
@@ -284,20 +286,7 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id, organizationId },
         include: {
           contact: true,
-          invoice: true,
-          lines: {
-            include: {
-              account: true,
-              trackingOption: true,
-            },
-          },
-          journalEntry: {
-            include: {
-              lines: {
-                include: { account: true },
-              },
-            },
-          },
+          lineItems: true,
         },
       });
 
@@ -305,7 +294,21 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(404).send({ error: 'Credit note not found' });
       }
 
-      return reply.code(200).send({ creditNote: serializeCreditNote(creditNote) });
+      const journalEntries = await fastify.prisma.journalEntry.findMany({
+        where: { organizationId, referenceType: 'CREDIT_NOTE', referenceId: id },
+        include: {
+          lines: {
+            include: { account: true },
+          },
+        },
+      });
+
+      return reply.code(200).send({
+        creditNote: {
+          ...serializeCreditNote(creditNote),
+          journalEntries: serializeCreditNote(journalEntries),
+        },
+      });
     },
   );
 
@@ -325,7 +328,7 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id, organizationId },
         include: {
           contact: true,
-          lines: true,
+          lineItems: true,
         },
       });
 
@@ -334,7 +337,7 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: `Cannot issue credit note in status ${cn.status}` });
       }
 
-      await checkOrganizationLockDate(fastify.prisma, organizationId, cn.creditNoteDate);
+      await checkOrganizationLockDate(fastify.prisma, organizationId, cn.issueDate);
 
       // System Accounts
       const accounts = await fastify.prisma.account.findMany({
@@ -365,24 +368,24 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
         trackingOptionId?: string | null;
       }> = [];
 
-      for (const line of cn.lines) {
-        if (line.subtotalCents > 0n) {
+      for (const line of cn.lineItems) {
+        if (line.amountCents > 0n) {
           journalLinesData.push({
             organizationId,
             accountId: line.accountId || defaultRevenueAccount!.id,
             entryType: EntryType.DEBIT,
-            amountCents: line.subtotalCents,
+            amountCents: line.amountCents,
             trackingOptionId: line.trackingOptionId,
           });
         }
       }
 
-      if (cn.taxCents > 0n) {
+      if (cn.gstCents > 0n) {
         journalLinesData.push({
           organizationId,
           accountId: gstCollectedAccount.id,
           entryType: EntryType.DEBIT,
-          amountCents: cn.taxCents,
+          amountCents: cn.gstCents,
         });
       }
 
@@ -404,12 +407,9 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
             description: `Credit Note ${cn.creditNoteNumber} issued to ${cn.contact.name}`,
             referenceType: 'CREDIT_NOTE',
             referenceId: cn.id,
-            postedAt: cn.creditNoteDate,
-            source: 'CREDIT_NOTE',
-            sourceId: cn.id,
+            postedAt: cn.issueDate,
             status: 'POSTED',
-            isPosted: true,
-            postedByUserId: request.user.userId || request.user.id,
+            createdByUserId: request.user.userId,
             lines: {
               create: journalLinesData.map((l) => ({
                 organizationId,
@@ -425,10 +425,9 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
         return tx.creditNote.update({
           where: { id },
           data: {
-            status: CreditNoteStatus.OPEN,
-            journalEntryId: je.id,
+            status: CreditNoteStatus.ISSUED,
           },
-          include: { contact: true, lines: true, journalEntry: true },
+          include: { contact: true, lineItems: true },
         });
       });
 
@@ -460,7 +459,7 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
         include: { contact: true },
       });
       if (!cn) return reply.code(404).send({ error: 'Credit note not found' });
-      if (cn.status !== CreditNoteStatus.OPEN && cn.status !== CreditNoteStatus.PARTIALLY_APPLIED) {
+      if (cn.status !== CreditNoteStatus.ISSUED) {
         return reply.code(400).send({ error: `Cannot allocate credit note in status ${cn.status}` });
       }
 
@@ -477,21 +476,26 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'Invoice has already been fully paid' });
       }
 
-      const allocatable = customAmount ? BigInt(customAmount) : cn.remainingCents;
-      if (allocatable <= 0n || allocatable > cn.remainingCents) {
-        return reply.code(400).send({ error: `Allocation amount must be between 1 and ${cn.remainingCents} cents` });
+      const remainingCents = cn.totalCents - cn.amountAppliedCents;
+      if (remainingCents <= 0n) {
+        return reply.code(400).send({ error: 'Credit note has already been fully applied' });
+      }
+
+      const allocatable = customAmount ? BigInt(customAmount) : remainingCents;
+      if (allocatable <= 0n || allocatable > remainingCents) {
+        return reply.code(400).send({ error: `Allocation amount must be between 1 and ${remainingCents} cents` });
       }
 
       const finalAlloc = allocatable > invoiceRemaining ? invoiceRemaining : allocatable;
 
       const result = await fastify.prisma.$transaction(async (tx) => {
-        const newCnRemaining = cn.remainingCents - finalAlloc;
-        const newCnStatus = newCnRemaining === 0n ? CreditNoteStatus.APPLIED : CreditNoteStatus.PARTIALLY_APPLIED;
+        const newAmountApplied = cn.amountAppliedCents + finalAlloc;
+        const newCnStatus = newAmountApplied >= cn.totalCents ? CreditNoteStatus.APPLIED : CreditNoteStatus.ISSUED;
 
         const updatedCn = await tx.creditNote.update({
           where: { id: cn.id },
           data: {
-            remainingCents: newCnRemaining,
+            amountAppliedCents: newAmountApplied,
             status: newCnStatus,
           },
         });
@@ -509,7 +513,7 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
 
         await recordAuditLog(tx, {
           organizationId,
-          actorUserId: request.user.userId || request.user.id,
+          actorUserId: request.user.userId,
           action: 'CREDIT_NOTE_ALLOCATED',
           entityType: 'CREDIT_NOTE',
           entityId: cn.id,
@@ -555,7 +559,8 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
         include: { contact: true },
       });
       if (!cn) return reply.code(404).send({ error: 'Credit note not found' });
-      if (cn.remainingCents <= 0n) {
+      const remainingCents = cn.totalCents - cn.amountAppliedCents;
+      if (remainingCents <= 0n) {
         return reply.code(400).send({ error: 'Credit note has zero remaining refundable balance' });
       }
 
@@ -578,17 +583,22 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(500).send({ error: 'Required accounts (1000 Bank, 1200 AR) not found' });
       }
 
-      const refundAmount = cn.remainingCents;
+      const refundAmount = remainingCents;
 
       const result = await fastify.prisma.$transaction(async (tx) => {
-        const payment = await tx.paymentOut.create({
+        const refundTx = await tx.directTransaction.create({
           data: {
             organizationId,
+            type: 'SPEND_MONEY',
+            bankAccountId: bankAccount.id,
             contactId: cn.contactId,
-            paymentDate: parsedDate,
-            amountCents: refundAmount,
-            paymentMethod: 'DIRECT_CREDIT',
+            payeeName: cn.contact.name,
+            transactionDate: parsedDate,
+            subtotalCents: refundAmount,
+            gstCents: 0n,
+            totalCents: refundAmount,
             reference: `Refund: Credit Note ${cn.creditNoteNumber}`,
+            createdByUserId: request.user.userId,
           },
         });
 
@@ -603,14 +613,11 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
             organizationId,
             entryNumber,
             description: `Bank refund for Credit Note ${cn.creditNoteNumber} (${cn.contact.name})`,
-            referenceType: 'PAYMENT_OUT',
-            referenceId: payment.id,
+            referenceType: 'CREDIT_NOTE_REFUND',
+            referenceId: refundTx.id,
             postedAt: parsedDate,
-            source: 'PAYMENT_OUT',
-            sourceId: payment.id,
             status: 'POSTED',
-            isPosted: true,
-            postedByUserId: request.user.userId || request.user.id,
+            createdByUserId: request.user.userId,
             lines: {
               create: [
                 {
@@ -633,18 +640,18 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
         const updatedCn = await tx.creditNote.update({
           where: { id: cn.id },
           data: {
-            remainingCents: 0n,
-            status: CreditNoteStatus.REFUNDED,
+            amountAppliedCents: cn.totalCents,
+            status: CreditNoteStatus.APPLIED,
           },
         });
 
-        return { updatedCn, payment };
+        return { updatedCn, refundTx };
       });
 
       return reply.code(200).send({
         message: 'Credit note balance refunded successfully',
         creditNote: serializeCreditNote(result.updatedCn),
-        refundPayment: serializeCreditNote(result.payment),
+        refundTransaction: serializeCreditNote(result.refundTx),
       });
     },
   );

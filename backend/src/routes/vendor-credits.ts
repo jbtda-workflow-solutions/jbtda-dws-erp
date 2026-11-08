@@ -16,10 +16,10 @@ import { requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
 import { checkOrganizationLockDate } from '../lib/ledger-posting.js';
-import { VendorCreditStatus, EntryType, Role, TaxTreatment, BillStatus } from '@prisma/client';
+import { CreditNoteStatus, EntryType, Role, TaxTreatment, BillStatus } from '@prisma/client';
 
 const TaxTreatmentEnum = z.nativeEnum(TaxTreatment);
-const VendorCreditStatusEnum = z.nativeEnum(VendorCreditStatus);
+const CreditNoteStatusEnum = z.nativeEnum(CreditNoteStatus);
 
 const VendorCreditLineItemInput = z.object({
   itemId: z.string().uuid().nullable().optional(),
@@ -40,7 +40,7 @@ const CreateVendorCreditBody = z.object({
 });
 
 const ListVendorCreditsQuery = z.object({
-  status: VendorCreditStatusEnum.optional(),
+  status: CreditNoteStatusEnum.optional(),
   contactId: z.string().uuid().optional(),
   search: z.string().trim().optional(),
 });
@@ -55,11 +55,21 @@ const ParamsWithId = z.object({
 });
 
 function serializeVC<T extends Record<string, any>>(data: T): any {
-  return JSON.parse(
+  const serialized = JSON.parse(
     JSON.stringify(data, (_key, value) =>
       typeof value === 'bigint' ? Number(value) : value,
     ),
   );
+  if (
+    serialized &&
+    typeof serialized === 'object' &&
+    'totalCents' in serialized &&
+    'amountAppliedCents' in serialized
+  ) {
+    serialized.remainingCents =
+      Number(serialized.totalCents ?? 0) - Number(serialized.amountAppliedCents ?? 0);
+  }
+  return serialized;
 }
 
 export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
@@ -94,7 +104,6 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
       if (contactId) whereClause.contactId = contactId;
       if (search && search.length > 0) {
         whereClause.OR = [
-          { creditNumber: { contains: search, mode: 'insensitive' } },
           { reference: { contains: search, mode: 'insensitive' } },
           { contact: { name: { contains: search, mode: 'insensitive' } } },
         ];
@@ -109,18 +118,13 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
               name: true,
               email: true,
               abn: true,
-              bsb: true,
+              bankBsb: true,
               bankAccountNumber: true,
             },
           },
-          lines: {
-            include: {
-              account: { select: { id: true, code: true, name: true } },
-              trackingOption: { select: { id: true, name: true } },
-            },
-          },
+          lineItems: true,
         },
-        orderBy: [{ creditDate: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ issueDate: 'desc' }, { createdAt: 'desc' }],
       });
 
       return reply.code(200).send({ credits: serializeVC(credits) });
@@ -191,10 +195,10 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
         })),
       );
 
-      let creditNumber = customNumber;
-      if (!creditNumber) {
+      let referenceNumber = reference || customNumber;
+      if (!referenceNumber) {
         const count = await fastify.prisma.vendorCredit.count({ where: { organizationId } });
-        creditNumber = `VC-${String(count + 1).padStart(5, '0')}`;
+        referenceNumber = `VC-${String(count + 1).padStart(5, '0')}`;
       }
 
       const parsedDate = new Date(creditDate);
@@ -204,41 +208,38 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
           data: {
             organizationId,
             contactId,
-            creditNumber,
-            reference: reference ?? null,
-            creditDate: parsedDate,
-            status: VendorCreditStatus.DRAFT,
+            reference: referenceNumber,
+            issueDate: parsedDate,
+            status: CreditNoteStatus.DRAFT,
             subtotalCents: totalResult.subtotalCents,
-            taxCents: totalResult.gstCents,
+            gstCents: totalResult.gstCents,
             totalCents: totalResult.totalCents,
-            remainingCents: totalResult.totalCents,
+            amountAppliedCents: 0n,
             notes: notes ?? null,
-            lines: {
+            createdByUserId: request.user.userId,
+            lineItems: {
               create: processedLines.map((li) => ({
                 organizationId,
-                lineNumber: li.lineNumber,
-                itemId: li.itemId,
                 description: li.description,
-                quantity: 1,
-                unitPriceCents: li.amountCents,
-                subtotalCents: li.amountCents,
-                taxCents: li.gstCents,
+                amountCents: li.amountCents,
+                taxTreatment: li.taxTreatment,
+                gstCents: li.gstCents,
                 totalCents: li.totalCents,
                 accountId: li.accountId,
                 trackingOptionId: li.trackingOptionId,
               })),
             },
           },
-          include: { contact: true, lines: true },
+          include: { contact: true, lineItems: true },
         });
 
         await recordAuditLog(tx, {
           organizationId,
-          actorUserId: request.user.userId || request.user.id,
+          actorUserId: request.user.userId,
           action: 'VENDOR_CREDIT_CREATED',
           entityType: 'VENDOR_CREDIT',
           entityId: vc.id,
-          summary: `Created draft vendor credit ${vc.creditNumber} for ${contact.name} ($${(Number(totalResult.totalCents) / 100).toFixed(2)})`,
+          summary: `Created draft vendor credit ${vc.reference || vc.id} for ${contact.name} ($${(Number(totalResult.totalCents) / 100).toFixed(2)})`,
         });
 
         return vc;
@@ -270,24 +271,27 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id, organizationId },
         include: {
           contact: true,
-          lines: {
-            include: {
-              account: true,
-              trackingOption: true,
-            },
-          },
-          journalEntry: {
-            include: {
-              lines: {
-                include: { account: true },
-              },
-            },
-          },
+          lineItems: true,
         },
       });
 
       if (!vc) return reply.code(404).send({ error: 'Vendor credit not found' });
-      return reply.code(200).send({ credit: serializeVC(vc) });
+
+      const journalEntries = await fastify.prisma.journalEntry.findMany({
+        where: { organizationId, referenceType: 'VENDOR_CREDIT', referenceId: id },
+        include: {
+          lines: {
+            include: { account: true },
+          },
+        },
+      });
+
+      return reply.code(200).send({
+        credit: {
+          ...serializeVC(vc),
+          journalEntries: serializeVC(journalEntries),
+        },
+      });
     },
   );
 
@@ -305,15 +309,15 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
 
       const vc = await fastify.prisma.vendorCredit.findFirst({
         where: { id, organizationId },
-        include: { contact: true, lines: true },
+        include: { contact: true, lineItems: true },
       });
 
       if (!vc) return reply.code(404).send({ error: 'Vendor credit not found' });
-      if (vc.status !== VendorCreditStatus.DRAFT) {
+      if (vc.status !== CreditNoteStatus.DRAFT) {
         return reply.code(400).send({ error: `Cannot issue vendor credit in status ${vc.status}` });
       }
 
-      await checkOrganizationLockDate(fastify.prisma, organizationId, vc.creditDate);
+      await checkOrganizationLockDate(fastify.prisma, organizationId, vc.issueDate);
 
       // System Accounts: 2000 AP, 2200 GST Paid, 6000 Expense
       const accounts = await fastify.prisma.account.findMany({
@@ -351,24 +355,24 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
         },
       ];
 
-      for (const line of vc.lines) {
-        if (line.subtotalCents > 0n) {
+      for (const line of vc.lineItems) {
+        if (line.amountCents > 0n) {
           journalLinesData.push({
             organizationId,
             accountId: line.accountId || defaultExpense!.id,
             entryType: EntryType.CREDIT,
-            amountCents: line.subtotalCents,
+            amountCents: line.amountCents,
             trackingOptionId: line.trackingOptionId,
           });
         }
       }
 
-      if (vc.taxCents > 0n) {
+      if (vc.gstCents > 0n) {
         journalLinesData.push({
           organizationId,
           accountId: gstPaidAccount.id,
           entryType: EntryType.CREDIT,
-          amountCents: vc.taxCents,
+          amountCents: vc.gstCents,
         });
       }
 
@@ -376,19 +380,16 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
       const entryNumber = `JE-VC-${String(count + 1).padStart(5, '0')}`;
 
       const updated = await fastify.prisma.$transaction(async (tx) => {
-        const je = await tx.journalEntry.create({
+        await tx.journalEntry.create({
           data: {
             organizationId,
             entryNumber,
-            description: `Vendor Credit ${vc.creditNumber} from ${vc.contact.name}`,
+            description: `Vendor Credit ${vc.reference || vc.id} from ${vc.contact.name}`,
             referenceType: 'VENDOR_CREDIT',
             referenceId: vc.id,
-            postedAt: vc.creditDate,
-            source: 'VENDOR_CREDIT',
-            sourceId: vc.id,
+            postedAt: vc.issueDate,
             status: 'POSTED',
-            isPosted: true,
-            postedByUserId: request.user.userId || request.user.id,
+            createdByUserId: request.user.userId,
             lines: {
               create: journalLinesData.map((l) => ({
                 organizationId,
@@ -404,10 +405,9 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
         return tx.vendorCredit.update({
           where: { id },
           data: {
-            status: VendorCreditStatus.OPEN,
-            journalEntryId: je.id,
+            status: CreditNoteStatus.ISSUED,
           },
-          include: { contact: true, lines: true, journalEntry: true },
+          include: { contact: true, lineItems: true },
         });
       });
 
@@ -439,7 +439,7 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
         include: { contact: true },
       });
       if (!vc) return reply.code(404).send({ error: 'Vendor credit not found' });
-      if (vc.status !== VendorCreditStatus.OPEN && vc.status !== VendorCreditStatus.PARTIALLY_APPLIED) {
+      if (vc.status !== CreditNoteStatus.ISSUED) {
         return reply.code(400).send({ error: `Cannot allocate vendor credit in status ${vc.status}` });
       }
 
@@ -456,21 +456,26 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'Bill has already been fully paid' });
       }
 
-      const allocatable = customAmount ? BigInt(customAmount) : vc.remainingCents;
-      if (allocatable <= 0n || allocatable > vc.remainingCents) {
-        return reply.code(400).send({ error: `Allocation amount must be between 1 and ${vc.remainingCents} cents` });
+      const remainingCents = vc.totalCents - vc.amountAppliedCents;
+      if (remainingCents <= 0n) {
+        return reply.code(400).send({ error: 'Vendor credit has already been fully applied' });
+      }
+
+      const allocatable = customAmount ? BigInt(customAmount) : remainingCents;
+      if (allocatable <= 0n || allocatable > remainingCents) {
+        return reply.code(400).send({ error: `Allocation amount must be between 1 and ${remainingCents} cents` });
       }
 
       const finalAlloc = allocatable > billRemaining ? billRemaining : allocatable;
 
       const result = await fastify.prisma.$transaction(async (tx) => {
-        const newVcRemaining = vc.remainingCents - finalAlloc;
-        const newVcStatus = newVcRemaining === 0n ? VendorCreditStatus.APPLIED : VendorCreditStatus.PARTIALLY_APPLIED;
+        const newAmountApplied = vc.amountAppliedCents + finalAlloc;
+        const newVcStatus = newAmountApplied >= vc.totalCents ? CreditNoteStatus.APPLIED : CreditNoteStatus.ISSUED;
 
         const updatedVc = await tx.vendorCredit.update({
           where: { id: vc.id },
           data: {
-            remainingCents: newVcRemaining,
+            amountAppliedCents: newAmountApplied,
             status: newVcStatus,
           },
         });
@@ -488,11 +493,11 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
 
         await recordAuditLog(tx, {
           organizationId,
-          actorUserId: request.user.userId || request.user.id,
+          actorUserId: request.user.userId,
           action: 'VENDOR_CREDIT_ALLOCATED',
           entityType: 'VENDOR_CREDIT',
           entityId: vc.id,
-          summary: `Allocated $${(Number(finalAlloc) / 100).toFixed(2)} from VC ${vc.creditNumber} to Bill ${bill.billNumber}`,
+          summary: `Allocated $${(Number(finalAlloc) / 100).toFixed(2)} from VC ${vc.reference || vc.id} to Bill ${bill.reference || bill.id}`,
         });
 
         return { updatedVc, updatedBill, allocatedCents: finalAlloc };

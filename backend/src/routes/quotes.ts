@@ -614,5 +614,6 @@ const quoteRoutes: FastifyPluginAsync = async (fastify) => {
   );
 };
 
+export { quoteRoutes };
 export default quoteRoutes;
 

@@ -4,6 +4,41 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.17.1] — 2026-11-08 — Build Verification: Schema Alignment and Route Compiler Fixes
+
+### Fixed
+- `backend/src/lib/aba.ts`:
+  - Exported `AbaDetailRecord` type alias (`AbaTransaction`) resolving TS2305 in `batch-payments.ts`.
+- `backend/src/routes/quotes.ts`:
+  - Added named export `quoteRoutes` resolving TS2614 import in `server.ts`.
+- `backend/src/routes/batch-payments.ts`:
+  - Aligned Prisma query includes from `payments` to `paymentsOut`.
+  - Replaced non-existent `bill.billNumber` with `bill.reference || bill.id`.
+  - Replaced `vendor.bsb` with `vendor.bankBsb` per `Contact` model definition.
+  - Aligned `JournalEntry` creation with schema (`referenceType: 'BATCH_PAYMENT'`, `createdByUserId: request.user.userId`).
+- `backend/src/routes/bills.ts`:
+  - Fixed `Contact` query selection (`bankBsb` instead of `bsb`).
+  - Aligned tax treatment to `TaxTreatment.TAX_EXCLUSIVE`.
+  - Replaced `billNumber` updates and audit log references with `reference` or `id`.
+  - Replaced `request.user.id` references with `request.user.userId`.
+- `backend/src/routes/credit-notes.ts`:
+  - Aligned relation name from `lines` to `lineItems` and model fields (`issueDate`, `gstCents`, `amountCents`).
+  - Replaced invalid statuses (`OPEN`, `PARTIALLY_APPLIED`, `REFUNDED`) with canonical `CreditNoteStatus` values (`DRAFT`, `ISSUED`, `APPLIED`).
+  - Dynamic `remainingCents` calculation using `totalCents - amountAppliedCents`.
+  - Updated credit note refund handling to use `DirectTransaction` (`SPEND_MONEY`) and GL entries rather than invalid `PaymentOut.contactId`.
+- `backend/src/routes/purchase-orders.ts`:
+  - Aligned `PurchaseOrder` ordering and updates to `issueDate` and `deliveryDate`.
+  - Replaced `lines` with `lineItems` and child model operations to `tx.purchaseOrderLineItem`.
+  - Replaced `taxCents` with `gstCents` and `approvedById` with `approvedByUserId`.
+  - Cleaned up 1-click bill conversion payload (`reference: po.poNumber` without non-existent `billNumber`).
+- `backend/src/routes/vendor-credits.ts`:
+  - Replaced invalid `VendorCreditStatus` import with canonical `CreditNoteStatus`.
+  - Replaced `creditNumber` and `creditDate` with schema-defined `reference` and `issueDate`.
+  - Aligned relations to `lineItems` and tax tracking to `gstCents`.
+  - Computed remaining balance dynamically and updated `amountAppliedCents`.
+
+---
+
 ## [0.17.0] — 2026-11-08 — Modules 4 & 5 Complete: Accounts Receivable (AR) & Accounts Payable (AP)
 
 ### Added

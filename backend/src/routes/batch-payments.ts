@@ -60,10 +60,18 @@ export const batchPaymentRoutes: FastifyPluginAsync = async (fastify) => {
       const batches = await fastify.prisma.batchPayment.findMany({
         where: { organizationId },
         include: {
-          payments: {
+          paymentsOut: {
             include: {
-              contact: { select: { id: true, name: true, bsb: true, bankAccountNumber: true } },
-              bill: { select: { id: true, billNumber: true, totalCents: true } },
+              bill: {
+                select: {
+                  id: true,
+                  reference: true,
+                  totalCents: true,
+                  contact: {
+                    select: { id: true, name: true, bankBsb: true, bankAccountNumber: true },
+                  },
+                },
+              },
             },
           },
         },
@@ -95,10 +103,13 @@ export const batchPaymentRoutes: FastifyPluginAsync = async (fastify) => {
       const batch = await fastify.prisma.batchPayment.findFirst({
         where: { id, organizationId },
         include: {
-          payments: {
+          paymentsOut: {
             include: {
-              contact: true,
-              bill: true,
+              bill: {
+                include: {
+                  contact: true,
+                },
+              },
             },
           },
         },
@@ -207,7 +218,7 @@ export const batchPaymentRoutes: FastifyPluginAsync = async (fastify) => {
         const bill = bills.find((b) => b.id === bp.billId)!;
         if (bill.status === BillStatus.PAID || bill.status === BillStatus.VOID) {
           return reply.code(400).send({
-            error: `Bill ${bill.billNumber} cannot be paid because status is ${bill.status}`,
+            error: `Bill ${bill.reference || bill.id} cannot be paid because status is ${bill.status}`,
           });
         }
 
@@ -216,14 +227,14 @@ export const batchPaymentRoutes: FastifyPluginAsync = async (fastify) => {
 
         if (amountToPay <= 0n || amountToPay > unpaidBalance) {
           return reply.code(400).send({
-            error: `Invalid payment amount for bill ${bill.billNumber}. Unpaid balance is ${Number(unpaidBalance)} cents.`,
+            error: `Invalid payment amount for bill ${bill.reference || bill.id}. Unpaid balance is ${Number(unpaidBalance)} cents.`,
           });
         }
 
         const vendor = bill.contact;
-        if (!vendor.bsb || !vendor.bankAccountNumber) {
+        if (!vendor.bankBsb || !vendor.bankAccountNumber) {
           return reply.code(400).send({
-            error: `Vendor "${vendor.name}" (Bill ${bill.billNumber}) does not have bank BSB and account number configured for EFT payments`,
+            error: `Vendor "${vendor.name}" (Bill ${bill.reference || bill.id}) does not have bank BSB and account number configured for EFT payments`,
           });
         }
 
@@ -231,28 +242,27 @@ export const batchPaymentRoutes: FastifyPluginAsync = async (fastify) => {
         paymentAllocations.push({ bill, amountCents: amountToPay });
 
         abaRecords.push({
-          bsb: vendor.bsb,
+          bsb: vendor.bankBsb,
           accountNumber: vendor.bankAccountNumber,
-          indicator: ' ',
-          transactionCode: '50',
+          accountName: vendor.name.substring(0, 32),
           amountCents: amountToPay,
-          accountTitle: vendor.name,
-          lodgementReference: (bill.billNumber || 'BILL').substring(0, 18),
+          lodgementReference: (bill.reference || 'BILL').substring(0, 18),
           traceBsb: org.bankBsb,
           traceAccountNumber: org.bankAccountNumber,
           remitterName: org.name.substring(0, 16),
-          withholdingTaxCents: 0n,
         });
       }
 
-      const abaFileString = generateAbaFile({
-        financialInstitution: 'WBC',
-        userSuppliedName: org.name,
-        userIdentificationNumber: org.apcaUserId || '000000',
-        descriptionOfEntries: description,
-        processingDate: pDate,
-        records: abaRecords,
-      });
+      const abaFileString = generateAbaFile(
+        {
+          financialInstitution: 'WBC',
+          userSupplyingName: org.name,
+          userIdentificationNumber: org.apcaUserId || '000000',
+          descriptionOfEntries: description,
+          processingDate: pDate,
+        },
+        abaRecords,
+      );
 
       const batchCount = await fastify.prisma.batchPayment.count({ where: { organizationId } });
       const batchNumber = `ABA-${String(batchCount + 1).padStart(4, '0')}`;
@@ -263,9 +273,12 @@ export const batchPaymentRoutes: FastifyPluginAsync = async (fastify) => {
             organizationId,
             batchNumber,
             paymentDate: pDate,
-            totalAmountCents: totalBatchCents,
+            bankAccountId: bankAccount.id,
+            description,
+            totalCents: totalBatchCents,
+            itemCount: paymentAllocations.length,
             abaFileContent: abaFileString,
-            status: 'COMPLETED',
+            createdByUserId: request.user.userId,
           },
         });
 
@@ -274,13 +287,12 @@ export const batchPaymentRoutes: FastifyPluginAsync = async (fastify) => {
           const pmt = await tx.paymentOut.create({
             data: {
               organizationId,
-              contactId: alloc.bill.contactId,
               billId: alloc.bill.id,
+              bankAccountId: bankAccount.id,
               batchPaymentId: batchRecord.id,
               paymentDate: pDate,
               amountCents: alloc.amountCents,
-              paymentMethod: 'EFT_ABA',
-              reference: `Batch ${batchNumber} - ${alloc.bill.billNumber}`,
+              reference: `Batch ${batchNumber} - ${alloc.bill.reference || alloc.bill.id}`,
             },
           });
           createdPayments.push(pmt);
@@ -306,14 +318,11 @@ export const batchPaymentRoutes: FastifyPluginAsync = async (fastify) => {
             organizationId,
             entryNumber,
             description: `EFT Batch Payment ${batchNumber} (${abaRecords.length} suppliers)`,
-            referenceType: 'PAYMENT_OUT',
+            referenceType: 'BATCH_PAYMENT',
             referenceId: batchRecord.id,
             postedAt: pDate,
-            source: 'PAYMENT_OUT',
-            sourceId: batchRecord.id,
             status: 'POSTED',
-            isPosted: true,
-            postedByUserId: request.user.userId || request.user.id,
+            createdByUserId: request.user.userId,
             lines: {
               create: [
                 {
@@ -335,7 +344,7 @@ export const batchPaymentRoutes: FastifyPluginAsync = async (fastify) => {
 
         await recordAuditLog(tx, {
           organizationId,
-          actorUserId: request.user.userId || request.user.id,
+          actorUserId: request.user.userId,
           action: 'BATCH_PAYMENT_CREATED',
           entityType: 'BATCH_PAYMENT',
           entityId: batchRecord.id,

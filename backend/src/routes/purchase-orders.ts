@@ -119,18 +119,13 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
               name: true,
               email: true,
               abn: true,
-              bsb: true,
+              bankBsb: true,
               bankAccountNumber: true,
             },
           },
-          lines: {
-            include: {
-              account: { select: { id: true, code: true, name: true } },
-              trackingOption: { select: { id: true, name: true } },
-            },
-          },
+          lineItems: true,
         },
-        orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ issueDate: 'desc' }, { createdAt: 'desc' }],
       });
 
       return reply.code(200).send({ purchaseOrders: serializePO(purchaseOrders) });
@@ -225,24 +220,24 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
             organizationId,
             contactId,
             poNumber,
-            reference: reference ?? null,
-            orderDate: parsedOrderDate,
-            expectedDeliveryDate: parsedDeliveryDate,
+            issueDate: parsedOrderDate,
+            deliveryDate: parsedDeliveryDate,
             status,
             subtotalCents: totalResult.subtotalCents,
-            taxCents: totalResult.gstCents,
+            gstCents: totalResult.gstCents,
             totalCents: totalResult.totalCents,
             notes: notes ?? null,
-            lines: {
+            createdByUserId: request.user.userId,
+            lineItems: {
               create: processedLines.map((li) => ({
                 organizationId,
-                lineNumber: li.lineNumber,
                 itemId: li.itemId,
                 description: li.description,
                 quantity: li.quantity,
                 unitPriceCents: li.unitPriceCents,
-                subtotalCents: li.subtotalCents,
-                taxCents: li.taxCents,
+                amountCents: li.subtotalCents,
+                taxTreatment: li.taxTreatment,
+                gstCents: li.taxCents,
                 totalCents: li.totalCents,
                 accountId: li.accountId,
                 trackingOptionId: li.trackingOptionId,
@@ -251,13 +246,13 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
           },
           include: {
             contact: true,
-            lines: true,
+            lineItems: true,
           },
         });
 
         await recordAuditLog(tx, {
           organizationId,
-          actorUserId: request.user.userId || request.user.id,
+          actorUserId: request.user.userId,
           action: 'PURCHASE_ORDER_CREATED',
           entityType: 'PURCHASE_ORDER',
           entityId: po.id,
@@ -293,12 +288,7 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id, organizationId },
         include: {
           contact: true,
-          lines: {
-            include: {
-              account: true,
-              trackingOption: true,
-            },
-          },
+          lineItems: true,
         },
       });
 
@@ -333,7 +323,7 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'Validation failed', details: parse.error.flatten().fieldErrors });
       }
 
-      const { contactId, reference, issueDate, deliveryDate, notes, status, lineItems } = parse.data;
+      const { contactId, issueDate, deliveryDate, notes, status, lineItems } = parse.data;
 
       // Accounts
       const accounts = await fastify.prisma.account.findMany({
@@ -347,25 +337,25 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
 
       const updated = await fastify.prisma.$transaction(async (tx) => {
         let subtotalCents = existing.subtotalCents;
-        let taxCents = existing.taxCents;
+        let gstCents = existing.gstCents;
         let totalCents = existing.totalCents;
 
         if (lineItems && lineItems.length > 0) {
-          await tx.purchaseOrderLine.deleteMany({ where: { purchaseOrderId: id } });
+          await tx.purchaseOrderLineItem.deleteMany({ where: { purchaseOrderId: id } });
 
-          const processed = lineItems.map((item, idx) => {
+          const processed = lineItems.map((item) => {
             const lineTotal = BigInt(item.quantity) * BigInt(item.unitPriceCents);
             const gstResult = calculateGST(lineTotal, item.taxTreatment);
             return {
               organizationId,
               purchaseOrderId: id,
-              lineNumber: idx + 1,
               itemId: item.itemId ?? null,
               description: item.description,
               quantity: item.quantity,
               unitPriceCents: BigInt(item.unitPriceCents),
-              subtotalCents: gstResult.subtotalCents,
-              taxCents: gstResult.gstCents,
+              amountCents: gstResult.subtotalCents,
+              taxTreatment: item.taxTreatment,
+              gstCents: gstResult.gstCents,
               totalCents: gstResult.totalCents,
               accountId: item.accountId || defaultExpenseAccount?.id!,
               trackingOptionId: item.trackingOptionId ?? null,
@@ -374,33 +364,32 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
 
           const totals = sumGSTResults(
             processed.map((p) => ({
-              subtotalCents: p.subtotalCents,
-              gstCents: p.taxCents,
+              subtotalCents: p.amountCents,
+              gstCents: p.gstCents,
               totalCents: p.totalCents,
             })),
           );
 
           subtotalCents = totals.subtotalCents;
-          taxCents = totals.gstCents;
+          gstCents = totals.gstCents;
           totalCents = totals.totalCents;
 
-          await tx.purchaseOrderLine.createMany({ data: processed });
+          await tx.purchaseOrderLineItem.createMany({ data: processed });
         }
 
         return tx.purchaseOrder.update({
           where: { id },
           data: {
             contactId: contactId ?? existing.contactId,
-            reference: reference !== undefined ? reference : existing.reference,
-            orderDate: issueDate ? new Date(issueDate) : existing.orderDate,
-            expectedDeliveryDate: deliveryDate !== undefined ? (deliveryDate ? new Date(deliveryDate) : null) : existing.expectedDeliveryDate,
+            issueDate: issueDate ? new Date(issueDate) : existing.issueDate,
+            deliveryDate: deliveryDate !== undefined ? (deliveryDate ? new Date(deliveryDate) : null) : existing.deliveryDate,
             notes: notes !== undefined ? notes : existing.notes,
             status: status ?? existing.status,
             subtotalCents,
-            taxCents,
+            gstCents,
             totalCents,
           },
-          include: { contact: true, lines: true },
+          include: { contact: true, lineItems: true },
         });
       });
 
@@ -429,7 +418,7 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       await fastify.prisma.$transaction(async (tx) => {
-        await tx.purchaseOrderLine.deleteMany({ where: { purchaseOrderId: id } });
+        await tx.purchaseOrderLineItem.deleteMany({ where: { purchaseOrderId: id } });
         await tx.purchaseOrder.delete({ where: { id } });
       });
 
@@ -458,10 +447,9 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id },
         data: {
           status: PurchaseOrderStatus.APPROVED,
-          approvedById: request.user.userId || request.user.id,
-          approvedAt: new Date(),
+          approvedByUserId: request.user.userId,
         },
-        include: { contact: true, lines: true },
+        include: { contact: true, lineItems: true },
       });
 
       return reply.code(200).send({ message: 'Purchase order approved', purchaseOrder: serializePO(updated) });
@@ -483,7 +471,7 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
       const updated = await fastify.prisma.purchaseOrder.update({
         where: { id, organizationId },
         data: { status: PurchaseOrderStatus.REJECTED },
-        include: { contact: true, lines: true },
+        include: { contact: true, lineItems: true },
       });
 
       return reply.code(200).send({ message: 'Purchase order rejected', purchaseOrder: serializePO(updated) });
@@ -504,7 +492,7 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
 
       const po = await fastify.prisma.purchaseOrder.findFirst({
         where: { id, organizationId },
-        include: { contact: true, lines: true },
+        include: { contact: true, lineItems: true },
       });
 
       if (!po) return reply.code(404).send({ error: 'Purchase order not found' });
@@ -516,34 +504,34 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + (po.contact.paymentTermsDays || 30));
 
-      const billCount = await fastify.prisma.bill.count({ where: { organizationId } });
-      const billNumber = `BILL-${String(billCount + 1).padStart(5, '0')}`;
-
       const result = await fastify.prisma.$transaction(async (tx) => {
         const bill = await tx.bill.create({
           data: {
             organizationId,
             contactId: po.contactId,
-            billNumber,
             reference: po.poNumber,
             issueDate,
             dueDate,
             status: BillStatus.DRAFT,
             subtotalCents: po.subtotalCents,
-            gstCents: po.taxCents,
+            gstCents: po.gstCents,
             totalCents: po.totalCents,
             amountPaidCents: 0n,
             notes: po.notes,
             purchaseOrderId: po.id,
             lineItems: {
-              create: po.lines.map((li) => ({
+              create: po.lineItems.map((li) => ({
                 organizationId,
                 itemId: li.itemId,
                 description: li.description,
-                amountCents: li.subtotalCents,
+                quantity: li.quantity,
+                unitPriceCents: li.unitPriceCents,
+                amountCents: li.amountCents,
                 taxTreatment: li.taxTreatment || TaxTreatment.TAX_EXCLUSIVE,
-                gstCents: li.taxCents,
+                gstCents: li.gstCents,
                 totalCents: li.totalCents,
+                accountId: li.accountId,
+                trackingOptionId: li.trackingOptionId,
               })),
             },
           },
@@ -560,11 +548,11 @@ export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
 
         await recordAuditLog(tx, {
           organizationId,
-          actorUserId: request.user.userId || request.user.id,
+          actorUserId: request.user.userId,
           action: 'PURCHASE_ORDER_CONVERTED',
           entityType: 'PURCHASE_ORDER',
           entityId: po.id,
-          summary: `Converted Purchase Order ${po.poNumber} to Bill ${bill.billNumber}`,
+          summary: `Converted Purchase Order ${po.poNumber} to Bill ${bill.reference || bill.id}`,
         });
 
         return bill;

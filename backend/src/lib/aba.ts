@@ -27,6 +27,8 @@ export interface AbaTransaction {
   remitterName: string;         // up to 16 chars (company name)
 }
 
+export type AbaDetailRecord = AbaTransaction;
+
 /**
  * Standardizes an Australian BSB into "XXX-XXX" format.
  * Returns null if BSB does not contain exactly 6 digits.

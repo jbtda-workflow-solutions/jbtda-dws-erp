@@ -37,7 +37,7 @@ const LineItemInput = z.object({
   quantity: z.number().positive().default(1),
   unitPriceCents: z.number().int().nonnegative().optional(),
   amountCents: z.number().int().positive().optional(),
-  taxTreatment: TaxTreatmentEnum.default(TaxTreatment.EXCLUSIVE),
+  taxTreatment: TaxTreatmentEnum.default(TaxTreatment.TAX_EXCLUSIVE),
   accountId: z.string().uuid().optional(),
   trackingOptionId: z.string().uuid().optional(),
 });
@@ -136,7 +136,6 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
       if (contactId) whereClause.contactId = contactId;
       if (search && search.length > 0) {
         whereClause.OR = [
-          { billNumber: { contains: search, mode: 'insensitive' } },
           { reference: { contains: search, mode: 'insensitive' } },
           { contact: { name: { contains: search, mode: 'insensitive' } } },
         ];
@@ -151,7 +150,7 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
               name: true,
               email: true,
               abn: true,
-              bsb: true,
+              bankBsb: true,
               bankAccountNumber: true,
             },
           },
@@ -254,22 +253,12 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
         })),
       );
 
-      // Bill Number
-      let billNumber = customBillNumber;
-      if (!billNumber) {
-        const count = await fastify.prisma.bill.count({ where: { organizationId } });
-        billNumber = `BILL-${String(count + 1).padStart(5, '0')}`;
-      }
-
-      const initialStatus = autoApprove ? BillStatus.AWAITING_PAYMENT : BillStatus.DRAFT;
-
       const createdBill = await fastify.prisma.$transaction(async (tx) => {
         const bill = await tx.bill.create({
           data: {
             organizationId,
             contactId,
-            billNumber,
-            reference: reference ?? null,
+            reference: reference ?? customBillNumber ?? null,
             issueDate: parsedIssueDate,
             dueDate: parsedDueDate,
             status: initialStatus,
@@ -312,7 +301,7 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
             if (item.amountCents > 0n) {
               journalLinesData.push({
                 accountId: item.accountId,
-                description: `${bill.billNumber}: ${item.description}`,
+                description: `${bill.reference || bill.id}: ${item.description}`,
                 debitCents: item.amountCents,
                 creditCents: 0n,
                 trackingOptionId: item.trackingOptionId,
@@ -323,7 +312,7 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           if (totalResult.gstCents > 0n) {
             journalLinesData.push({
               accountId: gstPaidAccount.id,
-              description: `GST Paid on Bill ${bill.billNumber}`,
+              description: `GST Paid on Bill ${bill.reference || bill.id}`,
               debitCents: totalResult.gstCents,
               creditCents: 0n,
             });
@@ -331,7 +320,7 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
 
           journalLinesData.push({
             accountId: apAccount.id,
-            description: `Bill ${bill.billNumber} - ${contact.name}`,
+            description: `Bill ${bill.reference || bill.id} - ${contact.name}`,
             debitCents: 0n,
             creditCents: totalResult.totalCents,
           });
@@ -343,21 +332,21 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
             organizationId,
             entryNumber,
             date: parsedIssueDate,
-            memo: `Bill ${bill.billNumber} from ${contact.name}${reference ? ` (${reference})` : ''}`,
+            memo: `Bill ${bill.reference || bill.id} from ${contact.name}${reference ? ` (${reference})` : ''}`,
             source: 'BILL',
             sourceId: bill.id,
             lines: journalLinesData,
-            userId: request.user.userId || request.user.id,
+            userId: request.user.userId,
           });
         }
 
         await recordAuditLog(tx, {
           organizationId,
-          actorUserId: request.user.userId || request.user.id,
+          actorUserId: request.user.userId,
           action: 'BILL_CREATED',
           entityType: 'BILL',
           entityId: bill.id,
-          summary: `Recorded bill ${bill.billNumber} from ${contact.name} for $${(Number(totalResult.totalCents) / 100).toFixed(2)} (Status: ${initialStatus})`,
+          summary: `Recorded bill ${bill.reference || bill.id} from ${contact.name} for $${(Number(totalResult.totalCents) / 100).toFixed(2)} (Status: ${initialStatus})`,
         });
 
         return bill;
@@ -495,8 +484,7 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           where: { id },
           data: {
             contactId: contactId ?? bill.contactId,
-            billNumber: billNumber ?? bill.billNumber,
-            reference: reference !== undefined ? reference : bill.reference,
+            reference: reference !== undefined ? reference : (billNumber ?? bill.reference),
             issueDate: issueDate ? new Date(issueDate) : bill.issueDate,
             dueDate: dueDate ? new Date(dueDate) : bill.dueDate,
             notes: notes !== undefined ? notes : bill.notes,
@@ -589,7 +577,7 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
         if (item.amountCents > 0n) {
           journalLinesData.push({
             accountId: expenseAccount.id,
-            description: `${bill.billNumber}: ${item.description}`,
+            description: `${bill.reference || bill.id}: ${item.description}`,
             debitCents: item.amountCents,
             creditCents: 0n,
           });
@@ -599,7 +587,7 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
       if (bill.gstCents > 0n) {
         journalLinesData.push({
           accountId: gstPaidAccount.id,
-          description: `GST Paid on Bill ${bill.billNumber}`,
+          description: `GST Paid on Bill ${bill.reference || bill.id}`,
           debitCents: bill.gstCents,
           creditCents: 0n,
         });
@@ -607,7 +595,7 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
 
       journalLinesData.push({
         accountId: apAccount.id,
-        description: `Bill ${bill.billNumber} - ${bill.contact.name}`,
+        description: `Bill ${bill.reference || bill.id} - ${bill.contact.name}`,
         debitCents: 0n,
         creditCents: bill.totalCents,
       });
@@ -620,11 +608,11 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           organizationId,
           entryNumber,
           date: bill.issueDate,
-          memo: `Bill ${bill.billNumber} from ${bill.contact.name}`,
+          memo: `Bill ${bill.reference || bill.id} from ${bill.contact.name}`,
           source: 'BILL',
           sourceId: bill.id,
           lines: journalLinesData,
-          userId: request.user.userId || request.user.id,
+          userId: request.user.userId,
         });
 
         return tx.bill.update({
@@ -676,8 +664,8 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           await reverseJournalEntry(
             tx,
             originalJe.id,
-            `Reversal for voided bill ${bill.billNumber}`,
-            request.user.userId || request.user.id,
+            `Reversal for voided bill ${bill.reference || bill.id}`,
+            request.user.userId,
           );
         }
 
@@ -793,24 +781,24 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           organizationId,
           entryNumber,
           date: parsedPaymentDate,
-          memo: `Payment for bill ${bill.billNumber} from ${bill.contact.name}${reference ? ` (${reference})` : ''}`,
+          memo: `Payment for bill ${bill.reference || bill.id} from ${bill.contact.name}${reference ? ` (${reference})` : ''}`,
           source: 'PAYMENT_OUT',
           sourceId: paymentOut.id,
           lines: [
             {
               accountId: apAccount.id,
-              description: `AP Settlement: Bill ${bill.billNumber}`,
+              description: `AP Settlement: Bill ${bill.reference || bill.id}`,
               debitCents: amountBigInt,
               creditCents: 0n,
             },
             {
               accountId: bankAccount.id,
-              description: `Cash Outflow: Bill ${bill.billNumber}`,
+              description: `Cash Outflow: Bill ${bill.reference || bill.id}`,
               debitCents: 0n,
               creditCents: amountBigInt,
             },
           ],
-          userId: request.user.userId || request.user.id,
+          userId: request.user.userId,
         });
 
         return { paymentOut, bill: updatedBill, journalEntry };
@@ -938,24 +926,24 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           organizationId,
           entryNumber,
           date: parsedPaymentDate,
-          memo: `Payment for bill ${bill.billNumber} from ${bill.contact.name}${reference ? ` (${reference})` : ''}`,
+          memo: `Payment for bill ${bill.reference || bill.id} from ${bill.contact.name}${reference ? ` (${reference})` : ''}`,
           source: 'PAYMENT_OUT',
           sourceId: paymentOut.id,
           lines: [
             {
               accountId: apAccount.id,
-              description: `AP Settlement: Bill ${bill.billNumber}`,
+              description: `AP Settlement: Bill ${bill.reference || bill.id}`,
               debitCents: amountBigInt,
               creditCents: 0n,
             },
             {
               accountId: bankAccount.id,
-              description: `Cash Outflow: Bill ${bill.billNumber}`,
+              description: `Cash Outflow: Bill ${bill.reference || bill.id}`,
               debitCents: 0n,
               creditCents: amountBigInt,
             },
           ],
-          userId: request.user.userId || request.user.id,
+          userId: request.user.userId,
         });
 
         return { paymentOut, bill: updatedBill, journalEntry };
@@ -1102,20 +1090,17 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + 14);
 
-      const count = await fastify.prisma.bill.count({ where: { organizationId } });
-      const billNumber = `BILL-${String(count + 1).padStart(5, '0')}`;
-
       // Calculate totals
       const processedLines = template.lineItems.map((item) => {
         const rawAmount = item.amountCents
           ? BigInt(item.amountCents)
           : BigInt(Math.round(item.quantity * (item.unitPriceCents ?? 0)));
-        const gstResult = calculateGST(rawAmount, item.taxTreatment || TaxTreatment.EXCLUSIVE);
+        const gstResult = calculateGST(rawAmount, item.taxTreatment || TaxTreatment.TAX_EXCLUSIVE);
         return {
           organizationId,
           itemId: item.itemId,
           description: item.description,
-          taxTreatment: item.taxTreatment || TaxTreatment.EXCLUSIVE,
+          taxTreatment: item.taxTreatment || TaxTreatment.TAX_EXCLUSIVE,
           amountCents: gstResult.subtotalCents,
           gstCents: gstResult.gstCents,
           totalCents: gstResult.totalCents,
@@ -1134,7 +1119,6 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
         data: {
           organizationId,
           contactId: schedule.contactId,
-          billNumber,
           reference: `Recurring: ${schedule.name}`,
           issueDate,
           dueDate,
