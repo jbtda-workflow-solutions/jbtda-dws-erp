@@ -33,6 +33,7 @@ Chronological log of all changes, schema diffs, and new dependencies.
 ### Changed
 - `backend/src/server.ts`:
   - Registered `reportRoutes` at `/api/v1/reports` and `dashboardRoutes` at `/api/v1/dashboard`.
+  - Upgraded CORS configuration to parse and support comma-separated multiple origins in `FRONTEND_ORIGIN`.
 - `frontend/src/api/client.ts`:
   - Added TypeScript interfaces for `TrialBalanceReport`, `ProfitAndLossReport`, `BalanceSheetReport`, `AgedReceivablesReport`, `AgedPayablesReport`, `BasReport`, and `DashboardSummary`.
   - Added `reportsApi` and `dashboardApi` client objects.

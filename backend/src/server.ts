@@ -102,12 +102,21 @@ async function buildServer() {
   });
 
   // -------------------------------------------------------------------------
-  // CORS — allow the Vite dev server and external frontend origin if configured
+  // CORS — allow the Vite dev server and external frontend origin(s) if configured.
+  // Supports single origin or comma-separated list of origins.
   // In unified production, frontend and backend share the exact same origin.
   // -------------------------------------------------------------------------
   if (!isProduction || process.env['FRONTEND_ORIGIN']) {
+    const rawOrigins = process.env['FRONTEND_ORIGIN'];
+    const parsedOrigins = rawOrigins
+      ? rawOrigins
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean)
+      : ['http://localhost:5173'];
+
     await fastify.register(cors, {
-      origin: process.env['FRONTEND_ORIGIN'] ?? 'http://localhost:5173',
+      origin: parsedOrigins.length === 1 ? parsedOrigins[0]! : parsedOrigins,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     });
