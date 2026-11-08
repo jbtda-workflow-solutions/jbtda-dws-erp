@@ -4,6 +4,57 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.17.0] — 2026-11-08 — Modules 4 & 5 Complete: Accounts Receivable (AR) & Accounts Payable (AP)
+
+### Added
+- `backend/src/lib/aba.ts`:
+  - Official Australian APCA Cemtex `.ABA` batch payment file generator adhering strictly to standard 120-character ASCII format with CRLF (`\r\n`) line breaks.
+  - Descriptive Record Type 0 (reel sequence 01, financial institution code, user supply name, user direct entry identification number, description of entries, processing date).
+  - Detail Record Type 1 (BSB, account number, indicator flag, transaction code 50 for credit, amount cents right-justified zero-filled, title of account, lodgement reference, trace BSB/account number, remitter name, withholding tax cents).
+  - File Total Record Type 7 (BSB 999-999, net total amount cents, credit total amount cents, debit total amount cents, total record count right-justified zero-filled).
+- `backend/src/routes/quotes.ts`:
+  - Full CRUD and lifecycle management for Sales Quotes & Estimates (`GET /api/v1/quotes`, `POST /api/v1/quotes`, `GET /api/v1/quotes/:id`, `PATCH /api/v1/quotes/:id`, `DELETE /api/v1/quotes/:id`).
+  - 1-Click Convert to Customer Invoice (`POST /api/v1/quotes/:id/convert-to-invoice`) copying quote lines into an issued or draft customer invoice and updating quote status to `INVOICED`.
+- `backend/src/routes/credit-notes.ts`:
+  - Full CRUD and lifecycle for Customer Credit Notes (`GET /api/v1/credit-notes`, `POST /api/v1/credit-notes`, `GET /api/v1/credit-notes/:id`).
+  - Issuance endpoint (`POST /api/v1/credit-notes/:id/issue`) generating contra-AR General Ledger entries (Debit Line Revenue Account, Debit 2100 GST Collected, Credit 1200 Accounts Receivable).
+  - Allocation endpoint (`POST /api/v1/credit-notes/:id/allocate`) applying credit note balances to open customer invoices.
+  - Refund endpoint (`POST /api/v1/credit-notes/:id/refund`) recording bank disbursements to refund excess credit balances.
+- `backend/src/routes/purchase-orders.ts`:
+  - Procurement lifecycle endpoints (`GET /api/v1/purchase-orders`, `POST /api/v1/purchase-orders`, `GET /api/v1/purchase-orders/:id`, `PATCH /api/v1/purchase-orders/:id`, `DELETE /api/v1/purchase-orders/:id`).
+  - Role-gated PO approval (`POST /api/v1/purchase-orders/:id/approve`) and rejection (`POST /api/v1/purchase-orders/:id/reject`) for `MANAGER`, `ACCOUNTANT`, and `ADMIN`.
+  - 1-Click Convert to Vendor Bill (`POST /api/v1/purchase-orders/:id/convert-to-bill`) mapping lines to accounts payable.
+- `backend/src/routes/vendor-credits.ts`:
+  - Supplier credit note management (`GET /api/v1/vendor-credits`, `POST /api/v1/vendor-credits`, `GET /api/v1/vendor-credits/:id`).
+  - Issuance (`POST /api/v1/vendor-credits/:id/issue`) posting AP contra entries (Debit 2000 Accounts Payable, Credit Expense/Asset Account, Credit 2200 GST Paid).
+  - Allocation (`POST /api/v1/vendor-credits/:id/allocate`) offsetting open vendor bill balances.
+- `backend/src/routes/batch-payments.ts`:
+  - Australian batch bank payment run endpoints (`GET /api/v1/batch-payments`, `POST /api/v1/batch-payments`, `GET /api/v1/batch-payments/:id`).
+  - Streamable `.ABA` file download endpoint (`GET /api/v1/batch-payments/:id/aba`) with `Content-Type: text/plain` and `Content-Disposition: attachment`.
+- `frontend/src/pages/InvoicesPage.tsx`:
+  - Expanded into a multi-tab Accounts Receivable workbench: Customer Invoices, Quotes & Estimates, Credit Notes, and Recurring Invoices.
+  - Sub-views and modals for Quote creation, Quote detail inspection with 1-click invoice conversion, Credit Note creation/issuance, Credit Note allocation, and Recurring Invoice schedule management.
+- `frontend/src/pages/BillsPage.tsx`:
+  - Expanded into a multi-tab Accounts Payable workbench: Vendor Bills, Purchase Orders, Vendor Credits, .ABA Batch Payments, and Recurring Bills.
+  - Sub-views and modals for Purchase Order creation/approval/bill conversion, Vendor Credit issuance/allocation, Recurring Bill schedules, and live .ABA batch payment runs with instant file export.
+
+### Changed
+- `backend/src/routes/invoices.ts`:
+  - Re-architected with revenue account overrides on line items, accounting period lock verification, voiding with reversing journal entries, unified payments-in (Modes A, B, C), and recurring invoice schedule endpoints (`GET /api/v1/recurring-invoices`, `POST`, `PATCH /:id`, `DELETE /:id`, `POST /:id/run`).
+- `backend/src/routes/bills.ts`:
+  - Re-architected with catalog item integration, expense account classification, accounting period lock enforcement, bill approval GL posting (Debit Expense/Asset, Debit 2200 GST Paid, Credit 2000 AP), void reversing entries, and recurring bill schedule endpoints (`GET /api/v1/recurring-bills`, `POST`, `PATCH /:id`, `DELETE /:id`, `POST /:id/run`).
+- `backend/src/server.ts`:
+  - Registered route plugins for `quoteRoutes`, `creditNoteRoutes`, `purchaseOrderRoutes`, `vendorCreditRoutes`, and `batchPaymentRoutes`.
+- `frontend/src/api/client.ts`:
+  - Exported complete TypeScript models and API client objects: `quoteApi`, `creditNoteApi`, `purchaseOrderApi`, `vendorCreditApi`, `batchPaymentApi`, `recurringInvoiceApi`, `recurringBillApi`, and updated `invoiceApi`/`billApi`.
+- `frontend/src/components/AppShell.tsx`:
+  - Modernized primary navigation frame by converting the vertical left sidebar into a static Obsidian Carbon (`#0B1311`) top header (`h-12`) with dropdown menus for domain-grouped navigation (`General Ledger`, `Operations`, `Governance`), direct Overview link, multi-company workspace switcher popover, period lock and 2-person approval status badges, and user session controls.
+  - Added lean, thinner static footer (`h-7`) displaying active corporate entity name and formatted ABN, Cloud SQL Unix socket connectivity status, zero-LLM deterministic engine indicator, version `0.17.0`, and quick link to the workspace audit trail.
+- `docs/STAGES_ROADMAP.md`:
+  - Marked all Module 4 (4.1 to 4.5) and Module 5 (5.1 to 5.5) checklist items as completed `[x]`.
+
+---
+
 ## [0.16.0] — 2026-11-08 — Module 3 Complete: Master Data — Contacts Directory & Products/Services Catalog
 
 ### Added

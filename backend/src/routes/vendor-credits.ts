@@ -1,0 +1,511 @@
+/**
+ * Vendor Credits routes — Module 5 Accounts Payable (AP) & Vendor Returns
+ *
+ * Scoped strictly to request.user.organizationId for multi-tenant isolation.
+ * Supported routes:
+ *  - GET  /api/v1/vendor-credits           (List vendor credits with filters)
+ *  - POST /api/v1/vendor-credits           (Create draft vendor credit with line items)
+ *  - GET  /api/v1/vendor-credits/:id       (Get vendor credit details, lines & journal entries)
+ *  - POST /api/v1/vendor-credits/:id/issue (Issue vendor credit with GL posting: DEBIT AP, CREDIT Expense/GST Paid)
+ *  - POST /api/v1/vendor-credits/:id/allocate (Allocate open vendor credit to settle vendor bill)
+ */
+
+import type { FastifyPluginAsync } from 'fastify';
+import { z } from 'zod';
+import { requireRole } from '../plugins/auth.js';
+import { calculateGST, sumGSTResults } from '../lib/gst.js';
+import { recordAuditLog } from '../lib/audit.js';
+import { checkOrganizationLockDate } from '../lib/ledger-posting.js';
+import { VendorCreditStatus, EntryType, Role, TaxTreatment, BillStatus } from '@prisma/client';
+
+const TaxTreatmentEnum = z.nativeEnum(TaxTreatment);
+const VendorCreditStatusEnum = z.nativeEnum(VendorCreditStatus);
+
+const VendorCreditLineItemInput = z.object({
+  itemId: z.string().uuid().nullable().optional(),
+  accountId: z.string().uuid().nullable().optional(),
+  trackingOptionId: z.string().uuid().nullable().optional(),
+  description: z.string().trim().min(1).max(255),
+  amountCents: z.number().int().positive(),
+  taxTreatment: TaxTreatmentEnum.default(TaxTreatment.TAX_EXCLUSIVE),
+});
+
+const CreateVendorCreditBody = z.object({
+  contactId: z.string().uuid(),
+  creditNumber: z.string().trim().min(1).max(50).optional(),
+  reference: z.string().trim().max(100).nullable().optional(),
+  creditDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  notes: z.string().trim().max(1000).nullable().optional(),
+  lineItems: z.array(VendorCreditLineItemInput).min(1),
+});
+
+const ListVendorCreditsQuery = z.object({
+  status: VendorCreditStatusEnum.optional(),
+  contactId: z.string().uuid().optional(),
+  search: z.string().trim().optional(),
+});
+
+const AllocateVendorCreditBody = z.object({
+  billId: z.string().uuid(),
+  amountCents: z.number().int().positive().optional(),
+});
+
+const ParamsWithId = z.object({
+  id: z.string().uuid(),
+});
+
+function serializeVC<T extends Record<string, any>>(data: T): any {
+  return JSON.parse(
+    JSON.stringify(data, (_key, value) =>
+      typeof value === 'bigint' ? Number(value) : value,
+    ),
+  );
+}
+
+export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
+  // GET /api/v1/vendor-credits
+  fastify.get(
+    '/api/v1/vendor-credits',
+    {
+      preHandler: [
+        requireRole(
+          Role.ADMIN,
+          Role.ACCOUNTANT,
+          Role.MANAGER,
+          Role.AP_SPECIALIST,
+          Role.AUDITOR,
+        ),
+      ],
+    },
+    async (request, reply) => {
+      const parse = ListVendorCreditsQuery.safeParse(request.query);
+      if (!parse.success) {
+        return reply.code(400).send({
+          error: 'Invalid query parameters',
+          details: parse.error.flatten().fieldErrors,
+        });
+      }
+
+      const { status, contactId, search } = parse.data;
+      const organizationId = request.user.organizationId!;
+
+      const whereClause: any = { organizationId };
+      if (status) whereClause.status = status;
+      if (contactId) whereClause.contactId = contactId;
+      if (search && search.length > 0) {
+        whereClause.OR = [
+          { creditNumber: { contains: search, mode: 'insensitive' } },
+          { reference: { contains: search, mode: 'insensitive' } },
+          { contact: { name: { contains: search, mode: 'insensitive' } } },
+        ];
+      }
+
+      const credits = await fastify.prisma.vendorCredit.findMany({
+        where: whereClause,
+        include: {
+          contact: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              abn: true,
+              bsb: true,
+              bankAccountNumber: true,
+            },
+          },
+          lines: {
+            include: {
+              account: { select: { id: true, code: true, name: true } },
+              trackingOption: { select: { id: true, name: true } },
+            },
+          },
+        },
+        orderBy: [{ creditDate: 'desc' }, { createdAt: 'desc' }],
+      });
+
+      return reply.code(200).send({ credits: serializeVC(credits) });
+    },
+  );
+
+  // POST /api/v1/vendor-credits
+  fastify.post(
+    '/api/v1/vendor-credits',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST),
+      ],
+    },
+    async (request, reply) => {
+      const parse = CreateVendorCreditBody.safeParse(request.body);
+      if (!parse.success) {
+        return reply.code(400).send({
+          error: 'Validation failed',
+          details: parse.error.flatten().fieldErrors,
+        });
+      }
+
+      const { contactId, creditNumber: customNumber, reference, creditDate, notes, lineItems } =
+        parse.data;
+      const organizationId = request.user.organizationId!;
+
+      const contact = await fastify.prisma.contact.findFirst({
+        where: { id: contactId, organizationId },
+      });
+      if (!contact) {
+        return reply.code(400).send({ error: 'Vendor contact not found' });
+      }
+
+      // Default Expense Account (6000)
+      const accounts = await fastify.prisma.account.findMany({
+        where: {
+          organizationId,
+          code: { in: ['6000', '5000'] },
+          isActive: true,
+        },
+      });
+      const defaultExpense = accounts.find((a) => a.code === '6000') ?? accounts.find((a) => a.code === '5000');
+      if (!defaultExpense) {
+        return reply.code(500).send({ error: 'Expense account (6000) not found' });
+      }
+
+      const processedLines = lineItems.map((item, idx) => {
+        const gstResult = calculateGST(BigInt(item.amountCents), item.taxTreatment);
+        return {
+          lineNumber: idx + 1,
+          itemId: item.itemId ?? null,
+          description: item.description,
+          amountCents: gstResult.subtotalCents,
+          taxTreatment: item.taxTreatment,
+          gstCents: gstResult.gstCents,
+          totalCents: gstResult.totalCents,
+          accountId: item.accountId || defaultExpense.id,
+          trackingOptionId: item.trackingOptionId ?? null,
+        };
+      });
+
+      const totalResult = sumGSTResults(
+        processedLines.map((li) => ({
+          subtotalCents: li.amountCents,
+          gstCents: li.gstCents,
+          totalCents: li.totalCents,
+        })),
+      );
+
+      let creditNumber = customNumber;
+      if (!creditNumber) {
+        const count = await fastify.prisma.vendorCredit.count({ where: { organizationId } });
+        creditNumber = `VC-${String(count + 1).padStart(5, '0')}`;
+      }
+
+      const parsedDate = new Date(creditDate);
+
+      const created = await fastify.prisma.$transaction(async (tx) => {
+        const vc = await tx.vendorCredit.create({
+          data: {
+            organizationId,
+            contactId,
+            creditNumber,
+            reference: reference ?? null,
+            creditDate: parsedDate,
+            status: VendorCreditStatus.DRAFT,
+            subtotalCents: totalResult.subtotalCents,
+            taxCents: totalResult.gstCents,
+            totalCents: totalResult.totalCents,
+            remainingCents: totalResult.totalCents,
+            notes: notes ?? null,
+            lines: {
+              create: processedLines.map((li) => ({
+                organizationId,
+                lineNumber: li.lineNumber,
+                itemId: li.itemId,
+                description: li.description,
+                quantity: 1,
+                unitPriceCents: li.amountCents,
+                subtotalCents: li.amountCents,
+                taxCents: li.gstCents,
+                totalCents: li.totalCents,
+                accountId: li.accountId,
+                trackingOptionId: li.trackingOptionId,
+              })),
+            },
+          },
+          include: { contact: true, lines: true },
+        });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId || request.user.id,
+          action: 'VENDOR_CREDIT_CREATED',
+          entityType: 'VENDOR_CREDIT',
+          entityId: vc.id,
+          summary: `Created draft vendor credit ${vc.creditNumber} for ${contact.name} ($${(Number(totalResult.totalCents) / 100).toFixed(2)})`,
+        });
+
+        return vc;
+      });
+
+      return reply.code(201).send({ vendorCredit: serializeVC(created) });
+    },
+  );
+
+  // GET /api/v1/vendor-credits/:id
+  fastify.get(
+    '/api/v1/vendor-credits/:id',
+    {
+      preHandler: [
+        requireRole(
+          Role.ADMIN,
+          Role.ACCOUNTANT,
+          Role.MANAGER,
+          Role.AP_SPECIALIST,
+          Role.AUDITOR,
+        ),
+      ],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      const vc = await fastify.prisma.vendorCredit.findFirst({
+        where: { id, organizationId },
+        include: {
+          contact: true,
+          lines: {
+            include: {
+              account: true,
+              trackingOption: true,
+            },
+          },
+          journalEntry: {
+            include: {
+              lines: {
+                include: { account: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!vc) return reply.code(404).send({ error: 'Vendor credit not found' });
+      return reply.code(200).send({ credit: serializeVC(vc) });
+    },
+  );
+
+  // POST /api/v1/vendor-credits/:id/issue
+  fastify.post(
+    '/api/v1/vendor-credits/:id/issue',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST),
+      ],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      const vc = await fastify.prisma.vendorCredit.findFirst({
+        where: { id, organizationId },
+        include: { contact: true, lines: true },
+      });
+
+      if (!vc) return reply.code(404).send({ error: 'Vendor credit not found' });
+      if (vc.status !== VendorCreditStatus.DRAFT) {
+        return reply.code(400).send({ error: `Cannot issue vendor credit in status ${vc.status}` });
+      }
+
+      await checkOrganizationLockDate(fastify.prisma, organizationId, vc.creditDate);
+
+      // System Accounts: 2000 AP, 2200 GST Paid, 6000 Expense
+      const accounts = await fastify.prisma.account.findMany({
+        where: {
+          organizationId,
+          code: { in: ['2000', '2200', '6000', '5000'] },
+          isActive: true,
+        },
+      });
+
+      const apAccount = accounts.find((a) => a.code === '2000');
+      const gstPaidAccount = accounts.find((a) => a.code === '2200');
+      const defaultExpense = accounts.find((a) => a.code === '6000') ?? accounts.find((a) => a.code === '5000');
+
+      if (!apAccount || !gstPaidAccount) {
+        return reply.code(500).send({ error: 'Required accounts (2000 AP, 2200 GST Paid) not found' });
+      }
+
+      // Vendor Credit Journal Lines:
+      // DEBIT 2000 Accounts Payable for total (reduces AP liability)
+      // CREDIT Expense Account(s) for subtotal
+      // CREDIT 2200 GST Paid for tax (reduces input tax credit asset)
+      const journalLinesData: Array<{
+        organizationId: string;
+        accountId: string;
+        entryType: EntryType;
+        amountCents: bigint;
+        trackingOptionId?: string | null;
+      }> = [
+        {
+          organizationId,
+          accountId: apAccount.id,
+          entryType: EntryType.DEBIT,
+          amountCents: vc.totalCents,
+        },
+      ];
+
+      for (const line of vc.lines) {
+        if (line.subtotalCents > 0n) {
+          journalLinesData.push({
+            organizationId,
+            accountId: line.accountId || defaultExpense!.id,
+            entryType: EntryType.CREDIT,
+            amountCents: line.subtotalCents,
+            trackingOptionId: line.trackingOptionId,
+          });
+        }
+      }
+
+      if (vc.taxCents > 0n) {
+        journalLinesData.push({
+          organizationId,
+          accountId: gstPaidAccount.id,
+          entryType: EntryType.CREDIT,
+          amountCents: vc.taxCents,
+        });
+      }
+
+      const count = await fastify.prisma.journalEntry.count({ where: { organizationId } });
+      const entryNumber = `JE-VC-${String(count + 1).padStart(5, '0')}`;
+
+      const updated = await fastify.prisma.$transaction(async (tx) => {
+        const je = await tx.journalEntry.create({
+          data: {
+            organizationId,
+            entryNumber,
+            description: `Vendor Credit ${vc.creditNumber} from ${vc.contact.name}`,
+            referenceType: 'VENDOR_CREDIT',
+            referenceId: vc.id,
+            postedAt: vc.creditDate,
+            source: 'VENDOR_CREDIT',
+            sourceId: vc.id,
+            status: 'POSTED',
+            isPosted: true,
+            postedByUserId: request.user.userId || request.user.id,
+            lines: {
+              create: journalLinesData.map((l) => ({
+                organizationId,
+                accountId: l.accountId,
+                entryType: l.entryType,
+                amountCents: l.amountCents,
+                trackingOptionId: l.trackingOptionId ?? null,
+              })),
+            },
+          },
+        });
+
+        return tx.vendorCredit.update({
+          where: { id },
+          data: {
+            status: VendorCreditStatus.OPEN,
+            journalEntryId: je.id,
+          },
+          include: { contact: true, lines: true, journalEntry: true },
+        });
+      });
+
+      return reply.code(200).send({ vendorCredit: serializeVC(updated) });
+    },
+  );
+
+  // POST /api/v1/vendor-credits/:id/allocate
+  fastify.post(
+    '/api/v1/vendor-credits/:id/allocate',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST),
+      ],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      const parse = AllocateVendorCreditBody.safeParse(request.body);
+      if (!parse.success) {
+        return reply.code(400).send({ error: 'Validation failed', details: parse.error.flatten().fieldErrors });
+      }
+
+      const { billId, amountCents: customAmount } = parse.data;
+
+      const vc = await fastify.prisma.vendorCredit.findFirst({
+        where: { id, organizationId },
+        include: { contact: true },
+      });
+      if (!vc) return reply.code(404).send({ error: 'Vendor credit not found' });
+      if (vc.status !== VendorCreditStatus.OPEN && vc.status !== VendorCreditStatus.PARTIALLY_APPLIED) {
+        return reply.code(400).send({ error: `Cannot allocate vendor credit in status ${vc.status}` });
+      }
+
+      const bill = await fastify.prisma.bill.findFirst({
+        where: { id: billId, organizationId },
+      });
+      if (!bill) return reply.code(404).send({ error: 'Bill not found' });
+      if (bill.contactId !== vc.contactId) {
+        return reply.code(400).send({ error: 'Vendor credit and bill must belong to the exact same vendor' });
+      }
+
+      const billRemaining = bill.totalCents - bill.amountPaidCents;
+      if (billRemaining <= 0n) {
+        return reply.code(400).send({ error: 'Bill has already been fully paid' });
+      }
+
+      const allocatable = customAmount ? BigInt(customAmount) : vc.remainingCents;
+      if (allocatable <= 0n || allocatable > vc.remainingCents) {
+        return reply.code(400).send({ error: `Allocation amount must be between 1 and ${vc.remainingCents} cents` });
+      }
+
+      const finalAlloc = allocatable > billRemaining ? billRemaining : allocatable;
+
+      const result = await fastify.prisma.$transaction(async (tx) => {
+        const newVcRemaining = vc.remainingCents - finalAlloc;
+        const newVcStatus = newVcRemaining === 0n ? VendorCreditStatus.APPLIED : VendorCreditStatus.PARTIALLY_APPLIED;
+
+        const updatedVc = await tx.vendorCredit.update({
+          where: { id: vc.id },
+          data: {
+            remainingCents: newVcRemaining,
+            status: newVcStatus,
+          },
+        });
+
+        const newBillPaid = bill.amountPaidCents + finalAlloc;
+        const newBillStatus = newBillPaid >= bill.totalCents ? BillStatus.PAID : BillStatus.PARTIALLY_PAID;
+
+        const updatedBill = await tx.bill.update({
+          where: { id: bill.id },
+          data: {
+            amountPaidCents: newBillPaid,
+            status: newBillStatus,
+          },
+        });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId || request.user.id,
+          action: 'VENDOR_CREDIT_ALLOCATED',
+          entityType: 'VENDOR_CREDIT',
+          entityId: vc.id,
+          summary: `Allocated $${(Number(finalAlloc) / 100).toFixed(2)} from VC ${vc.creditNumber} to Bill ${bill.billNumber}`,
+        });
+
+        return { updatedVc, updatedBill, allocatedCents: finalAlloc };
+      });
+
+      return reply.code(200).send({
+        message: 'Vendor credit successfully allocated to bill',
+        vendorCredit: serializeVC(result.updatedVc),
+        bill: serializeVC(result.updatedBill),
+        allocatedCents: Number(result.allocatedCents),
+      });
+    },
+  );
+};
+
+export default vendorCreditRoutes;

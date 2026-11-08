@@ -190,11 +190,11 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 ### Module 4: Accounts Receivable (AR) — Quotes, Invoices, Credit Notes, Prepayments & Receipts
 **Objective:** Complete end-to-end revenue lifecycle from client quote to invoice issuance, recurring billing, credit adjustments, customer prepayments, and revenue receipts.
 
-- [ ] **4.1 Quotes / Estimates (`/quotes` or AR Tab & `/api/v1/quotes`)**:
+- [x] **4.1 Quotes / Estimates (`/quotes` or AR Tab & `/api/v1/quotes`)**:
   - Lifecycle: `DRAFT` $\rightarrow$ `SENT` $\rightarrow$ `ACCEPTED` / `DECLINED` / `EXPIRED` $\rightarrow$ `INVOICED`.
   - Line items support Catalog Item auto-fill, Quantity, Unit Price (cents), Discount %, Tax Treatment, Revenue Account (`REVENUE` only), and Tracking Dimensions.
   - **1-Click Convert to Invoice**: Copies an accepted quote into a Draft or Issued Customer Invoice and links `quote.convertedInvoiceId`.
-- [ ] **4.2 Customer Invoices (`/invoices` & `/api/v1/invoices`)**:
+- [x] **4.2 Customer Invoices (`/invoices` & `/api/v1/invoices`)**:
   - Lifecycle: `DRAFT` $\rightarrow$ `PENDING_APPROVAL` $\rightarrow$ `ISSUED` $\rightarrow$ `PARTIALLY_PAID` $\rightarrow$ `PAID` / `VOID`.
   - Full editing of `DRAFT` and `PENDING_APPROVAL` invoices.
   - **Dynamic GL Posting on Issuance**:
@@ -203,12 +203,12 @@ Development proceeds strictly **one module at a time**. We complete the backend 
     - `CREDIT 2100 GST Collected` (Total GST Cents)
   - **Voiding**: Voiding an unpaid issued invoice automatically posts a reversing journal entry.
   - **Commercial Print / Remittance View**: Clean printable invoice layout featuring Company Legal Name, ABN, Address, Line Items, GST Summary, and **Australian EFT Remittance Slip (Bank Name, BSB, Account Number)**.
-- [ ] **4.3 Recurring Invoice Schedules**:
+- [x] **4.3 Recurring Invoice Schedules**:
   - Define frequency (`WEEKLY`, `MONTHLY`, `QUARTERLY`, `ANNUALLY`), start date, next run date, and auto-issue toggle.
-- [ ] **4.4 Customer Credit Notes (AR Adjustments)**:
+- [x] **4.4 Customer Credit Notes (AR Adjustments)**:
   - Issue Credit Notes (`CRN-1001`) coded to specific `REVENUE` accounts + GST, posting the exact reverse of an invoice (`DEBIT Revenue`, `DEBIT 2100 GST Collected`, `CREDIT 1200 Accounts Receivable`).
   - Allocate open Credit Notes to reduce the balance due on open Customer Invoices, or record a cash refund out of a bank account.
-- [ ] **4.5 Payments In, Direct Income Receipts & Customer Prepayments**:
+- [x] **4.5 Payments In, Direct Income Receipts & Customer Prepayments**:
   - **Mode A — Invoice Settlement**: Apply incoming payment to one or more open Customer Invoices into any selected Bank/Asset account (`DEBIT Selected Bank Account`, `CREDIT 1200 Accounts Receivable`).
   - **Mode B — Direct Income Receipt ("Receive Money" without Invoice)**: When no invoice is used, code directly to a `REVENUE` account + GST (`DEBIT Selected Bank Account`, `CREDIT Revenue Account`, `CREDIT 2100 GST Collected`).
   - **Mode C — Customer Prepayment / Deposit on Account**: Record an unallocated customer deposit (`DEBIT Selected Bank Account`, `CREDIT 2300 Customer Prepayments`), which can later be applied to settle a newly issued invoice.
@@ -218,11 +218,11 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 ### Module 5: Accounts Payable (AP) — Purchase Orders, Bills, Vendor Credits & `.ABA` Batch Payments
 **Objective:** Complete procurement and payables lifecycle with Purchase Order approvals, coded Vendor Bills, Recurring Bills, Vendor Credit Notes, and Australian `.ABA` batch bank file exports.
 
-- [ ] **5.1 Purchase Orders (`/purchase-orders` or AP Tab & `/api/v1/purchase-orders`)**:
+- [x] **5.1 Purchase Orders (`/purchase-orders` or AP Tab & `/api/v1/purchase-orders`)**:
   - Lifecycle: `DRAFT` $\rightarrow$ `PENDING_APPROVAL` $\rightarrow$ `APPROVED` / `REJECTED` $\rightarrow$ `BILLED` / `CANCELLED`.
   - `MANAGER`, `ACCOUNTANT`, and `ADMIN` can approve POs.
   - **1-Click Convert to Bill**: Converts an approved PO into a pre-filled Vendor Bill linked via `purchaseOrderId`.
-- [ ] **5.2 Vendor Bills (`/bills` & `/api/v1/bills`)**:
+- [x] **5.2 Vendor Bills (`/bills` & `/api/v1/bills`)**:
   - Lifecycle: `DRAFT` $\rightarrow$ `PENDING_APPROVAL` $\rightarrow$ `AWAITING_PAYMENT` $\rightarrow$ `PARTIALLY_PAID` $\rightarrow$ `PAID` / `VOID`.
   - Strict account classification filtering: Line items can only be coded to `EXPENSE` or `ASSET` accounts (default `6000 Operating Expenses`) + Tracking Dimensions.
   - **Dynamic GL Posting on Approval**:
@@ -230,11 +230,11 @@ Development proceeds strictly **one module at a time**. We complete the backend 
     - `DEBIT 2200 GST Paid` (Total GST Cents)
     - `CREDIT 2000 Accounts Payable` (Total Cents)
   - Full editing in `DRAFT`/`PENDING_APPROVAL`; Voiding an unpaid bill posts a reversing GL entry.
-- [ ] **5.3 Recurring Bill Schedules**:
+- [x] **5.3 Recurring Bill Schedules**:
   - Schedule recurring supplier obligations (rent, leases, retainers).
-- [ ] **5.4 Vendor Credit Notes (AP Adjustments)**:
+- [x] **5.4 Vendor Credit Notes (AP Adjustments)**:
   - Record supplier credit notes (`DEBIT 2000 Accounts Payable`, `CREDIT Expense/Asset`, `CREDIT 2200 GST Paid`) and apply them to reduce open Vendor Bills.
-- [ ] **5.5 Payments Out & Australian `.ABA` Batch Payment Engine**:
+- [x] **5.5 Payments Out & Australian `.ABA` Batch Payment Engine**:
   - **Single Payment Out**: Pay a bill from any selected Bank (`ASSET`) or Corporate Credit Card (`LIABILITY`) account (`DEBIT 2000 Accounts Payable`, `CREDIT Selected Bank/Card Account`).
   - **Batch Payment Run & `.ABA` File Generator (`/api/v1/batch-payments`)**:
     - Select multiple unpaid approved Bills (and/or approved Employee Expense Reimbursements).

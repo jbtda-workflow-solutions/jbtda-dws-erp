@@ -32,6 +32,11 @@ import invoiceRoutes from './routes/invoices.js';
 import ledgerRoutes from './routes/ledger.js';
 import accountRoutes from './routes/accounts.js';
 import itemRoutes from './routes/items.js';
+import { quoteRoutes } from './routes/quotes.js';
+import { creditNoteRoutes } from './routes/credit-notes.js';
+import { purchaseOrderRoutes } from './routes/purchase-orders.js';
+import { vendorCreditRoutes } from './routes/vendor-credits.js';
+import { batchPaymentRoutes } from './routes/batch-payments.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -140,6 +145,11 @@ async function buildServer() {
   await fastify.register(ledgerRoutes);
   await fastify.register(accountRoutes);
   await fastify.register(itemRoutes);
+  await fastify.register(quoteRoutes);
+  await fastify.register(creditNoteRoutes);
+  await fastify.register(purchaseOrderRoutes);
+  await fastify.register(vendorCreditRoutes);
+  await fastify.register(batchPaymentRoutes);
 
   // -------------------------------------------------------------------------
   // Health check (unauthenticated — used by Cloud Run)

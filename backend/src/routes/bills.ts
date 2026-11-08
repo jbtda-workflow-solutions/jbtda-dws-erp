@@ -1,11 +1,23 @@
 /**
- * Bills routes — Phase 4 Accounts Payable (AP)
+ * Bills routes — Module 5 Accounts Payable (AP) & Enterprise Procurement
  *
  * Scoped strictly to request.user.organizationId for multi-tenant isolation.
  * Supported routes:
- *  - GET  /api/v1/bills       (List bills with contact, status, search filters)
- *  - POST /api/v1/bills       (Create bill with line items & atomic ledger posting)
- *  - GET  /api/v1/bills/:id   (Get bill details with line items and journal entries)
+ *  - GET    /api/v1/bills                  (List bills with contact, status, search filters)
+ *  - POST   /api/v1/bills                  (Create draft or direct-posted bill with line items)
+ *  - GET    /api/v1/bills/:id              (Get single bill details with line items and journal entries)
+ *  - PATCH  /api/v1/bills/:id              (Update draft/awaiting-approval bill)
+ *  - DELETE /api/v1/bills/:id              (Delete draft bill)
+ *  - POST   /api/v1/bills/:id/approve      (Approve bill and post to General Ledger)
+ *  - POST   /api/v1/bills/:id/void         (Void bill and reverse General Ledger journal entry)
+ *  - POST   /api/v1/bills/:id/payments     (Record payment out against bill)
+ *  - GET    /api/v1/bills/:id/payments     (List payments recorded for a bill)
+ *  - POST   /api/v1/payments-out           (Unified alias for recording payments out)
+ *  - GET    /api/v1/recurring-bills        (List recurring bill schedules)
+ *  - POST   /api/v1/recurring-bills        (Create recurring bill schedule)
+ *  - PATCH  /api/v1/recurring-bills/:id    (Update recurring bill schedule)
+ *  - DELETE /api/v1/recurring-bills/:id    (Delete recurring bill schedule)
+ *  - POST   /api/v1/recurring-bills/:id/run(Manually trigger recurring bill run)
  */
 
 import type { FastifyPluginAsync } from 'fastify';
@@ -13,24 +25,43 @@ import { z } from 'zod';
 import { requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
+import { checkOrganizationLockDate, postJournalEntry, reverseJournalEntry } from '../lib/ledger-posting.js';
 import { BillStatus, EntryType, Role, TaxTreatment } from '@prisma/client';
 
 const TaxTreatmentEnum = z.nativeEnum(TaxTreatment);
 const BillStatusEnum = z.nativeEnum(BillStatus);
 
 const LineItemInput = z.object({
+  itemId: z.string().uuid().optional(),
   description: z.string().trim().min(1).max(255),
-  amountCents: z.number().int().positive(), // raw entered amount in integer cents
-  taxTreatment: TaxTreatmentEnum,
+  quantity: z.number().positive().default(1),
+  unitPriceCents: z.number().int().nonnegative().optional(),
+  amountCents: z.number().int().positive().optional(),
+  taxTreatment: TaxTreatmentEnum.default(TaxTreatment.EXCLUSIVE),
+  accountId: z.string().uuid().optional(),
+  trackingOptionId: z.string().uuid().optional(),
 });
 
 const CreateBillBody = z.object({
   contactId: z.string().uuid(),
+  billNumber: z.string().trim().min(1).optional(),
   reference: z.string().trim().max(100).nullable().optional(),
   issueDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   dueDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   notes: z.string().trim().max(1000).nullable().optional(),
+  purchaseOrderId: z.string().uuid().optional(),
+  autoApprove: z.boolean().default(true),
   lineItems: z.array(LineItemInput).min(1),
+});
+
+const UpdateBillBody = z.object({
+  contactId: z.string().uuid().optional(),
+  billNumber: z.string().trim().min(1).optional(),
+  reference: z.string().trim().max(100).nullable().optional(),
+  issueDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
+  dueDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
+  notes: z.string().trim().max(1000).nullable().optional(),
+  lineItems: z.array(LineItemInput).min(1).optional(),
 });
 
 const ListBillsQuery = z.object({
@@ -46,6 +77,7 @@ const ParamsWithId = z.object({
 const RecordPaymentBody = z.object({
   paymentDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   amountCents: z.number().int().positive(),
+  paymentMethod: z.string().default('DIRECT_CREDIT'),
   reference: z.string().trim().max(100).nullable().optional(),
 });
 
@@ -53,9 +85,16 @@ const CreatePaymentOutBody = RecordPaymentBody.extend({
   billId: z.string().uuid(),
 });
 
-/**
- * Helper to serialize BigInt fields to numbers/strings in JSON response
- */
+const RecurringBillBody = z.object({
+  name: z.string().min(1),
+  contactId: z.string().uuid(),
+  frequency: z.enum(['WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY']),
+  startDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  endDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
+  notes: z.string().optional(),
+  lineItems: z.array(LineItemInput).min(1),
+});
+
 function serializeBill<T extends Record<string, any>>(bill: T): any {
   return JSON.parse(
     JSON.stringify(bill, (_key, value) =>
@@ -64,10 +103,8 @@ function serializeBill<T extends Record<string, any>>(bill: T): any {
   );
 }
 
-const billRoutes: FastifyPluginAsync = async (fastify) => {
-  // -------------------------------------------------------------------------
-  // GET /api/v1/bills — List organization bills
-  // -------------------------------------------------------------------------
+export const billRoutes: FastifyPluginAsync = async (fastify) => {
+  // GET /api/v1/bills
   fastify.get(
     '/api/v1/bills',
     {
@@ -93,20 +130,13 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
       const { status, contactId, search } = parse.data;
       const organizationId = request.user.organizationId!;
 
-      const whereClause: any = {
-        organizationId,
-      };
+      const whereClause: any = { organizationId };
 
-      if (status) {
-        whereClause.status = status;
-      }
-
-      if (contactId) {
-        whereClause.contactId = contactId;
-      }
-
+      if (status) whereClause.status = status;
+      if (contactId) whereClause.contactId = contactId;
       if (search && search.length > 0) {
         whereClause.OR = [
+          { billNumber: { contains: search, mode: 'insensitive' } },
           { reference: { contains: search, mode: 'insensitive' } },
           { contact: { name: { contains: search, mode: 'insensitive' } } },
         ];
@@ -121,9 +151,12 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
               name: true,
               email: true,
               abn: true,
+              bsb: true,
+              bankAccountNumber: true,
             },
           },
           lineItems: true,
+          paymentsOut: true,
         },
         orderBy: [{ issueDate: 'desc' }, { createdAt: 'desc' }],
       });
@@ -132,10 +165,7 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
     },
   );
 
-  // -------------------------------------------------------------------------
-  // POST /api/v1/bills — Create a bill with line items & atomic GL posting
-  // Allowed roles: ADMIN, ACCOUNTANT, AP_SPECIALIST
-  // -------------------------------------------------------------------------
+  // POST /api/v1/bills — Create Bill (Draft or Approved)
   fastify.post(
     '/api/v1/bills',
     {
@@ -152,11 +182,16 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const { contactId, reference, issueDate, dueDate, notes, lineItems } =
+      const { contactId, billNumber: customBillNumber, reference, issueDate, dueDate, notes, purchaseOrderId, autoApprove, lineItems } =
         parse.data;
       const organizationId = request.user.organizationId!;
+      const parsedIssueDate = new Date(issueDate);
+      const parsedDueDate = new Date(dueDate);
 
-      // 1. Verify contact exists and belongs to this organization
+      if (autoApprove) {
+        await checkOrganizationLockDate(fastify.prisma, organizationId, parsedIssueDate);
+      }
+
       const contact = await fastify.prisma.contact.findFirst({
         where: { id: contactId, organizationId },
       });
@@ -171,10 +206,7 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // 2. Fetch Chart of Accounts entries required for AP posting
-      // Code 6000 (or legacy 5000): Operating Expenses (EXPENSE - Normal Balance DEBIT)
-      // Code 2200: GST Paid (Purchases) (ASSET - Normal Balance DEBIT)
-      // Code 2000: Accounts Payable (LIABILITY - Normal Balance CREDIT)
+      // Accounts
       const accounts = await fastify.prisma.account.findMany({
         where: {
           organizationId,
@@ -196,18 +228,21 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // 3. Compute GST and aggregate totals using integer arithmetic
+      // Compute GST
       const processedLineItems = lineItems.map((item) => {
-        const gstResult = calculateGST(
-          BigInt(item.amountCents),
-          item.taxTreatment,
-        );
+        const rawAmount = item.amountCents
+          ? BigInt(item.amountCents)
+          : BigInt(Math.round(item.quantity * (item.unitPriceCents ?? 0)));
+        const gstResult = calculateGST(rawAmount, item.taxTreatment);
         return {
+          itemId: item.itemId,
           description: item.description,
           taxTreatment: item.taxTreatment,
           amountCents: gstResult.subtotalCents,
           gstCents: gstResult.gstCents,
           totalCents: gstResult.totalCents,
+          accountId: item.accountId || expenseAccount.id,
+          trackingOptionId: item.trackingOptionId,
         };
       });
 
@@ -219,132 +254,120 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
         })),
       );
 
-      const parsedIssueDate = new Date(issueDate);
-      const parsedDueDate = new Date(dueDate);
+      // Bill Number
+      let billNumber = customBillNumber;
+      if (!billNumber) {
+        const count = await fastify.prisma.bill.count({ where: { organizationId } });
+        billNumber = `BILL-${String(count + 1).padStart(5, '0')}`;
+      }
 
-      // 4. Atomic Transaction: Bill + LineItems + JournalEntry + JournalLines
-      const createdBill = await fastify.prisma.$transaction(
-        async (tx) => {
-          // A. Create Bill
-          const bill = await tx.bill.create({
-            data: {
-              organizationId,
-              contactId,
-              reference: reference ?? null,
-              issueDate: parsedIssueDate,
-              dueDate: parsedDueDate,
-              status: BillStatus.AWAITING_PAYMENT,
-              subtotalCents: totalResult.subtotalCents,
-              gstCents: totalResult.gstCents,
-              totalCents: totalResult.totalCents,
-              amountPaidCents: 0n,
-              notes: notes ?? null,
-              lineItems: {
-                create: processedLineItems.map((li) => ({
-                  organizationId,
-                  description: li.description,
-                  amountCents: li.amountCents,
-                  taxTreatment: li.taxTreatment,
-                  gstCents: li.gstCents,
-                  totalCents: li.totalCents,
-                })),
-              },
-            },
-            include: {
-              contact: true,
-              lineItems: true,
-            },
-          });
+      const initialStatus = autoApprove ? BillStatus.AWAITING_PAYMENT : BillStatus.DRAFT;
 
-          // B. Construct Double-Entry Journal Lines
-          // - DEBIT Operating Expenses (5000) for subtotalCents
-          // - DEBIT GST Paid (2200) for gstCents (if gstCents > 0)
-          // - CREDIT Accounts Payable (2000) for totalCents
+      const createdBill = await fastify.prisma.$transaction(async (tx) => {
+        const bill = await tx.bill.create({
+          data: {
+            organizationId,
+            contactId,
+            billNumber,
+            reference: reference ?? null,
+            issueDate: parsedIssueDate,
+            dueDate: parsedDueDate,
+            status: initialStatus,
+            subtotalCents: totalResult.subtotalCents,
+            gstCents: totalResult.gstCents,
+            totalCents: totalResult.totalCents,
+            amountPaidCents: 0n,
+            notes: notes ?? null,
+            purchaseOrderId: purchaseOrderId ?? null,
+            lineItems: {
+              create: processedLineItems.map((li) => ({
+                organizationId,
+                itemId: li.itemId,
+                description: li.description,
+                amountCents: li.amountCents,
+                taxTreatment: li.taxTreatment,
+                gstCents: li.gstCents,
+                totalCents: li.totalCents,
+              })),
+            },
+          },
+          include: {
+            contact: true,
+            lineItems: true,
+          },
+        });
+
+        // GL Journal Entry if auto-approved
+        if (autoApprove && totalResult.totalCents > 0n) {
           const journalLinesData: Array<{
-            organizationId: string;
             accountId: string;
-            entryType: EntryType;
-            amountCents: bigint;
+            description: string;
+            debitCents: bigint;
+            creditCents: bigint;
+            trackingOptionId?: string;
           }> = [];
 
-          if (totalResult.subtotalCents > 0n) {
-            journalLinesData.push({
-              organizationId,
-              accountId: expenseAccount.id,
-              entryType: EntryType.DEBIT,
-              amountCents: totalResult.subtotalCents,
-            });
+          // Group debits by account & tracking option
+          for (const item of processedLineItems) {
+            if (item.amountCents > 0n) {
+              journalLinesData.push({
+                accountId: item.accountId,
+                description: `${bill.billNumber}: ${item.description}`,
+                debitCents: item.amountCents,
+                creditCents: 0n,
+                trackingOptionId: item.trackingOptionId,
+              });
+            }
           }
 
           if (totalResult.gstCents > 0n) {
             journalLinesData.push({
-              organizationId,
               accountId: gstPaidAccount.id,
-              entryType: EntryType.DEBIT,
-              amountCents: totalResult.gstCents,
+              description: `GST Paid on Bill ${bill.billNumber}`,
+              debitCents: totalResult.gstCents,
+              creditCents: 0n,
             });
           }
 
-          if (totalResult.totalCents > 0n) {
-            journalLinesData.push({
-              organizationId,
-              accountId: apAccount.id,
-              entryType: EntryType.CREDIT,
-              amountCents: totalResult.totalCents,
-            });
-          }
-
-          // Double-Entry Invariant Verification: sum(DEBITS) == sum(CREDITS)
-          const debitSum = journalLinesData
-            .filter((l) => l.entryType === EntryType.DEBIT)
-            .reduce((sum, l) => sum + l.amountCents, 0n);
-
-          const creditSum = journalLinesData
-            .filter((l) => l.entryType === EntryType.CREDIT)
-            .reduce((sum, l) => sum + l.amountCents, 0n);
-
-          if (debitSum !== creditSum) {
-            throw new Error(
-              `General Ledger imbalance: Debits (${debitSum}) != Credits (${creditSum})`,
-            );
-          }
-
-          // C. Create Journal Entry
-          if (journalLinesData.length > 0) {
-            await tx.journalEntry.create({
-              data: {
-                organizationId,
-                description: `Bill from ${contact.name}${reference ? ` (${reference})` : ''}`,
-                referenceType: 'BILL',
-                referenceId: bill.id,
-                postedAt: parsedIssueDate,
-                lines: {
-                  create: journalLinesData,
-                },
-              },
-            });
-          }
-
-          await recordAuditLog(tx, {
-            organizationId,
-            actorUserId: request.user.userId,
-            action: 'BILL_CREATED',
-            entityType: 'BILL',
-            entityId: bill.id,
-            summary: `Recorded vendor bill from ${contact.name}${reference ? ` (${reference})` : ''} for $${(Number(totalResult.totalCents) / 100).toFixed(2)}`,
+          journalLinesData.push({
+            accountId: apAccount.id,
+            description: `Bill ${bill.billNumber} - ${contact.name}`,
+            debitCents: 0n,
+            creditCents: totalResult.totalCents,
           });
 
-          return bill;
-        },
-      );
+          const count = await tx.journalEntry.count({ where: { organizationId } });
+          const entryNumber = `JE-BILL-${String(count + 1).padStart(5, '0')}`;
+
+          await postJournalEntry(tx, {
+            organizationId,
+            entryNumber,
+            date: parsedIssueDate,
+            memo: `Bill ${bill.billNumber} from ${contact.name}${reference ? ` (${reference})` : ''}`,
+            source: 'BILL',
+            sourceId: bill.id,
+            lines: journalLinesData,
+            userId: request.user.userId || request.user.id,
+          });
+        }
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId || request.user.id,
+          action: 'BILL_CREATED',
+          entityType: 'BILL',
+          entityId: bill.id,
+          summary: `Recorded bill ${bill.billNumber} from ${contact.name} for $${(Number(totalResult.totalCents) / 100).toFixed(2)} (Status: ${initialStatus})`,
+        });
+
+        return bill;
+      });
 
       return reply.code(201).send({ bill: serializeBill(createdBill) });
     },
   );
 
-  // -------------------------------------------------------------------------
-  // GET /api/v1/bills/:id — Get single bill details
-  // -------------------------------------------------------------------------
+  // GET /api/v1/bills/:id
   fastify.get(
     '/api/v1/bills/:id',
     {
@@ -373,6 +396,7 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
           contact: true,
           lineItems: true,
           paymentsOut: true,
+          purchaseOrder: true,
         },
       });
 
@@ -380,7 +404,6 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(404).send({ error: 'Bill not found' });
       }
 
-      // Find associated GL entry
       const journalEntry = await fastify.prisma.journalEntry.findFirst({
         where: {
           organizationId,
@@ -389,9 +412,7 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
         },
         include: {
           lines: {
-            include: {
-              account: true,
-            },
+            include: { account: true },
           },
         },
       });
@@ -403,16 +424,279 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
     },
   );
 
-  // -------------------------------------------------------------------------
-  // POST /api/v1/bills/:id/payments — Record a Payment Out against a bill
-  // Allowed roles: ADMIN, ACCOUNTANT, AP_SPECIALIST
-  // -------------------------------------------------------------------------
+  // PATCH /api/v1/bills/:id
+  fastify.patch(
+    '/api/v1/bills/:id',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST)],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+      const bill = await fastify.prisma.bill.findFirst({ where: { id, organizationId } });
+
+      if (!bill) {
+        return reply.status(404).send({ error: 'Bill not found' });
+      }
+
+      if (bill.status !== 'DRAFT') {
+        return reply.status(400).send({ error: `Cannot edit bill with status ${bill.status}` });
+      }
+
+      const parse = UpdateBillBody.safeParse(request.body);
+      if (!parse.success) {
+        return reply.status(400).send({ error: 'Validation failed', details: parse.error.issues });
+      }
+
+      const { contactId, billNumber, reference, issueDate, dueDate, notes, lineItems } = parse.data;
+
+      const updated = await fastify.prisma.$transaction(async (tx) => {
+        let subtotalCents = bill.subtotalCents;
+        let gstCents = bill.gstCents;
+        let totalCents = bill.totalCents;
+
+        if (lineItems && lineItems.length > 0) {
+          await tx.billLineItem.deleteMany({ where: { billId: id } });
+
+          const processedLines = lineItems.map((item) => {
+            const rawAmount = item.amountCents
+              ? BigInt(item.amountCents)
+              : BigInt(Math.round(item.quantity * (item.unitPriceCents ?? 0)));
+            const gstResult = calculateGST(rawAmount, item.taxTreatment);
+            return {
+              organizationId,
+              itemId: item.itemId,
+              description: item.description,
+              taxTreatment: item.taxTreatment,
+              amountCents: gstResult.subtotalCents,
+              gstCents: gstResult.gstCents,
+              totalCents: gstResult.totalCents,
+            };
+          });
+
+          const totals = sumGSTResults(
+            processedLines.map((li) => ({
+              subtotalCents: li.amountCents,
+              gstCents: li.gstCents,
+              totalCents: li.totalCents,
+            })),
+          );
+
+          subtotalCents = totals.subtotalCents;
+          gstCents = totals.gstCents;
+          totalCents = totals.totalCents;
+
+          await tx.billLineItem.createMany({
+            data: processedLines.map((li) => ({ ...li, billId: id })),
+          });
+        }
+
+        return tx.bill.update({
+          where: { id },
+          data: {
+            contactId: contactId ?? bill.contactId,
+            billNumber: billNumber ?? bill.billNumber,
+            reference: reference !== undefined ? reference : bill.reference,
+            issueDate: issueDate ? new Date(issueDate) : bill.issueDate,
+            dueDate: dueDate ? new Date(dueDate) : bill.dueDate,
+            notes: notes !== undefined ? notes : bill.notes,
+            subtotalCents,
+            gstCents,
+            totalCents,
+          },
+          include: { contact: true, lineItems: true },
+        });
+      });
+
+      return reply.send({ bill: serializeBill(updated) });
+    },
+  );
+
+  // DELETE /api/v1/bills/:id
+  fastify.delete(
+    '/api/v1/bills/:id',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      const bill = await fastify.prisma.bill.findFirst({ where: { id, organizationId } });
+      if (!bill) return reply.status(404).send({ error: 'Bill not found' });
+      if (bill.status !== 'DRAFT') return reply.status(400).send({ error: 'Only DRAFT bills can be deleted' });
+
+      await fastify.prisma.$transaction(async (tx) => {
+        await tx.billLineItem.deleteMany({ where: { billId: id } });
+        await tx.bill.delete({ where: { id } });
+      });
+
+      return reply.send({ message: 'Bill successfully deleted' });
+    },
+  );
+
+  // POST /api/v1/bills/:id/approve
+  fastify.post(
+    '/api/v1/bills/:id/approve',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.MANAGER)],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      const bill = await fastify.prisma.bill.findFirst({
+        where: { id, organizationId },
+        include: { contact: true, lineItems: true },
+      });
+
+      if (!bill) return reply.status(404).send({ error: 'Bill not found' });
+      if (bill.status !== 'DRAFT') {
+        return reply.status(400).send({ error: `Bill is not in DRAFT status (current: ${bill.status})` });
+      }
+
+      await checkOrganizationLockDate(fastify.prisma, organizationId, bill.issueDate);
+
+      // Accounts
+      const accounts = await fastify.prisma.account.findMany({
+        where: {
+          organizationId,
+          code: { in: ['6000', '5000', '2200', '2000'] },
+          isActive: true,
+        },
+      });
+
+      const expenseAccount =
+        accounts.find((a) => a.code === '6000') ??
+        accounts.find((a) => a.code === '5000');
+      const gstPaidAccount = accounts.find((a) => a.code === '2200');
+      const apAccount = accounts.find((a) => a.code === '2000');
+
+      if (!expenseAccount || !gstPaidAccount || !apAccount) {
+        return reply.code(500).send({
+          error: 'Required Chart of Accounts entries (2000, 2200, 6000) are missing.',
+        });
+      }
+
+      const journalLinesData: Array<{
+        accountId: string;
+        description: string;
+        debitCents: bigint;
+        creditCents: bigint;
+      }> = [];
+
+      for (const item of bill.lineItems) {
+        if (item.amountCents > 0n) {
+          journalLinesData.push({
+            accountId: expenseAccount.id,
+            description: `${bill.billNumber}: ${item.description}`,
+            debitCents: item.amountCents,
+            creditCents: 0n,
+          });
+        }
+      }
+
+      if (bill.gstCents > 0n) {
+        journalLinesData.push({
+          accountId: gstPaidAccount.id,
+          description: `GST Paid on Bill ${bill.billNumber}`,
+          debitCents: bill.gstCents,
+          creditCents: 0n,
+        });
+      }
+
+      journalLinesData.push({
+        accountId: apAccount.id,
+        description: `Bill ${bill.billNumber} - ${bill.contact.name}`,
+        debitCents: 0n,
+        creditCents: bill.totalCents,
+      });
+
+      const count = await fastify.prisma.journalEntry.count({ where: { organizationId } });
+      const entryNumber = `JE-BILL-${String(count + 1).padStart(5, '0')}`;
+
+      const updated = await fastify.prisma.$transaction(async (tx) => {
+        await postJournalEntry(tx, {
+          organizationId,
+          entryNumber,
+          date: bill.issueDate,
+          memo: `Bill ${bill.billNumber} from ${bill.contact.name}`,
+          source: 'BILL',
+          sourceId: bill.id,
+          lines: journalLinesData,
+          userId: request.user.userId || request.user.id,
+        });
+
+        return tx.bill.update({
+          where: { id },
+          data: { status: BillStatus.AWAITING_PAYMENT },
+          include: { contact: true, lineItems: true },
+        });
+      });
+
+      return reply.send({ bill: serializeBill(updated) });
+    },
+  );
+
+  // POST /api/v1/bills/:id/void
+  fastify.post(
+    '/api/v1/bills/:id/void',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      const bill = await fastify.prisma.bill.findFirst({
+        where: { id, organizationId },
+        include: { contact: true },
+      });
+
+      if (!bill) return reply.status(404).send({ error: 'Bill not found' });
+      if (bill.status === 'VOID') return reply.status(400).send({ error: 'Bill is already void' });
+      if (bill.amountPaidCents > 0n) {
+        return reply.status(400).send({ error: 'Cannot void a bill that has recorded payments. Reverse payments first.' });
+      }
+
+      await checkOrganizationLockDate(fastify.prisma, organizationId, new Date());
+
+      // Find original Journal Entry
+      const originalJe = await fastify.prisma.journalEntry.findFirst({
+        where: {
+          organizationId,
+          referenceType: 'BILL',
+          referenceId: bill.id,
+          isReversed: false,
+        },
+      });
+
+      const updatedBill = await fastify.prisma.$transaction(async (tx) => {
+        if (originalJe) {
+          await reverseJournalEntry(
+            tx,
+            originalJe.id,
+            `Reversal for voided bill ${bill.billNumber}`,
+            request.user.userId || request.user.id,
+          );
+        }
+
+        return tx.bill.update({
+          where: { id },
+          data: { status: BillStatus.VOID },
+          include: { contact: true, lineItems: true },
+        });
+      });
+
+      return reply.send({ bill: serializeBill(updatedBill) });
+    },
+  );
+
+  // POST /api/v1/bills/:id/payments
   fastify.post(
     '/api/v1/bills/:id/payments',
     {
-      preHandler: [
-        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST),
-      ],
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST)],
     },
     async (request, reply) => {
       const paramParse = ParamsWithId.safeParse(request.params);
@@ -429,28 +713,23 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const { id: billId } = paramParse.data;
-      const { paymentDate, amountCents, reference } = bodyParse.data;
+      const { paymentDate, amountCents, paymentMethod, reference } = bodyParse.data;
       const organizationId = request.user.organizationId!;
+      const parsedPaymentDate = new Date(paymentDate);
 
-      // 1. Fetch bill and verify existence
+      await checkOrganizationLockDate(fastify.prisma, organizationId, parsedPaymentDate);
+
       const bill = await fastify.prisma.bill.findFirst({
         where: { id: billId, organizationId },
         include: { contact: true },
       });
 
-      if (!bill) {
-        return reply.code(404).send({ error: 'Bill not found' });
+      if (!bill) return reply.code(404).send({ error: 'Bill not found' });
+      if (bill.status === BillStatus.PAID) return reply.code(400).send({ error: 'This bill has already been fully paid.' });
+      if (bill.status === BillStatus.VOID || bill.status === BillStatus.DRAFT) {
+        return reply.code(400).send({ error: `Cannot record payment against a ${bill.status} bill.` });
       }
 
-      if (bill.status === BillStatus.PAID) {
-        return reply.code(400).send({ error: 'This bill has already been fully paid.' });
-      }
-
-      if (bill.status === BillStatus.VOID) {
-        return reply.code(400).send({ error: 'Cannot record payment against a VOID bill.' });
-      }
-
-      // 2. Validate amount against remaining unpaid balance
       const remainingCents = bill.totalCents - bill.amountPaidCents;
       const amountBigInt = BigInt(amountCents);
 
@@ -460,7 +739,6 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // 3. Fetch Accounts: 2000 (Accounts Payable) & 1000 (Operating Bank Account)
       const accounts = await fastify.prisma.account.findMany({
         where: {
           organizationId,
@@ -478,7 +756,6 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // 4. Atomic Transaction: PaymentOut + Bill status/amount update + JournalEntry + JournalLines
       const result = await fastify.prisma.$transaction(async (tx) => {
         const newAmountPaid = bill.amountPaidCents + amountBigInt;
         const newStatus =
@@ -487,9 +764,11 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
         const paymentOut = await tx.paymentOut.create({
           data: {
             organizationId,
+            contactId: bill.contactId,
             billId: bill.id,
-            paymentDate: new Date(paymentDate),
+            paymentDate: parsedPaymentDate,
             amountCents: amountBigInt,
+            paymentMethod,
             reference: reference ?? null,
           },
         });
@@ -507,55 +786,31 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
           },
         });
 
-        // Double-entry GL lines:
-        // - DEBIT Accounts Payable (2000) for amountBigInt (reduces AP liability)
-        // - CREDIT Operating Bank Account (1000) for amountBigInt (reduces cash asset)
-        const journalLinesData = [
-          {
-            organizationId,
-            accountId: apAccount.id,
-            entryType: EntryType.DEBIT,
-            amountCents: amountBigInt,
-          },
-          {
-            organizationId,
-            accountId: bankAccount.id,
-            entryType: EntryType.CREDIT,
-            amountCents: amountBigInt,
-          },
-        ];
+        const count = await tx.journalEntry.count({ where: { organizationId } });
+        const entryNumber = `JE-PMTOUT-${String(count + 1).padStart(5, '0')}`;
 
-        // Invariant check: Debit sum === Credit sum
-        const debitSum = journalLinesData
-          .filter((l) => l.entryType === EntryType.DEBIT)
-          .reduce((sum, l) => sum + l.amountCents, 0n);
-
-        const creditSum = journalLinesData
-          .filter((l) => l.entryType === EntryType.CREDIT)
-          .reduce((sum, l) => sum + l.amountCents, 0n);
-
-        if (debitSum !== creditSum) {
-          throw new Error(
-            `General Ledger imbalance on payment: Debits (${debitSum}) != Credits (${creditSum})`,
-          );
-        }
-
-        const journalEntry = await tx.journalEntry.create({
-          data: {
-            organizationId,
-            description: `Payment for bill from ${bill.contact.name}${bill.reference ? ` (${bill.reference})` : ''}`,
-            referenceType: 'PAYMENT_OUT',
-            referenceId: paymentOut.id,
-            postedAt: new Date(paymentDate),
-            lines: {
-              create: journalLinesData,
+        const journalEntry = await postJournalEntry(tx, {
+          organizationId,
+          entryNumber,
+          date: parsedPaymentDate,
+          memo: `Payment for bill ${bill.billNumber} from ${bill.contact.name}${reference ? ` (${reference})` : ''}`,
+          source: 'PAYMENT_OUT',
+          sourceId: paymentOut.id,
+          lines: [
+            {
+              accountId: apAccount.id,
+              description: `AP Settlement: Bill ${bill.billNumber}`,
+              debitCents: amountBigInt,
+              creditCents: 0n,
             },
-          },
-          include: {
-            lines: {
-              include: { account: true },
+            {
+              accountId: bankAccount.id,
+              description: `Cash Outflow: Bill ${bill.billNumber}`,
+              debitCents: 0n,
+              creditCents: amountBigInt,
             },
-          },
+          ],
+          userId: request.user.userId || request.user.id,
         });
 
         return { paymentOut, bill: updatedBill, journalEntry };
@@ -569,29 +824,14 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
     },
   );
 
-  // -------------------------------------------------------------------------
-  // GET /api/v1/bills/:id/payments — List payments recorded for a bill
-  // -------------------------------------------------------------------------
+  // GET /api/v1/bills/:id/payments
   fastify.get(
     '/api/v1/bills/:id/payments',
     {
-      preHandler: [
-        requireRole(
-          Role.ADMIN,
-          Role.ACCOUNTANT,
-          Role.MANAGER,
-          Role.AP_SPECIALIST,
-          Role.AUDITOR,
-        ),
-      ],
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.MANAGER, Role.AP_SPECIALIST, Role.AUDITOR)],
     },
     async (request, reply) => {
-      const paramParse = ParamsWithId.safeParse(request.params);
-      if (!paramParse.success) {
-        return reply.code(400).send({ error: 'Invalid bill ID format' });
-      }
-
-      const { id: billId } = paramParse.data;
+      const { id: billId } = ParamsWithId.parse(request.params);
       const organizationId = request.user.organizationId!;
 
       const payments = await fastify.prisma.paymentOut.findMany({
@@ -603,16 +843,11 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
     },
   );
 
-  // -------------------------------------------------------------------------
-  // POST /api/v1/payments-out — Top-level alias for recording Payments Out
-  // Allowed roles: ADMIN, ACCOUNTANT, AP_SPECIALIST
-  // -------------------------------------------------------------------------
+  // POST /api/v1/payments-out
   fastify.post(
     '/api/v1/payments-out',
     {
-      preHandler: [
-        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST),
-      ],
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST)],
     },
     async (request, reply) => {
       const bodyParse = CreatePaymentOutBody.safeParse(request.body);
@@ -623,24 +858,21 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const { billId, paymentDate, amountCents, reference } = bodyParse.data;
+      const { billId, paymentDate, amountCents, paymentMethod, reference } = bodyParse.data;
       const organizationId = request.user.organizationId!;
+      const parsedPaymentDate = new Date(paymentDate);
+
+      await checkOrganizationLockDate(fastify.prisma, organizationId, parsedPaymentDate);
 
       const bill = await fastify.prisma.bill.findFirst({
         where: { id: billId, organizationId },
         include: { contact: true },
       });
 
-      if (!bill) {
-        return reply.code(404).send({ error: 'Bill not found' });
-      }
-
-      if (bill.status === BillStatus.PAID) {
-        return reply.code(400).send({ error: 'This bill has already been fully paid.' });
-      }
-
-      if (bill.status === BillStatus.VOID) {
-        return reply.code(400).send({ error: 'Cannot record payment against a VOID bill.' });
+      if (!bill) return reply.code(404).send({ error: 'Bill not found' });
+      if (bill.status === BillStatus.PAID) return reply.code(400).send({ error: 'This bill has already been fully paid.' });
+      if (bill.status === BillStatus.VOID || bill.status === BillStatus.DRAFT) {
+        return reply.code(400).send({ error: `Cannot record payment against a ${bill.status} bill.` });
       }
 
       const remainingCents = bill.totalCents - bill.amountPaidCents;
@@ -677,9 +909,11 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
         const paymentOut = await tx.paymentOut.create({
           data: {
             organizationId,
+            contactId: bill.contactId,
             billId: bill.id,
-            paymentDate: new Date(paymentDate),
+            paymentDate: parsedPaymentDate,
             amountCents: amountBigInt,
+            paymentMethod,
             reference: reference ?? null,
           },
         });
@@ -697,51 +931,31 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
           },
         });
 
-        const journalLinesData = [
-          {
-            organizationId,
-            accountId: apAccount.id,
-            entryType: EntryType.DEBIT,
-            amountCents: amountBigInt,
-          },
-          {
-            organizationId,
-            accountId: bankAccount.id,
-            entryType: EntryType.CREDIT,
-            amountCents: amountBigInt,
-          },
-        ];
+        const count = await tx.journalEntry.count({ where: { organizationId } });
+        const entryNumber = `JE-PMTOUT-${String(count + 1).padStart(5, '0')}`;
 
-        const debitSum = journalLinesData
-          .filter((l) => l.entryType === EntryType.DEBIT)
-          .reduce((sum, l) => sum + l.amountCents, 0n);
-
-        const creditSum = journalLinesData
-          .filter((l) => l.entryType === EntryType.CREDIT)
-          .reduce((sum, l) => sum + l.amountCents, 0n);
-
-        if (debitSum !== creditSum) {
-          throw new Error(
-            `General Ledger imbalance on payment: Debits (${debitSum}) != Credits (${creditSum})`,
-          );
-        }
-
-        const journalEntry = await tx.journalEntry.create({
-          data: {
-            organizationId,
-            description: `Payment for bill from ${bill.contact.name}${bill.reference ? ` (${bill.reference})` : ''}`,
-            referenceType: 'PAYMENT_OUT',
-            referenceId: paymentOut.id,
-            postedAt: new Date(paymentDate),
-            lines: {
-              create: journalLinesData,
+        const journalEntry = await postJournalEntry(tx, {
+          organizationId,
+          entryNumber,
+          date: parsedPaymentDate,
+          memo: `Payment for bill ${bill.billNumber} from ${bill.contact.name}${reference ? ` (${reference})` : ''}`,
+          source: 'PAYMENT_OUT',
+          sourceId: paymentOut.id,
+          lines: [
+            {
+              accountId: apAccount.id,
+              description: `AP Settlement: Bill ${bill.billNumber}`,
+              debitCents: amountBigInt,
+              creditCents: 0n,
             },
-          },
-          include: {
-            lines: {
-              include: { account: true },
+            {
+              accountId: bankAccount.id,
+              description: `Cash Outflow: Bill ${bill.billNumber}`,
+              debitCents: 0n,
+              creditCents: amountBigInt,
             },
-          },
+          ],
+          userId: request.user.userId || request.user.id,
         });
 
         return { paymentOut, bill: updatedBill, journalEntry };
@@ -754,7 +968,207 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
       });
     },
   );
+
+  // -------------------------------------------------------------------------
+  // Recurring Bills Endpoints
+  // -------------------------------------------------------------------------
+
+  // GET /api/v1/recurring-bills
+  fastify.get(
+    '/api/v1/recurring-bills',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.MANAGER, Role.AP_SPECIALIST)],
+    },
+    async (request, reply) => {
+      const organizationId = request.user.organizationId!;
+
+      const schedules = await fastify.prisma.recurringSchedule.findMany({
+        where: { organizationId, scheduleType: 'BILL' },
+        include: {
+          contact: { select: { id: true, name: true, email: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return reply.send({ recurringBills: schedules });
+    },
+  );
+
+  // POST /api/v1/recurring-bills
+  fastify.post(
+    '/api/v1/recurring-bills',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST)],
+    },
+    async (request, reply) => {
+      const organizationId = request.user.organizationId!;
+      const parse = RecurringBillBody.safeParse(request.body);
+      if (!parse.success) {
+        return reply.code(400).send({ error: 'Validation failed', details: parse.error.issues });
+      }
+
+      const { name, contactId, frequency, startDate, endDate, notes, lineItems } = parse.data;
+
+      const schedule = await fastify.prisma.recurringSchedule.create({
+        data: {
+          organizationId,
+          scheduleType: 'BILL',
+          name,
+          contactId,
+          frequency,
+          startDate: new Date(startDate),
+          nextRunDate: new Date(startDate),
+          endDate: endDate ? new Date(endDate) : null,
+          templateData: { notes, lineItems },
+          isActive: true,
+        },
+        include: { contact: true },
+      });
+
+      return reply.code(201).send({ recurringBill: schedule });
+    },
+  );
+
+  // PATCH /api/v1/recurring-bills/:id
+  fastify.patch(
+    '/api/v1/recurring-bills/:id',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      const existing = await fastify.prisma.recurringSchedule.findFirst({
+        where: { id, organizationId, scheduleType: 'BILL' },
+      });
+      if (!existing) return reply.status(404).send({ error: 'Recurring bill schedule not found' });
+
+      const body = request.body as any;
+      const updated = await fastify.prisma.recurringSchedule.update({
+        where: { id },
+        data: {
+          name: body.name ?? existing.name,
+          frequency: body.frequency ?? existing.frequency,
+          isActive: body.isActive !== undefined ? body.isActive : existing.isActive,
+          nextRunDate: body.nextRunDate ? new Date(body.nextRunDate) : existing.nextRunDate,
+          endDate: body.endDate ? new Date(body.endDate) : existing.endDate,
+          templateData: body.templateData ?? existing.templateData,
+        },
+        include: { contact: true },
+      });
+
+      return reply.send({ recurringBill: updated });
+    },
+  );
+
+  // DELETE /api/v1/recurring-bills/:id
+  fastify.delete(
+    '/api/v1/recurring-bills/:id',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      await fastify.prisma.recurringSchedule.deleteMany({
+        where: { id, organizationId, scheduleType: 'BILL' },
+      });
+
+      return reply.send({ message: 'Recurring bill schedule deleted' });
+    },
+  );
+
+  // POST /api/v1/recurring-bills/:id/run (Manually spawn bill from schedule)
+  fastify.post(
+    '/api/v1/recurring-bills/:id/run',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      const schedule = await fastify.prisma.recurringSchedule.findFirst({
+        where: { id, organizationId, scheduleType: 'BILL' },
+        include: { contact: true },
+      });
+
+      if (!schedule) return reply.status(404).send({ error: 'Recurring bill schedule not found' });
+
+      const template = schedule.templateData as { notes?: string; lineItems: any[] };
+      const issueDate = new Date();
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 14);
+
+      const count = await fastify.prisma.bill.count({ where: { organizationId } });
+      const billNumber = `BILL-${String(count + 1).padStart(5, '0')}`;
+
+      // Calculate totals
+      const processedLines = template.lineItems.map((item) => {
+        const rawAmount = item.amountCents
+          ? BigInt(item.amountCents)
+          : BigInt(Math.round(item.quantity * (item.unitPriceCents ?? 0)));
+        const gstResult = calculateGST(rawAmount, item.taxTreatment || TaxTreatment.EXCLUSIVE);
+        return {
+          organizationId,
+          itemId: item.itemId,
+          description: item.description,
+          taxTreatment: item.taxTreatment || TaxTreatment.EXCLUSIVE,
+          amountCents: gstResult.subtotalCents,
+          gstCents: gstResult.gstCents,
+          totalCents: gstResult.totalCents,
+        };
+      });
+
+      const totals = sumGSTResults(
+        processedLines.map((li) => ({
+          subtotalCents: li.amountCents,
+          gstCents: li.gstCents,
+          totalCents: li.totalCents,
+        })),
+      );
+
+      const bill = await fastify.prisma.bill.create({
+        data: {
+          organizationId,
+          contactId: schedule.contactId,
+          billNumber,
+          reference: `Recurring: ${schedule.name}`,
+          issueDate,
+          dueDate,
+          status: BillStatus.DRAFT,
+          subtotalCents: totals.subtotalCents,
+          gstCents: totals.gstCents,
+          totalCents: totals.totalCents,
+          amountPaidCents: 0n,
+          notes: template.notes,
+          lineItems: {
+            create: processedLines,
+          },
+        },
+        include: { contact: true, lineItems: true },
+      });
+
+      // Calculate next run date
+      const nextDate = new Date(schedule.nextRunDate);
+      if (schedule.frequency === 'WEEKLY') nextDate.setDate(nextDate.getDate() + 7);
+      else if (schedule.frequency === 'MONTHLY') nextDate.setMonth(nextDate.getMonth() + 1);
+      else if (schedule.frequency === 'QUARTERLY') nextDate.setMonth(nextDate.getMonth() + 3);
+      else if (schedule.frequency === 'YEARLY') nextDate.setFullYear(nextDate.getFullYear() + 1);
+
+      await fastify.prisma.recurringSchedule.update({
+        where: { id: schedule.id },
+        data: { nextRunDate: nextDate },
+      });
+
+      return reply.send({
+        message: 'Successfully generated bill from recurring schedule',
+        bill: serializeBill(bill),
+      });
+    },
+  );
 };
 
 export default billRoutes;
-

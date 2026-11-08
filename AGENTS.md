@@ -125,6 +125,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │   │   └── schema.prisma      # Unified Enterprise PostgreSQL schema, enums, models
 │   └── src/
 │       ├── lib/
+│       │   ├── aba.ts             # APCA Cemtex 120-character .ABA batch payment generator
 │       │   ├── abn.ts             # ATO ABN checksum validation algorithm
 │       │   ├── audit.ts           # Append-only immutable system audit log helper
 │       │   ├── gst.ts             # Integer-cent Australian GST calculation utilities
@@ -135,14 +136,19 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   ├── auth.ts        # Fastify auth plugin, session cookies, 7-role requireRole hooks
 │       │   └── prisma.ts      # Fastify PrismaClient plugin with Cloud SQL discovery & auto-sync
 │       ├── routes/
-│       │   ├── accounts.ts      # GET/POST/PATCH /api/v1/accounts, decommission sweep, tracking categories
-│       │   ├── auth.ts          # POST /api/v1/auth/google, GET /me, POST /switch-organization, DELETE /logout
-│       │   ├── bills.ts         # GET /api/v1/bills, POST, GET /:id, POST /:id/payments (AP & GL posting)
-│       │   ├── contacts.ts      # GET/api/v1/contacts, POST, GET /:id, PATCH /:id, GET /:id/360
-│       │   ├── invoices.ts      # GET /api/v1/invoices, POST, GET /:id, POST /:id/issue, POST /:id/payments
-│       │   ├── items.ts         # GET/POST/PATCH/DELETE /api/v1/items (Products & Services catalog)
-│       │   ├── ledger.ts        # GET /api/v1/ledger, GET /api/v1/ledger/accounts, POST /api/v1/ledger/entries
-│       │   └── organizations.ts # Organization profile, multi-company list, members, invites, & audit logs
+│       │   ├── accounts.ts        # GET/POST/PATCH /api/v1/accounts, decommission sweep, tracking categories
+│       │   ├── auth.ts            # POST /api/v1/auth/google, GET /me, POST /switch-organization, DELETE /logout
+│       │   ├── batch-payments.ts  # GET/POST /api/v1/batch-payments, GET /:id/aba (APCA CEMTEX file download)
+│       │   ├── bills.ts           # GET/POST /api/v1/bills, recurring schedules, approval GL & payments out
+│       │   ├── contacts.ts        # GET/api/v1/contacts, POST, GET /:id, PATCH /:id, GET /:id/360
+│       │   ├── credit-notes.ts    # GET/POST /api/v1/credit-notes, /:id/issue (contra-AR GL), /:id/allocate
+│       │   ├── invoices.ts        # GET/POST /api/v1/invoices, recurring schedules, GL issuance & payments in
+│       │   ├── items.ts           # GET/POST/PATCH/DELETE /api/v1/items (Products & Services catalog)
+│       │   ├── ledger.ts          # GET /api/v1/ledger, GET /api/v1/ledger/accounts, POST /api/v1/ledger/entries
+│       │   ├── organizations.ts   # Organization profile, multi-company list, members, invites, & audit logs
+│       │   ├── purchase-orders.ts # GET/POST /api/v1/purchase-orders, approval workflow, 1-click bill convert
+│       │   ├── quotes.ts          # GET/POST /api/v1/quotes, 1-click convert-to-invoice
+│       │   └── vendor-credits.ts  # GET/POST /api/v1/vendor-credits, /:id/issue (contra-AP GL), /:id/allocate
 │       └── server.ts          # Fastify server entry point, static serving, plugins
 ├── docs/                      # Technical Documentation
 │   ├── ARCHITECTURE.md        # Topology, service boundaries, and Cloud Run configuration
@@ -170,7 +176,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
         ├── api/
         │   └── client.ts      # Typed API client wrapper with credentials
         ├── components/
-        │   ├── AppShell.tsx   # Obsidian Carbon sidebar, multi-company switcher & h-12 context bar
+        │   ├── AppShell.tsx   # Obsidian Carbon static header (dropdown nav, company switcher) & lean static footer
         │   └── ui/
         │       ├── Button.tsx         # Crisp 4px Corporate Precision button primitive
         │       ├── Drawer.tsx         # Right-hand slide-over inspector drawer primitive

@@ -559,11 +559,14 @@ export interface BillLineItem {
   id: string;
   billId: string;
   organizationId: string;
+  itemId?: string | null;
   description: string;
   amountCents: number;
   taxTreatment: TaxTreatment;
   gstCents: number;
   totalCents: number;
+  accountId?: string | null;
+  trackingOptionId?: string | null;
 }
 
 export interface PaymentOut {
@@ -572,6 +575,7 @@ export interface PaymentOut {
   billId: string;
   paymentDate: string;
   amountCents: number;
+  paymentMethod?: string;
   reference: string | null;
   createdAt: string;
 }
@@ -585,7 +589,10 @@ export interface Bill {
     name: string;
     email: string | null;
     abn: string | null;
+    bsb?: string | null;
+    bankAccountNumber?: string | null;
   };
+  billNumber?: string;
   reference: string | null;
   issueDate: string;
   dueDate: string;
@@ -595,6 +602,7 @@ export interface Bill {
   totalCents: number;
   amountPaidCents: number;
   notes: string | null;
+  purchaseOrderId?: string | null;
   lineItems?: BillLineItem[];
   paymentsOut?: PaymentOut[];
   createdAt: string;
@@ -602,17 +610,25 @@ export interface Bill {
 }
 
 export interface CreateBillLineItemInput {
+  itemId?: string;
   description: string;
-  amountCents: number;
+  quantity?: number;
+  unitPriceCents?: number;
+  amountCents?: number;
   taxTreatment: TaxTreatment;
+  accountId?: string;
+  trackingOptionId?: string;
 }
 
 export interface CreateBillInput {
   contactId: string;
+  billNumber?: string;
   reference?: string | null;
   issueDate: string;
   dueDate: string;
   notes?: string | null;
+  purchaseOrderId?: string;
+  autoApprove?: boolean;
   lineItems: CreateBillLineItemInput[];
 }
 
@@ -636,9 +652,21 @@ export const billApi = {
   create: (data: CreateBillInput) =>
     request<{ bill: Bill }>('POST', '/bills', data),
 
+  update: (id: string, data: Partial<CreateBillInput>) =>
+    request<{ bill: Bill }>('PATCH', `/bills/${id}`, data),
+
+  delete: (id: string) =>
+    request<{ message: string }>('DELETE', `/bills/${id}`),
+
+  approve: (id: string) =>
+    request<{ bill: Bill }>('POST', `/bills/${id}/approve`),
+
+  void: (id: string) =>
+    request<{ bill: Bill }>('POST', `/bills/${id}/void`),
+
   recordPayment: (
     billId: string,
-    data: { paymentDate: string; amountCents: number; reference?: string | null },
+    data: { paymentDate: string; amountCents: number; paymentMethod?: string; reference?: string | null },
   ) =>
     request<{ paymentOut: PaymentOut; bill: Bill; journalEntry?: any }>(
       'POST',
@@ -666,11 +694,16 @@ export interface InvoiceLineItem {
   id: string;
   invoiceId: string;
   organizationId: string;
+  itemId?: string | null;
   description: string;
+  quantity?: number;
+  unitPriceCents?: number;
   amountCents: number;
   taxTreatment: TaxTreatment;
   gstCents: number;
   totalCents: number;
+  accountId?: string | null;
+  trackingOptionId?: string | null;
 }
 
 export interface Invoice {
@@ -685,6 +718,7 @@ export interface Invoice {
     paymentTermsDays: number;
   };
   invoiceNumber: string;
+  reference?: string | null;
   issueDate: string;
   dueDate: string;
   status: InvoiceStatus;
@@ -693,24 +727,33 @@ export interface Invoice {
   totalCents: number;
   amountPaidCents: number;
   notes: string | null;
+  quoteId?: string | null;
   lineItems?: InvoiceLineItem[];
   paymentsIn?: any[];
+  journalEntry?: any;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface CreateInvoiceLineItemInput {
+  itemId?: string;
   description: string;
-  amountCents: number;
+  quantity?: number;
+  unitPriceCents?: number;
+  amountCents?: number;
   taxTreatment: TaxTreatment;
+  accountId?: string;
+  trackingOptionId?: string;
 }
 
 export interface CreateInvoiceInput {
   contactId: string;
   invoiceNumber?: string;
+  reference?: string | null;
   issueDate: string;
   dueDate: string;
   notes?: string | null;
+  quoteId?: string;
   lineItems: CreateInvoiceLineItemInput[];
 }
 
@@ -737,11 +780,20 @@ export const invoiceApi = {
   create: (data: CreateInvoiceInput) =>
     request<{ invoice: Invoice }>('POST', '/invoices', data),
 
+  update: (id: string, data: Partial<CreateInvoiceInput>) =>
+    request<{ invoice: Invoice }>('PATCH', `/invoices/${id}`, data),
+
+  delete: (id: string) =>
+    request<{ message: string }>('DELETE', `/invoices/${id}`),
+
   issue: (id: string) =>
     request<{ invoice: Invoice; journalEntry?: any }>(
       'POST',
       `/invoices/${id}/issue`,
     ),
+
+  void: (id: string) =>
+    request<{ invoice: Invoice }>('POST', `/invoices/${id}/void`),
 
   recordPayment: (
     id: string,
@@ -758,8 +810,428 @@ export const invoiceApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Payments In
+// Quotes & Estimates (Module 4)
 // ---------------------------------------------------------------------------
+
+export type QuoteStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'DECLINED' | 'INVOICED';
+
+export interface QuoteLine {
+  id: string;
+  quoteId: string;
+  itemId?: string | null;
+  description: string;
+  quantity: number;
+  unitPriceCents: number;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  taxRatePercent: number;
+  accountId?: string | null;
+  trackingOptionId?: string | null;
+}
+
+export interface Quote {
+  id: string;
+  organizationId: string;
+  contactId: string;
+  contact?: Contact;
+  quoteNumber: string;
+  reference?: string | null;
+  quoteDate: string;
+  expiryDate?: string | null;
+  status: QuoteStatus;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  notes?: string | null;
+  terms?: string | null;
+  lines: QuoteLine[];
+  convertedInvoiceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateQuoteInput {
+  contactId: string;
+  quoteNumber?: string;
+  reference?: string;
+  quoteDate: string;
+  expiryDate?: string;
+  notes?: string;
+  terms?: string;
+  lines: Array<{
+    itemId?: string;
+    description: string;
+    quantity?: number;
+    unitPriceCents: number;
+    taxRatePercent?: number;
+    accountId?: string;
+    trackingOptionId?: string;
+  }>;
+}
+
+export const quoteApi = {
+  list: (params?: { contactId?: string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.contactId) query.set('contactId', params.contactId);
+    if (params?.status) query.set('status', params.status);
+    const qs = query.toString();
+    return request<{ quotes: Quote[] }>('GET', `/quotes${qs ? `?${qs}` : ''}`);
+  },
+
+  get: (id: string) => request<{ quote: Quote }>('GET', `/quotes/${id}`),
+
+  create: (data: CreateQuoteInput) =>
+    request<{ quote: Quote }>('POST', '/quotes', data),
+
+  update: (id: string, data: Partial<CreateQuoteInput> & { status?: QuoteStatus }) =>
+    request<{ quote: Quote }>('PATCH', `/quotes/${id}`, data),
+
+  delete: (id: string) =>
+    request<{ message: string }>('DELETE', `/quotes/${id}`),
+
+  convertToInvoice: (id: string) =>
+    request<{ message: string; invoice: Invoice }>('POST', `/quotes/${id}/convert-to-invoice`),
+};
+
+// ---------------------------------------------------------------------------
+// Customer Credit Notes (Module 4)
+// ---------------------------------------------------------------------------
+
+export type CreditNoteStatus = 'DRAFT' | 'OPEN' | 'PARTIALLY_APPLIED' | 'APPLIED' | 'REFUNDED' | 'VOID';
+
+export interface CreditNoteLine {
+  id: string;
+  creditNoteId: string;
+  itemId?: string | null;
+  description: string;
+  quantity: number;
+  unitPriceCents: number;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  accountId?: string | null;
+  trackingOptionId?: string | null;
+}
+
+export interface CreditNote {
+  id: string;
+  organizationId: string;
+  contactId: string;
+  contact?: Contact;
+  creditNoteNumber: string;
+  reference?: string | null;
+  creditNoteDate: string;
+  status: CreditNoteStatus;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  remainingCents: number;
+  notes?: string | null;
+  lines: CreditNoteLine[];
+  journalEntryId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateCreditNoteInput {
+  contactId: string;
+  creditNoteNumber: string;
+  reference?: string;
+  creditNoteDate: string;
+  notes?: string;
+  lines: Array<{
+    itemId?: string;
+    description: string;
+    quantity?: number;
+    unitPriceCents: number;
+    taxRatePercent?: number;
+    accountId?: string;
+    trackingOptionId?: string;
+  }>;
+}
+
+export const creditNoteApi = {
+  list: (params?: { contactId?: string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.contactId) query.set('contactId', params.contactId);
+    if (params?.status) query.set('status', params.status);
+    const qs = query.toString();
+    return request<{ creditNotes: CreditNote[] }>('GET', `/credit-notes${qs ? `?${qs}` : ''}`);
+  },
+
+  get: (id: string) => request<{ creditNote: CreditNote }>('GET', `/credit-notes/${id}`),
+
+  create: (data: CreateCreditNoteInput) =>
+    request<{ creditNote: CreditNote }>('POST', '/credit-notes', data),
+
+  issue: (id: string) =>
+    request<{ creditNote: CreditNote }>('POST', `/credit-notes/${id}/issue`),
+
+  allocate: (id: string, data: { invoiceId: string; amountCents?: number }) =>
+    request<{ message: string; creditNote: CreditNote; invoice: Invoice; allocatedCents: number }>(
+      'POST',
+      `/credit-notes/${id}/allocate`,
+      data,
+    ),
+
+  refund: (id: string, data: { bankAccountId?: string; refundDate?: string }) =>
+    request<{ message: string; creditNote: CreditNote; refundPayment: any }>(
+      'POST',
+      `/credit-notes/${id}/refund`,
+      data,
+    ),
+};
+
+// ---------------------------------------------------------------------------
+// Purchase Orders (Module 5)
+// ---------------------------------------------------------------------------
+
+export type PurchaseOrderStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'BILLED' | 'REJECTED';
+
+export interface PurchaseOrderLine {
+  id: string;
+  purchaseOrderId: string;
+  itemId?: string | null;
+  description: string;
+  quantity: number;
+  unitPriceCents: number;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  taxRatePercent: number;
+  accountId?: string | null;
+  trackingOptionId?: string | null;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  organizationId: string;
+  contactId: string;
+  contact?: Contact;
+  poNumber: string;
+  reference?: string | null;
+  orderDate: string;
+  expectedDeliveryDate?: string | null;
+  status: PurchaseOrderStatus;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  notes?: string | null;
+  deliveryInstructions?: string | null;
+  lines: PurchaseOrderLine[];
+  convertedBillId?: string | null;
+  approvedById?: string | null;
+  approvedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePurchaseOrderInput {
+  contactId: string;
+  poNumber?: string;
+  reference?: string;
+  orderDate: string;
+  expectedDeliveryDate?: string;
+  notes?: string;
+  deliveryInstructions?: string;
+  lines: Array<{
+    itemId?: string;
+    description: string;
+    quantity?: number;
+    unitPriceCents: number;
+    taxRatePercent?: number;
+    accountId?: string;
+    trackingOptionId?: string;
+  }>;
+}
+
+export const purchaseOrderApi = {
+  list: (params?: { contactId?: string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.contactId) query.set('contactId', params.contactId);
+    if (params?.status) query.set('status', params.status);
+    const qs = query.toString();
+    return request<{ purchaseOrders: PurchaseOrder[] }>('GET', `/purchase-orders${qs ? `?${qs}` : ''}`);
+  },
+
+  get: (id: string) => request<{ purchaseOrder: PurchaseOrder }>('GET', `/purchase-orders/${id}`),
+
+  create: (data: CreatePurchaseOrderInput) =>
+    request<{ purchaseOrder: PurchaseOrder }>('POST', '/purchase-orders', data),
+
+  update: (id: string, data: Partial<CreatePurchaseOrderInput> & { status?: PurchaseOrderStatus }) =>
+    request<{ purchaseOrder: PurchaseOrder }>('PATCH', `/purchase-orders/${id}`, data),
+
+  delete: (id: string) =>
+    request<{ message: string }>('DELETE', `/purchase-orders/${id}`),
+
+  approve: (id: string) =>
+    request<{ message: string; purchaseOrder: PurchaseOrder }>('POST', `/purchase-orders/${id}/approve`),
+
+  reject: (id: string) =>
+    request<{ message: string; purchaseOrder: PurchaseOrder }>('POST', `/purchase-orders/${id}/reject`),
+
+  convertToBill: (id: string) =>
+    request<{ message: string; bill: Bill }>('POST', `/purchase-orders/${id}/convert-to-bill`),
+};
+
+// ---------------------------------------------------------------------------
+// Vendor Credits (Module 5)
+// ---------------------------------------------------------------------------
+
+export type VendorCreditStatus = 'DRAFT' | 'OPEN' | 'PARTIALLY_APPLIED' | 'APPLIED' | 'VOID';
+
+export interface VendorCreditLine {
+  id: string;
+  vendorCreditId: string;
+  itemId?: string | null;
+  description: string;
+  quantity: number;
+  unitPriceCents: number;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  accountId?: string | null;
+  trackingOptionId?: string | null;
+}
+
+export interface VendorCredit {
+  id: string;
+  organizationId: string;
+  contactId: string;
+  contact?: Contact;
+  creditNumber: string;
+  reference?: string | null;
+  creditDate: string;
+  status: VendorCreditStatus;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  remainingCents: number;
+  notes?: string | null;
+  lines: VendorCreditLine[];
+  journalEntryId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateVendorCreditInput {
+  contactId: string;
+  creditNumber: string;
+  reference?: string;
+  creditDate: string;
+  notes?: string;
+  lines: Array<{
+    itemId?: string;
+    description: string;
+    quantity?: number;
+    unitPriceCents: number;
+    taxRatePercent?: number;
+    accountId?: string;
+    trackingOptionId?: string;
+  }>;
+}
+
+export const vendorCreditApi = {
+  list: (params?: { contactId?: string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.contactId) query.set('contactId', params.contactId);
+    if (params?.status) query.set('status', params.status);
+    const qs = query.toString();
+    return request<{ credits: VendorCredit[] }>('GET', `/vendor-credits${qs ? `?${qs}` : ''}`);
+  },
+
+  get: (id: string) => request<{ credit: VendorCredit }>('GET', `/vendor-credits/${id}`),
+
+  create: (data: CreateVendorCreditInput) =>
+    request<{ vendorCredit: VendorCredit }>('POST', '/vendor-credits', data),
+
+  issue: (id: string) =>
+    request<{ vendorCredit: VendorCredit }>('POST', `/vendor-credits/${id}/issue`),
+
+  allocate: (id: string, data: { billId: string; amountCents?: number }) =>
+    request<{ message: string; vendorCredit: VendorCredit; bill: Bill; allocatedCents: number }>(
+      'POST',
+      `/vendor-credits/${id}/allocate`,
+      data,
+    ),
+};
+
+// ---------------------------------------------------------------------------
+// Batch Payments & .ABA File Export (Module 5)
+// ---------------------------------------------------------------------------
+
+export interface BatchPayment {
+  id: string;
+  organizationId: string;
+  batchNumber: string;
+  paymentDate: string;
+  totalAmountCents: number;
+  status: string;
+  abaFileContent?: string | null;
+  payments?: PaymentOut[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const batchPaymentApi = {
+  list: () => request<{ batchPayments: BatchPayment[] }>('GET', '/batch-payments'),
+
+  get: (id: string) => request<{ batchPayment: BatchPayment }>('GET', `/batch-payments/${id}`),
+
+  create: (data: {
+    paymentDate: string;
+    bankAccountId?: string;
+    description?: string;
+    billPayments: Array<{ billId: string; amountCents?: number }>;
+  }) =>
+    request<{ message: string; batchPayment: BatchPayment; paymentsCount: number }>(
+      'POST',
+      '/batch-payments',
+      data,
+    ),
+
+  downloadAbaUrl: (id: string) => `${BASE}/batch-payments/${id}/aba`,
+};
+
+// ---------------------------------------------------------------------------
+// Recurring Invoices & Bills Schedules
+// ---------------------------------------------------------------------------
+
+export interface RecurringScheduleModel {
+  id: string;
+  organizationId: string;
+  scheduleType: 'INVOICE' | 'BILL' | 'JOURNAL';
+  name: string;
+  contactId: string;
+  contact?: Contact;
+  frequency: 'WEEKLY' | 'FORTNIGHTLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'ANNUALLY';
+  startDate: string;
+  endDate?: string | null;
+  nextRunDate: string;
+  autoPost: boolean;
+  isActive: boolean;
+  templateData: any;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const recurringInvoiceApi = {
+  list: () => request<{ recurringInvoices: RecurringScheduleModel[] }>('GET', '/recurring-invoices'),
+  create: (data: any) => request<{ recurringInvoice: RecurringScheduleModel }>('POST', '/recurring-invoices', data),
+  update: (id: string, data: any) => request<{ recurringInvoice: RecurringScheduleModel }>('PATCH', `/recurring-invoices/${id}`, data),
+  delete: (id: string) => request<{ message: string }>('DELETE', `/recurring-invoices/${id}`),
+  run: (id: string) => request<{ message: string; invoice: Invoice }>('POST', `/recurring-invoices/${id}/run`),
+};
+
+export const recurringBillApi = {
+  list: () => request<{ recurringBills: RecurringScheduleModel[] }>('GET', '/recurring-bills'),
+  create: (data: any) => request<{ recurringBill: RecurringScheduleModel }>('POST', '/recurring-bills', data),
+  update: (id: string, data: any) => request<{ recurringBill: RecurringScheduleModel }>('PATCH', `/recurring-bills/${id}`, data),
+  delete: (id: string) => request<{ message: string }>('DELETE', `/recurring-bills/${id}`),
+  run: (id: string) => request<{ message: string; bill: Bill }>('POST', `/recurring-bills/${id}/run`),
+};
 
 export interface PaymentIn {
   id: string;
