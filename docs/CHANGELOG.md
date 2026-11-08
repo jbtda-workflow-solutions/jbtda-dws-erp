@@ -4,6 +4,25 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.18.2] — 2026-11-08 — Stage 4.7: Horizontal (Landscape A4) Tax Invoice Preview & Print Engine
+
+### Added
+- `frontend/src/components/InvoicePreviewModal.tsx`:
+  - Created dedicated commercial Landscape A4 Tax Invoice document renderer.
+  - Organization details: Trading Name, Legal Name, ABN (formatted with standard 2-3-3-3 spacing), Business Address, and Contact info.
+  - Compliance headers: Dynamic "TAX INVOICE" header for issued invoices; prominent compliance watermark/banner "DRAFT — NOT A TAX INVOICE" for draft invoices.
+  - Customer "Bill To" card: Contact name, ABN, and Net payment terms.
+  - Wide landscape item schedule: Item number, description, quantity, unit price, tax rate, subtotal, GST (10%), and line total.
+  - Australian EFT Remittance Slip: Banking details (Account Name, Payment Reference, BSB, Account Number) cleanly integrated alongside the financial totals calculation box.
+  - `@media print` rules: Embedded print stylesheet with `@page { size: A4 landscape; margin: 8mm; }` that isolates `#invoice-print-sheet` and suppresses all web UI chrome during browser print or "Save as PDF" actions.
+- `frontend/src/pages/InvoicesPage.tsx`:
+  - Added "Print Preview (A4)" button inside `InvoiceDetailModal` triggering `InvoicePreviewModal`.
+- `AGENTS.md` & `docs/STAGES_ROADMAP.md`:
+  - Registered `InvoicePreviewModal.tsx` in `AGENTS.md` directory layout.
+  - Added and completed Stage 4.7 in `docs/STAGES_ROADMAP.md`.
+
+---
+
 ## [0.18.1] — 2026-11-08 — Stage 4.6 Revision: AR Precision UX, Modal Scaling & Items / SKU Catalog Integration
 
 ### Added & Enhanced

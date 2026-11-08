@@ -225,6 +225,17 @@ Development proceeds strictly **one module at a time**. We complete the backend 
     - **Tracking Dimensions / Cost Centers**: Expose tracking dimension tags (`trackingOptionId`) per line item (Cost Center / Project / Department).
     - **Line-Level Revenue Account Picker**: Select specific `REVENUE` GL accounts per line item.
     - **Real-Time Australian GST Preview**: Calculate and preview subtotal, GST collected, and total cents across Tax Exclusive, Tax Inclusive, and GST Free treatments.
+- [x] **4.7 Horizontal (Landscape A4) Tax Invoice Preview & Print Engine**:
+  - **Commercial Landscape A4 Document Layout**:
+    - Build a dedicated horizontal A4 print preview component for customer invoices formatted specifically for standard Australian business operations.
+    - Organization Header: Legal Name, Trading Name, ABN, Address, Contact Email/Phone.
+    - Invoice Identity & Compliance Status: "TAX INVOICE" header for issued invoices; clear "DRAFT — NOT A TAX INVOICE" compliance banner/watermark for draft invoices.
+    - Customer "Bill To" card: Contact Name, ABN, and Billing Address.
+    - Wide tabular line item schedule: Description/Item, Qty, Unit Price ($), Tax Treatment, Subtotal, GST (10%), and Line Total.
+    - Australian EFT Remittance Advice: Bottom split featuring banking remittance slip (Bank BSB, Account Number, Account Name, Payment Reference) alongside the financial breakdown (Subtotal, GST, Total Invoiced, Paid to Date, and Balance Due).
+  - **Interactive Preview Modal & Native Browser Print Engine**:
+    - Accessible directly inside `InvoiceDetailModal` via a "Preview & Print (Landscape A4)" action.
+    - Integrates standard CSS print stylesheet (`@page { size: A4 landscape; margin: 10mm; }`) and `@media print` rules to hide UI chrome and render clean, edge-to-edge landscape A4 output via `window.print()`.
 
 ---
 

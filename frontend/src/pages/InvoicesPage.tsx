@@ -18,6 +18,7 @@ import {
   RotateCcw,
   Check,
   X,
+  Printer,
 } from 'lucide-react';
 import {
   invoiceApi,
@@ -46,6 +47,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { StatusTag } from '@/components/ui/StatusTag';
+import { InvoicePreviewModal } from '@/components/InvoicePreviewModal';
 
 function formatCents(cents: number): string {
   return new Intl.NumberFormat('en-AU', {
@@ -1615,14 +1617,17 @@ function InvoiceDetailModal({
   const remainingDueCents = invoice ? invoice.totalCents - invoice.amountPaidCents : 0;
   const canPay = invoice?.status === 'ISSUED' || invoice?.status === 'PARTIALLY_PAID';
 
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
   return (
-    <Modal
-      open={Boolean(invoiceId)}
-      onClose={onClose}
-      title={`Invoice ${invoice?.invoiceNumber ?? ''}`}
-      description="View invoice line items, customer payment status, and the double-entry General Ledger record."
-      maxWidth="max-w-2xl"
-    >
+    <>
+      <Modal
+        open={Boolean(invoiceId) && !isPreviewOpen}
+        onClose={onClose}
+        title={`Invoice ${invoice?.invoiceNumber ?? ''}`}
+        description="View invoice line items, customer payment status, and the double-entry General Ledger record."
+        size="3xl"
+      >
       {loading ? (
         <div className="py-12 flex flex-col items-center justify-center gap-2">
           <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />
@@ -1816,9 +1821,20 @@ function InvoiceDetailModal({
 
           {/* Modal Actions */}
           <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-            <Button variant="outline" onClick={onClose} disabled={issuing}>
-              Close
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={onClose} disabled={issuing}>
+                Close
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setIsPreviewOpen(true)}
+                disabled={issuing}
+                className="inline-flex items-center gap-1.5 text-slate-700 hover:text-slate-900"
+              >
+                <Printer className="w-3.5 h-3.5 text-slate-500" />
+                <span>Print Preview (A4)</span>
+              </Button>
+            </div>
             <div className="flex items-center gap-2">
               {canPay && onRecordPayment && (
                 <Button
@@ -1845,7 +1861,16 @@ function InvoiceDetailModal({
         </div>
       )}
     </Modal>
-  );
+
+    {invoice && (
+      <InvoicePreviewModal
+        open={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        invoice={invoice}
+      />
+    )}
+  </>
+);
 }
 
 // ---------------------------------------------------------------------------

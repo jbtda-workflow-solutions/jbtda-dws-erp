@@ -206,6 +206,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
         │   └── client.ts      # Typed API client wrapper with credentials
         ├── components/
         │   ├── AppShell.tsx   # Obsidian Carbon static header (dropdown nav, company switcher) & lean static footer
+        │   ├── InvoicePreviewModal.tsx # Commercial Landscape A4 Tax Invoice document preview & print dialog
         │   └── ui/
         │       ├── Button.tsx         # Crisp 4px Corporate Precision button primitive
         │       ├── Drawer.tsx         # Right-hand slide-over inspector drawer primitive
