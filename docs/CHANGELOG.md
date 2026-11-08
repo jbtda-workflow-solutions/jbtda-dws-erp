@@ -4,6 +4,24 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.12.0] — 2026-11-08 — Enterprise Ledger-First Architecture & 8-Module Deep-Build Specification
+
+### Changed
+- `docs/STAGES_ROADMAP.md`:
+  - Re-architected the roadmap into a cohesive **8-Module Enterprise Deep-Build Blueprint** designed to scale from SMEs to multi-entity enterprise deployments:
+    - **Module 1 (Enterprise Workspace, RBAC, Governance & Unified Schema):** Multi-company switcher, 7-tier domain-isolated RBAC (`ADMIN`, `ACCOUNTANT`, `MANAGER`, `AR_SPECIALIST`, `AP_SPECIALIST`, `EMPLOYEE`, `AUDITOR`), Company profile with Australian BSB/Account #/APCA ID, Accounting Period Lock Dates, `enforceTwoPersonApproval` toggle, per-org `enabledModules` feature flags (`['CORE_FINANCE', 'EXPENSES', 'FLEET', 'INVENTORY']`), Immutable System Audit Log (`audit_logs`), and upfront Unified Enterprise Prisma Schema migration.
+    - **Module 2 (The Financial Spine — CoA, Dimensions & GL Engine):** Full CRUD Chart of Accounts (`/accounts`), 10 Protected System Accounts (`1000`, `1200`, `2000`, `2050`, `2100`, `2200`, `2300`, `3000`, `4000`, `6000`), automated Balance Sweep decommissioning for custom sub-accounts, Tracking Categories / Cost Centers (Dimensions), approval-gated Manual Adjusting Journals, 1-click Reversals, and Recurring Journal Schedules.
+    - **Module 3 (Master Data — Contacts & Items Catalog):** Enhanced Contacts with Australian banking details for `.aba` payments and Contact 360 history; Products & Services Catalog (`/items`) with sales/purchase defaults and GL account coding.
+    - **Module 4 (Accounts Receivable):** Quotes/Estimates (with 1-click Invoice conversion), Coded Customer Invoices (with printable EFT remittance slip), Recurring Invoices, Customer Credit Notes, and Payments In supporting Invoice Settlement, Direct Income Receipts ("Receive Money"), and Customer Prepayments (`2300`).
+    - **Module 5 (Accounts Payable):** Purchase Orders (with manager approval & 1-click Bill conversion), Coded Vendor Bills, Recurring Bills, Vendor Credit Notes, Single Payments Out, and **Australian `.ABA` (Cemtex) Batch Payment File Export**.
+    - **Module 6 (Enterprise Expenses):** Direct "Spend Money" (Bank & Corporate Card purchases coded directly to GL) and Employee Expense Claims (`DRAFT` $\rightarrow$ `SUBMITTED` $\rightarrow$ `APPROVED` crediting `2050 Employee Reimbursements Payable` $\rightarrow$ `PAID` via single or `.aba` batch reimbursement).
+    - **Module 7 (Multi-Account Banking, Transfers & Reconciliation):** Multiple Bank & Corporate Card accounts, Inter-Account Money Transfers, and CSV/OFX Bank Statement Import & Matching Reconciliation workspace.
+    - **Module 8 (Financial Statements, Australian BAS Engine, Live Dashboard & Plug-Ins):** Trial Balance, Dimensional Profit & Loss, Balance Sheet, AR/AP Aging buckets, ATO BAS Worksheet (G1, 1A, 1B), 100% live PostgreSQL Executive Dashboard, and standardized plug-in contracts for Fleet Management, Inventory, and GCS Attachments.
+- `AGENT_SPECIFICATION.md`, `docs/SECURITY.md`, & `docs/DATABASE_SCHEMA.md`:
+  - Synchronized specifications with the 10 Protected System Accounts, 7-Role RBAC Matrix, Adaptive Maker-Checker Approval rules, Immutable Audit Log, and Unified Enterprise Schema blueprint.
+
+---
+
 ## [0.11.0] — 2026-11-07 — Stage 1 Finalization: Manual Journal Entries & Unallocated Direct Payments In
 
 ### Added

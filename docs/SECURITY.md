@@ -103,21 +103,37 @@ function validateABN(abn: string): boolean {
 
 ---
 
-## RBAC Matrix
+## Enterprise 7-Role RBAC Matrix
 
-| Capability | ADMIN | ACCOUNTANT | AR_SPECIALIST | AP_SPECIALIST | AUDITOR |
-|-----------|:-----:|:----------:|:-------------:|:-------------:|:-------:|
-| Manage organization settings | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Invite / remove users | ✅ | ❌ | ❌ | ❌ | ❌ |
-| View all records | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Create / edit contacts | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Create / manage invoices | ✅ | ✅ | ✅ | ❌ | ❌ |
-| Record payments in | ✅ | ✅ | ✅ | ❌ | ❌ |
-| Create / manage bills | ✅ | ✅ | ❌ | ✅ | ❌ |
-| Record payments out | ✅ | ✅ | ❌ | ✅ | ❌ |
-| View General Ledger | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Manage Chart of Accounts | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Delete organization | ✅ | ❌ | ❌ | ❌ | ❌ |
+Access is compartmentalized by functional domain so regular employees (`EMPLOYEE`) and domain specialists (`AR_SPECIALIST`, `AP_SPECIALIST`) only see and mutate records within their permitted scope:
+
+| Capability | `ADMIN` | `ACCOUNTANT` | `MANAGER` | `AR_SPECIALIST` | `AP_SPECIALIST` | `EMPLOYEE` | `AUDITOR` |
+|-----------|:-----:|:----------:|:-------:|:-------------:|:-------------:|:--------:|:-------:|
+| Manage organization settings, lock dates & modules | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Invite / remove users & assign roles | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Manage Chart of Accounts & Tracking Dimensions | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | 🔍 Read |
+| General Ledger, Manual Journals & Financial Reports | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | 🔍 Read |
+| 1-Click "Approve & Post" (Journals, Bills, Invoices) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Approve Purchase Orders & Team Expense Claims | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Create / edit contacts & items catalog | ✅ | ✅ | 🔍 Read | ✅ (Cust) | ✅ (Vend) | ❌ | 🔍 Read |
+| Quotes, Customer Invoices, AR Credit Notes & Receipts | ✅ | ✅ | 🔍 Read | ✅ | ❌ | ❌ | 🔍 Read |
+| Purchase Orders, Vendor Bills & AP Credit Notes | ✅ | ✅ | ✅ (POs) | ❌ | ✅ | ❌ | 🔍 Read |
+| Execute Payments Out & Export `.ABA` Bank Files | ✅ | ✅ | ❌ | ❌ | Draft/Prep | ❌ | ❌ |
+| Record Direct "Spend Money" Bank/Card Expenses | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | 🔍 Read |
+| Submit & View **Own** Employee Expense Claims | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (Own) | 🔍 Read |
+| View Immutable System Audit Log | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Delete organization | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+### Adaptive Maker-Checker Approval Rules
+- When `organization.enforceTwoPersonApproval == false` (default for SMEs):
+  - `ADMIN` and `ACCOUNTANT` users can immediately approve and post Bills, Invoices, and Manual Journals in a single step, or save as `DRAFT`.
+  - `AR_SPECIALIST`, `AP_SPECIALIST`, and `EMPLOYEE` users submit entries into `PENDING_APPROVAL` / `SUBMITTED`, requiring an `ADMIN`, `ACCOUNTANT`, or `MANAGER` (for POs and Expense Claims) to approve.
+- When `organization.enforceTwoPersonApproval == true` (Enterprise strict mode):
+  - Any user who creates/submits a financial document or manual journal cannot be the same user who approves it (`createdByUserId !== approvedByUserId`).
+
+### Immutable System Audit Log (`audit_logs`)
+- Every create, update, status transition, approval, reversal, void, period lock change, and role assignment writes an append-only row to `audit_logs` within the same Prisma database transaction.
+- No API endpoint exists to update or delete `audit_logs` rows.
 
 ---
 

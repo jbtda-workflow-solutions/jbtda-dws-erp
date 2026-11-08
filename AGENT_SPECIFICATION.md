@@ -160,101 +160,62 @@ The application relies strictly on Google Cloud Run container configuration (zer
 
 ---
 
-## 4. Default Seed Chart of Accounts
+## 4. Default Seed Chart of Accounts (Protected System Accounts)
 
-When a new organization is created, the system must automatically seed the following minimal Australian SME Chart of Accounts:
+When a new organization is created, the system automatically seeds **10 Protected System Accounts** (`isSystem: true`). Users can add custom accounts and hierarchical sub-accounts (`parentId`), and can transfer sub-account balances back into main accounts when decommissioning them, but the 10 system accounts cannot be deleted or re-coded:
 
-| Code | Account Name | Type | Normal Balance | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `1000` | Operating Bank Account | `ASSET` | Debit | Primary cash account for payments in and out |
-| `1200` | Accounts Receivable (A/R) | `ASSET` | Debit | Money owed by customers for issued invoices |
-| `2000` | Accounts Payable (A/P) | `LIABILITY` | Credit | Money owed to suppliers for recorded bills |
-| `2100` | GST Collected (Sales) | `LIABILITY` | Credit | 10% GST collected to be remitted to the ATO |
-| `2200` | GST Paid (Purchases) | `ASSET` | Debit | 10% GST paid on bills, claimable from the ATO |
-| `4000` | Sales Revenue | `REVENUE` | Credit | Core business operating income |
-| `5000` | Operating Expenses | `EXPENSE` | Debit | General vendor expenses and purchases |
+| Code | Account Name | Type | Normal Balance | System Key | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `1000` | Operating Bank Account | `ASSET` | Debit | `OPERATING_BANK` | Primary cash account for payments in and out |
+| `1200` | Accounts Receivable (A/R) | `ASSET` | Debit | `ACCOUNTS_RECEIVABLE` | Money owed by customers for issued invoices |
+| `2000` | Accounts Payable (A/P) | `LIABILITY` | Credit | `ACCOUNTS_PAYABLE` | Money owed to suppliers for recorded bills |
+| `2050` | Employee Reimbursements Payable | `LIABILITY` | Credit | `EMPLOYEE_REIMBURSEMENTS` | Liability for approved staff out-of-pocket expense claims |
+| `2100` | GST Collected (Sales) | `LIABILITY` | Credit | `GST_COLLECTED` | 10% GST collected on sales to be remitted to the ATO |
+| `2200` | GST Paid (Purchases) | `ASSET` | Debit | `GST_PAID` | 10% GST paid on bills & expenses, claimable from the ATO |
+| `2300` | Customer Prepayments / Unearned | `LIABILITY` | Credit | `CUSTOMER_PREPAYMENTS` | Unallocated customer deposits / retainers on account |
+| `3000` | Retained Earnings | `EQUITY` | Credit | `RETAINED_EARNINGS` | Cumulative historical net profit/loss equity account |
+| `4000` | Sales Revenue | `REVENUE` | Credit | `DEFAULT_REVENUE` | Default operating income account |
+| `6000` | Operating Expenses | `EXPENSE` | Debit | `DEFAULT_EXPENSE` | Default operating vendor and employee expense account |
 
 ---
 
-## 5. Contact Configuration & Invoicing Workflow Rules
+## 5. Master Data, Dimensional Accounting & Governance Rules
 
 ### Contact Entity Design (`contacts`)
-Contacts represent both Customers (AR) and Vendors/Suppliers (AP):
+Contacts represent Customers (AR), Vendors/Suppliers (AP), or Both:
 - `type`: `'CUSTOMER' | 'VENDOR' | 'BOTH'`
-- `name`: Legal or trading name
-- `email`: Primary contact address
-- `abn`: 11-digit Australian Business Number
+- `name` & `legal_name`: Trading and legal entity names
+- `email`, `phone`, `billing_address`: Contact details
+- `abn`: 11-digit Australian Business Number (validated via ATO checksum)
 - `payment_terms_days`: Default net payment terms (e.g., 7, 14, 30 days)
+- `bank_bsb`, `bank_account_number`, `bank_account_name`: Australian EFT banking details for `.aba` batch payment exports
 - **`requires_invoice_for_payment` (Boolean, Default: `true`):**
-  - When `true`: The system enforces that incoming payments must be matched and applied against an existing open Customer Invoice.
-  - When `false`: Direct payments/receipts can be recorded for this customer without creating a prior invoice (e.g., point-of-sale, direct bank transfers).
+  - When `true`: Incoming customer payments must be applied against an open Customer Invoice.
+  - When `false`: Uninvoiced receipts are permitted, allowing the user to record either a **Direct Income Receipt** (coded straight to a `REVENUE` account + GST) or a **Customer Prepayment on Account** (`2300`).
+
+### Dimensional Accounting (Tracking Categories / Cost Centers)
+- Every organization can define custom **Tracking Categories** (e.g., *Department*, *Project*, *Location*, *Fleet Vehicle*) and **Tracking Options**.
+- Every `JournalLine` and sub-ledger line item (`InvoiceLineItem`, `BillLineItem`, `QuoteLineItem`, `PurchaseOrderLineItem`, `ExpenseLineItem`) supports dimensional tagging so P&L and operational reports can be sliced by cost center or asset without duplicating GL accounts.
+
+### Adaptive Approval Workflows & Period Controls
+- **Smart Role Approvals:** `ADMIN` and `ACCOUNTANT` users can "Approve & Post Immediately" in 1 click (zero friction for small businesses) or save as Draft. Lower roles (`EMPLOYEE`, `AP_SPECIALIST`, `AR_SPECIALIST`) submit records into a `PENDING_APPROVAL` state. Organizations can optionally toggle `enforceTwoPersonApproval: true` to require maker-checker signoff across all roles.
+- **Immutable System Audit Log:** Every mutation writes an append-only record to `audit_logs` capturing `actorUserId`, `organizationId`, `action`, `entityType`, `entityId`, and change metadata.
+- **Accounting Period Lock Date:** Transactions cannot be created, edited, reversed, or voided with an effective date on or before `organization.lockDate`.
 
 ---
 
-## 6. Stage 1 MVP Implementation Scope
+## 6. 8-Module Enterprise Architecture Scope
 
-Stage 1 establishes the foundational transactional workflows without external file dependencies. File and document attachments (GCS upload URLs) are deferred to Stage 2.
+The platform is organized into **8 cohesive, deep-built modules** (see `docs/STAGES_ROADMAP.md` for full specifications):
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        CORE / CONTACTS MODULE                          │
-│     Organizations, User Roles, Vendors (Suppliers), Clients/Customers   │
-└──────────────────┬──────────────────────────────────┬──────────────────┘
-                   │                                  │
-                   ▼                                  ▼
-┌─────────────────────────────────────┐  ┌───────────────────────────────┐
-│       ACCOUNTS PAYABLE (AP)         │  │    ACCOUNTS RECEIVABLE (AR)    │
-│  • Record Bills Received            │  │  • Create Customer Invoices    │
-│  • Record Payments Out against bills│  │  • Record Payments In          │
-│  • Partial & Full payment allocation│  │  • Direct Receipts (if config) │
-└──────────────────┬──────────────────┘  └────────────────┬──────────────┘
-                   │                                      │
-                   └──────────────────┬───────────────────┘
-                                      ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                       AUTOMATED LEDGER POSTING                         │
-│     Automatic Double-Entry Journal Entries for all Bills & Payments    │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
-### 1. Contacts Management
-- Create, list, edit, and deactivate Contacts.
-- Set contact type, ABN, terms, and the `requires_invoice_for_payment` policy.
-
-### 2. Accounts Payable (Bills & Payments Out)
-- **Record Bill:**
-  - Vendor selection, Bill Reference Number, Issue Date, Due Date.
-  - Line items with Description, Amount in Cents, and GST treatment (`EXCLUSIVE`, `INCLUSIVE`, `GST_FREE`).
-  - System calculates Subtotal, GST, and Total.
-  - Status: `AWAITING_PAYMENT`, `PARTIALLY_PAID`, `PAID`, `VOID`.
-  - **Automatic Ledger Posting:**
-    - Debit `5000 - Operating Expenses` (Subtotal Cents)
-    - Debit `2200 - GST Paid` (GST Cents)
-    - Credit `2000 - Accounts Payable` (Total Cents)
-- **Record Payment Out:**
-  - Select Bill, Payment Date, Amount in Cents, Reference (e.g., Bank Ref).
-  - Validates payment does not exceed remaining unpaid balance.
-  - Updates Bill status (`PARTIALLY_PAID` or `PAID`).
-  - **Automatic Ledger Posting:**
-    - Debit `2000 - Accounts Payable` (Amount Paid)
-    - Credit `1000 - Operating Bank Account` (Amount Paid)
-
-### 3. Accounts Receivable (Invoices & Payments In)
-- **Create Customer Invoice:**
-  - Customer selection, Invoice Number (auto-incrementing per org), Issue Date, Due Date.
-  - Line items with GST calculation.
-  - Status: `DRAFT`, `ISSUED`, `PARTIALLY_PAID`, `PAID`, `VOID`.
-  - **Automatic Ledger Posting on Issuance:**
-    - Debit `1200 - Accounts Receivable` (Total Cents)
-    - Credit `4000 - Sales Revenue` (Subtotal Cents)
-    - Credit `2100 - GST Collected` (GST Cents)
-- **Record Payment In:**
-  - If customer has `requires_invoice_for_payment = true`: User selects an open invoice to apply the payment against.
-  - If customer has `requires_invoice_for_payment = false`: User can record a direct cash receipt linked to the contact.
-  - Updates Invoice status (`PARTIALLY_PAID` or `PAID`).
-  - **Automatic Ledger Posting:**
-    - Debit `1000 - Operating Bank Account` (Amount Received)
-    - Credit `1200 - Accounts Receivable` (Amount Received)
+1. **Module 1 — Enterprise Workspace, RBAC, Governance & Unified Schema:** Multi-company switcher, 7-tier domain-isolated RBAC, Organization remittance profile (BSB/Account #/APCA ID), Period Lock Dates, `enabledModules` feature flags (`['CORE_FINANCE', 'EXPENSES', 'FLEET', 'INVENTORY']`), and Immutable System Audit Log.
+2. **Module 2 — The Financial Spine (CoA, Dimensions & GL Engine):** Full CRUD Chart of Accounts (`/accounts`), 10 protected system accounts, sub-account balance sweep decommissioning, Tracking Categories/Cost Centers, Manual & Recurring Adjusting Journals, and 1-click Journal Reversals.
+3. **Module 3 — Master Data (Contacts & Items Catalog):** Customers & Vendors with Australian banking details and Contact 360 history; Products & Services Catalog (`/items`) with default sales/purchase pricing, GST treatments, and linked GL accounts.
+4. **Module 4 — Accounts Receivable (AR):** Quotes/Estimates (with 1-click Invoice conversion), Coded Customer Invoices (with EFT remittance slip), Recurring Invoices, Customer Credit Notes, and Payments In (Invoice settlement, Direct Income Receipt, or Customer Prepayment).
+5. **Module 5 — Accounts Payable (AP):** Purchase Orders (with manager approval & 1-click Bill conversion), Coded Vendor Bills, Recurring Bills, Vendor Credit Notes, Single Payments Out, and **Australian `.ABA` (Cemtex) Batch Payment File Export**.
+6. **Module 6 — Enterprise Expenses (`/expenses`):** Direct "Spend Money" (Bank & Corporate Card purchases coded directly to GL) and Employee Expense Claims (`DRAFT` $\rightarrow$ `SUBMITTED` $\rightarrow$ `APPROVED` crediting `2050 Employee Reimbursements Payable` $\rightarrow$ `PAID` via single or `.aba` batch reimbursement).
+7. **Module 7 — Multi-Account Banking, Transfers & Reconciliation (`/banking`):** Multiple Bank & Corporate Card accounts, Inter-Account Money Transfers, and CSV/OFX Bank Statement Import & Matching Reconciliation workspace.
+8. **Module 8 — Financial Statements, Australian BAS Engine, Live Dashboard & Plug-Ins (`/reports` & `/`):** Trial Balance, Dimensional Profit & Loss, Balance Sheet, AR/AP Aging (Current, 1–30, 31–60, 61–90, 90+ days), ATO BAS Worksheet (G1, 1A, 1B), 100% live database Dashboard, and plug-in hooks for Fleet Management, Inventory, and GCS Attachments.
 
 ---
 
@@ -294,13 +255,15 @@ Stage 1 establishes the foundational transactional workflows without external fi
   ```
 - Fastify middleware decorates `request.user` and `request.organizationId` on every authenticated call.
 
-### Multi-Tenant RBAC Matrix
-Roles defined in `organization_members.role`:
-- `ADMIN`: Full access to company settings, users, billing, AR, AP, GL.
-- `ACCOUNTANT`: Full access to GL, journals, AR, AP, tax reporting; cannot delete the organization.
-- `AR_SPECIALIST`: Can create/manage customers, issue invoices, record payments.
-- `AP_SPECIALIST`: Can create/manage vendors, record bills, submit payment requests.
-- `AUDITOR`: Read-only access across all records and audit logs.
+### Multi-Tenant 7-Role RBAC Matrix
+Roles defined in `organization_members.role` (strictly compartmentalized by domain):
+- `ADMIN`: Full access to company settings, lock dates, enabled modules, user invites, GL, AR, AP, Expenses, Banking, and Audit Logs.
+- `ACCOUNTANT`: Full access to CoA, Tracking Dimensions, GL, manual journals, 1-click approvals, AR, AP, Expenses, Banking, and BAS/financial reporting; cannot alter org module flags or delete the organization.
+- `MANAGER`: Operational approver; can approve Purchase Orders and Team Employee Expense Claims, read contacts/items/AR/AP, and submit own expenses; no access to GL journals or bank settings.
+- `AR_SPECIALIST`: Domain-scoped to Customers, Items, Quotes, Customer Invoices, AR Credit Notes, and Payments In; cannot view AP bills, payroll/reimbursements, or full GL.
+- `AP_SPECIALIST`: Domain-scoped to Vendors, Items, Purchase Orders, Vendor Bills, AP Credit Notes, Direct Spend Money, and preparing Batch Payment runs; cannot view AR invoices or full GL.
+- `EMPLOYEE`: Strictly isolated to submitting and viewing their own Employee Expense Claims (and assigned operational modules like Fleet/Inventory when enabled); zero access to company financials, GL, AR, AP, or Contacts.
+- `AUDITOR`: Read-only access across all financial records, reports, and the Immutable System Audit Log.
 
 ---
 
@@ -398,20 +361,15 @@ export default {
 
 ---
 
-## 10. Phased Development Roadmap
+## 10. Module-by-Module Deep-Build Roadmap
 
-### Stage 1: Core Transactional Engine (Immediate Scope)
-- Fastify + React + Prisma baseline setup.
-- Google OAuth 2.0 login and Option B Onboarding with 11-digit ABN validation.
-- Default Chart of Accounts seeding on org creation.
-- Contacts directory (Vendors & Customers with `requires_invoice_for_payment` setting).
-- Bills Received & Payments Out (with automated debits/credits).
-- Invoices Issued & Payments In (with automated debits/credits).
+Development executes sequentially across **8 complete enterprise modules** (detailed in `docs/STAGES_ROADMAP.md`):
 
-### Stage 2: File Attachments & Outbound Integrations
-- Google Cloud Storage (GCS) integration for bill PDF uploads via V4 Presigned URLs.
-- n8n webhook triggers for PDF invoice generation and automated email dispatch.
-
-### Stage 3: Reporting & Financial Visibility
-- Interactive General Ledger, Trial Balance, and Profit & Loss statement views.
-- Australian Business Activity Statement (BAS) summary calculation (G1 Total Sales, 1A GST Collected, 1B GST Paid).
+- **Module 1:** Enterprise Workspace, 7-Role RBAC, Governance, Immutable Audit Log & Unified Enterprise Prisma Schema
+- **Module 2:** The Financial Spine — Chart of Accounts (`/accounts`), Tracking Dimensions & General Ledger Engine (`/ledger`)
+- **Module 3:** Master Data — Contacts Directory (`/contacts`) & Products/Services Catalog (`/items`)
+- **Module 4:** Accounts Receivable (AR) — Quotes, Invoices, Recurring Billing, Credit Notes, Direct Income & Prepayments
+- **Module 5:** Accounts Payable (AP) — Purchase Orders, Vendor Bills, Recurring Bills, Vendor Credits & `.ABA` Batch Payments
+- **Module 6:** Enterprise Expenses (`/expenses`) — Direct "Spend Money" (Bank/Card) & Employee Expense Claims (`2050` Reimbursements)
+- **Module 7:** Multi-Account Banking, Inter-Account Transfers & CSV/OFX Statement Reconciliation (`/banking`)
+- **Module 8:** Financial Statements, Australian BAS Engine, 100% Live Executive Dashboard & Plug-In Module Contract (`/reports` & `/`)
