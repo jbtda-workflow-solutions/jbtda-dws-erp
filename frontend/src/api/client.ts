@@ -2059,4 +2059,321 @@ export const bankingApi = {
     }>('POST', '/banking/reconciliation/create-and-reconcile', data),
 };
 
+// ---------------------------------------------------------------------------
+// Module 8: Reports & Dashboard Types & API
+// ---------------------------------------------------------------------------
+
+export interface TrialBalanceAccount {
+  id: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  normalBalance: 'DEBIT' | 'CREDIT';
+  debitsCents: number;
+  creditsCents: number;
+  netBalanceCents: number;
+}
+
+export interface TrialBalanceReport {
+  asOfDate: string;
+  totalDebitsCents: number;
+  totalCreditsCents: number;
+  isBalanced: boolean;
+  differenceCents: number;
+  accounts: TrialBalanceAccount[];
+}
+
+export interface PlRow {
+  id: string;
+  code: string;
+  name: string;
+  amountCents: number;
+}
+
+export interface ProfitAndLossReport {
+  startDate: string;
+  endDate: string;
+  trackingOptionId: string | null;
+  trackingOptionName: string | null;
+  revenue: PlRow[];
+  totalRevenueCents: number;
+  costOfGoodsSold: PlRow[];
+  totalCogsCents: number;
+  grossProfitCents: number;
+  operatingExpenses: PlRow[];
+  totalOperatingExpenseCents: number;
+  netOperatingProfitCents: number;
+}
+
+export interface BalanceSheetReport {
+  asOfDate: string;
+  assets: {
+    currentAssets: PlRow[];
+    totalCurrentAssetsCents: number;
+    nonCurrentAssets: PlRow[];
+    totalNonCurrentAssetsCents: number;
+    totalAssetsCents: number;
+  };
+  liabilities: {
+    currentLiabilities: PlRow[];
+    totalCurrentLiabilitiesCents: number;
+    nonCurrentLiabilities: PlRow[];
+    totalNonCurrentLiabilitiesCents: number;
+    totalLiabilitiesCents: number;
+  };
+  equity: {
+    accounts: PlRow[];
+    totalStaticEquityCents: number;
+    currentYearEarningsCents: number;
+    totalEquityCents: number;
+  };
+  totalAssetsCents: number;
+  totalLiabilitiesAndEquityCents: number;
+  isBalanced: boolean;
+  discrepancyCents: number;
+}
+
+export interface AgedInvoiceItem {
+  id: string;
+  invoiceNumber: string;
+  issueDate: string;
+  dueDate: string;
+  daysOverdue: number;
+  totalCents: number;
+  amountPaidCents: number;
+  balanceDueCents: number;
+  bucket: 'CURRENT' | '1-30' | '31-60' | '61-90' | '90+';
+}
+
+export interface AgedArContact {
+  contactId: string;
+  contactName: string;
+  contactEmail?: string | null;
+  currentCents: number;
+  days1to30Cents: number;
+  days31to60Cents: number;
+  days61to90Cents: number;
+  days90PlusCents: number;
+  totalCents: number;
+  invoices: AgedInvoiceItem[];
+}
+
+export interface AgedReceivablesReport {
+  asOfDate: string;
+  totalOutstandingCents: number;
+  totals: {
+    currentCents: number;
+    days1to30Cents: number;
+    days31to60Cents: number;
+    days61to90Cents: number;
+    days90PlusCents: number;
+  };
+  contacts: AgedArContact[];
+}
+
+export interface AgedBillItem {
+  id: string;
+  reference?: string | null;
+  issueDate: string;
+  dueDate: string;
+  daysOverdue: number;
+  totalCents: number;
+  amountPaidCents: number;
+  balanceDueCents: number;
+  bucket: 'CURRENT' | '1-30' | '31-60' | '61-90' | '90+';
+}
+
+export interface AgedApContact {
+  contactId: string;
+  contactName: string;
+  contactEmail?: string | null;
+  currentCents: number;
+  days1to30Cents: number;
+  days31to60Cents: number;
+  days61to90Cents: number;
+  days90PlusCents: number;
+  totalCents: number;
+  bills: AgedBillItem[];
+}
+
+export interface AgedPayablesReport {
+  asOfDate: string;
+  totalOutstandingCents: number;
+  totals: {
+    currentCents: number;
+    days1to30Cents: number;
+    days31to60Cents: number;
+    days61to90Cents: number;
+    days90PlusCents: number;
+  };
+  contacts: AgedApContact[];
+}
+
+export interface BasReport {
+  periodLabel: string;
+  startDate: string;
+  endDate: string;
+  organization: {
+    name: string;
+    abn: string;
+    lockDate: string | null;
+  };
+  isPeriodLocked: boolean;
+  g1TotalSalesCents: number;
+  g2G3GstFreeSalesCents: number;
+  g10CapitalPurchasesCents: number;
+  g11NonCapitalPurchasesCents: number;
+  oneAGstCents: number;
+  oneBGstCents: number;
+  netGstCents: number;
+  netGstType: 'PAYABLE' | 'REFUNDABLE';
+  salesSummary: {
+    invoicesCount: number;
+    directIncomeCount: number;
+  };
+  purchasesSummary: {
+    billsCount: number;
+    directSpendCount: number;
+    expenseClaimsCount: number;
+  };
+}
+
+export interface DashboardSummary {
+  organization: {
+    id: string;
+    name: string;
+    lockDate: string | null;
+  };
+  cashPosition: {
+    totalCashCents: number;
+    accounts: Array<{
+      id: string;
+      code: string;
+      name: string;
+      balanceCents: number;
+      bankBsb?: string | null;
+      bankAccountNumber?: string | null;
+    }>;
+  };
+  receivables: {
+    totalOutstandingCents: number;
+    overdueCents: number;
+    openInvoicesCount: number;
+    overdueInvoicesCount: number;
+    aging: {
+      currentCents: number;
+      days1to30Cents: number;
+      days31to60Cents: number;
+      days61to90Cents: number;
+      days90PlusCents: number;
+    };
+  };
+  payables: {
+    totalOutstandingCents: number;
+    overdueCents: number;
+    openBillsCount: number;
+    overdueBillsCount: number;
+    pendingReimbursementsCents: number;
+    aging: {
+      currentCents: number;
+      days1to30Cents: number;
+      days31to60Cents: number;
+      days61to90Cents: number;
+      days90PlusCents: number;
+    };
+  };
+  approvalsQueue: {
+    totalPending: number;
+    pendingBillsCount: number;
+    pendingPosCount: number;
+    pendingClaimsCount: number;
+    pendingJournalsCount: number;
+  };
+  performance: {
+    mtdRevenueCents: number;
+    mtdExpenseCents: number;
+    mtdNetProfitCents: number;
+    ytdRevenueCents: number;
+    ytdExpenseCents: number;
+    ytdNetProfitCents: number;
+  };
+  activeContactsCount: number;
+  recentActivity: Array<{
+    id: string;
+    action: string;
+    entityType: string;
+    entityId: string | null;
+    summary: string;
+    actorName: string | null;
+    actorEmail: string | null;
+    createdAt: string;
+  }>;
+}
+
+export const reportsApi = {
+  getTrialBalance: (asOfDate?: string) => {
+    const q = asOfDate ? `?asOfDate=${encodeURIComponent(asOfDate)}` : '';
+    return request<TrialBalanceReport>('GET', `/reports/trial-balance${q}`);
+  },
+
+  getProfitAndLoss: (params?: {
+    startDate?: string;
+    endDate?: string;
+    trackingOptionId?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.trackingOptionId) query.set('trackingOptionId', params.trackingOptionId);
+    const qs = query.toString();
+    return request<ProfitAndLossReport>('GET', `/reports/profit-and-loss${qs ? `?${qs}` : ''}`);
+  },
+
+  getBalanceSheet: (asOfDate?: string) => {
+    const q = asOfDate ? `?asOfDate=${encodeURIComponent(asOfDate)}` : '';
+    return request<BalanceSheetReport>('GET', `/reports/balance-sheet${q}`);
+  },
+
+  getAgedReceivables: (asOfDate?: string) => {
+    const q = asOfDate ? `?asOfDate=${encodeURIComponent(asOfDate)}` : '';
+    return request<AgedReceivablesReport>('GET', `/reports/aged-receivables${q}`);
+  },
+
+  getAgedPayables: (asOfDate?: string) => {
+    const q = asOfDate ? `?asOfDate=${encodeURIComponent(asOfDate)}` : '';
+    return request<AgedPayablesReport>('GET', `/reports/aged-payables${q}`);
+  },
+
+  getBas: (params?: {
+    period?: 'MONTHLY' | 'QUARTERLY';
+    year?: number;
+    quarter?: number;
+    month?: number;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.period) query.set('period', params.period);
+    if (params?.year) query.set('year', String(params.year));
+    if (params?.quarter) query.set('quarter', String(params.quarter));
+    if (params?.month) query.set('month', String(params.month));
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    const qs = query.toString();
+    return request<BasReport>('GET', `/reports/bas${qs ? `?${qs}` : ''}`);
+  },
+
+  lockBasPeriod: (endDate: string) =>
+    request<{ ok: boolean; message: string; lockDate: string | null }>(
+      'POST',
+      '/reports/bas/lock',
+      { endDate },
+    ),
+};
+
+export const dashboardApi = {
+  getSummary: () => request<DashboardSummary>('GET', '/dashboard/summary'),
+};
+
+
 

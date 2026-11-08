@@ -12,6 +12,7 @@ import { AccountsPage } from '@/pages/AccountsPage';
 import { LedgerPage } from '@/pages/LedgerPage';
 import { ExpensesPage } from '@/pages/ExpensesPage';
 import { BankingPage } from '@/pages/BankingPage';
+import { ReportsPage } from '@/pages/ReportsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 
 // ---------------------------------------------------------------------------
@@ -53,6 +54,7 @@ function AppRoutes() {
         <Route path="/banking" element={<BankingPage />} />
         <Route path="/accounts" element={<AccountsPage />} />
         <Route path="/ledger" element={<LedgerPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

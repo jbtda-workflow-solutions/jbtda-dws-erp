@@ -21,6 +21,7 @@ import {
   Building2,
   User,
   Wallet,
+  BarChart3,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { orgApi, ApiError, type Role } from '@/api/client';
@@ -74,6 +75,12 @@ const NAV_GROUPS: NavGroup[] = [
         href: '/ledger',
         icon: BookOpen,
         allowedRoles: ['ADMIN', 'ACCOUNTANT', 'AUDITOR'],
+      },
+      {
+        label: 'Reports & BAS',
+        href: '/reports',
+        icon: BarChart3,
+        allowedRoles: ['ADMIN', 'ACCOUNTANT', 'MANAGER', 'AUDITOR'],
       },
     ],
   },

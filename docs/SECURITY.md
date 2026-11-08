@@ -124,7 +124,9 @@ Access is compartmentalized by functional domain so regular employees (`EMPLOYEE
 | Manage organization settings, lock dates & modules | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Invite / remove users & assign roles | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Manage Chart of Accounts & Tracking Dimensions | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | 🔍 Read |
-| General Ledger, Manual Journals & Financial Reports | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | 🔍 Read |
+| General Ledger, Manual Journals & Financial Statements | ✅ | ✅ | 🔍 Read (Reports) | ❌ | ❌ | ❌ | 🔍 Read |
+| Australian BAS Engine & Statutory GST Worksheet | ✅ | ✅ | 🔍 Read | ❌ | ❌ | ❌ | 🔍 Read |
+| Lock Accounting Period (`organization.lockDate`) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | 1-Click "Approve & Post" (Journals, Bills, Invoices) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Approve Purchase Orders & Team Expense Claims | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Create / edit contacts & items catalog | ✅ | ✅ | 🔍 Read | ✅ (Cust) | ✅ (Vend) | ❌ | 🔍 Read |

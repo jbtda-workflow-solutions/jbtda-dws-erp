@@ -4,6 +4,58 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.20.0] — 2026-11-08 — Module 8: Financial Statements, Australian BAS Engine, Live Dashboard & Plug-In Contract
+
+### Added
+- `backend/src/routes/reports.ts`:
+  - `GET /api/v1/reports/trial-balance`: Point-in-time Trial Balance verifying double-entry equilibrium ($\sum \text{Debits} == \sum \text{Credits}$) across all active accounts with `?asOfDate=YYYY-MM-DD`.
+  - `GET /api/v1/reports/profit-and-loss`: Multi-tiered Income Statement (Revenue, COGS, Gross Profit, Operating Expenses, Operating Profit) over date ranges with optional dimensional filtering via `?trackingOptionId=` (e.g. per-vehicle or per-department P&L).
+  - `GET /api/v1/reports/balance-sheet`: Point-in-time Balance Sheet grouping Assets, Liabilities, and Equity. Dynamically computes Current Year Unappropriated Earnings from unclosed revenue and expense accounts, mathematically proving $\text{Assets} == \text{Liabilities} + \text{Equity}$.
+  - `GET /api/v1/reports/aged-receivables`: Aged Receivables summary and detail bucketed into `Current`, `1–30 Days`, `31–60 Days`, `61–90 Days`, and `90+ Days Overdue`, aggregated by customer contact with open invoice breakdowns.
+  - `GET /api/v1/reports/aged-payables`: Aged Payables summary and detail bucketed into `Current`, `1–30 Days`, `31–60 Days`, `61–90 Days`, and `90+ Days Overdue`, aggregated by supplier contact with open bill breakdowns.
+  - `GET /api/v1/reports/bas`: Official Australian Taxation Office (ATO) Business Activity Statement GST worksheet calculating boxes **G1** (Total Sales), **G2/G3** (GST-Free & Export Sales), **G10** (Capital Purchases), **G11** (Non-Capital Purchases), **1A** (GST on Sales from account `2100` net of credit notes), **1B** (GST on Purchases from account `2200` net of vendor credits), and Net GST Result ($1\text{A} - 1\text{B}$).
+  - `POST /api/v1/reports/bas/lock`: Statutory BAS period freeze setting `organization.lockDate` to the period's end date, preventing retrospective transaction postings or edits.
+- `backend/src/routes/dashboard.ts`:
+  - `GET /api/v1/dashboard/summary`: High-performance live PostgreSQL aggregation querying real-time liquid cash position across bank accounts, AR/AP totals and aging brackets, actionable pending approvals queue (bills, POs, claims, draft journals), MTD and YTD P&L performance, and recent audit activity feed.
+- `frontend/src/pages/ReportsPage.tsx`:
+  - Tabbed Corporate Precision financial reporting workbench supporting Trial Balance, Dimensional P&L, Balance Sheet, Aged Receivables, Aged Payables, and ATO BAS Engine.
+  - Date preset selectors (This Month, Last Month, Financial Year to Date, Custom Range) and tracking dimension dropdown filters.
+  - Expandable customer and supplier contact schedules with individual invoice/bill rows.
+  - Official ATO BAS form card layout with "Lock BAS Period" confirmation modal.
+  - Native print stylesheet with clean document margins and screen chrome suppression.
+- `docs/PLUGINS.md`:
+  - Architecture specifications for extending the Unified Monolith without modifying core double-entry tables:
+    - `FLEET`: Vehicle management bound to `TrackingOption` dimensions for automatic per-vehicle P&L and cost-per-km reporting.
+    - `INVENTORY`: Perpetual inventory ledger extending catalog `Item` with stock movements, warehouse locations, and automated COGS journals upon invoice issuance.
+    - `ATTACHMENTS`: Zero-binary-in-database document attachment pipeline via Google Cloud Storage (GCS) V4 presigned PUT/GET URLs.
+    - `N8N_WEBHOOKS`: Non-blocking, signed async event emitter contract and expanded catalogue.
+
+### Changed
+- `backend/src/server.ts`:
+  - Registered `reportRoutes` at `/api/v1/reports` and `dashboardRoutes` at `/api/v1/dashboard`.
+- `frontend/src/api/client.ts`:
+  - Added TypeScript interfaces for `TrialBalanceReport`, `ProfitAndLossReport`, `BalanceSheetReport`, `AgedReceivablesReport`, `AgedPayablesReport`, `BasReport`, and `DashboardSummary`.
+  - Added `reportsApi` and `dashboardApi` client objects.
+- `frontend/src/pages/DashboardPage.tsx`:
+  - Replaced all static `"—"` placeholders with 100% live PostgreSQL aggregations.
+  - Added actionable Approvals Alert Banner with direct deep-links to `/bills`, `/expenses`, and `/ledger`.
+  - Added Bank & Cash Balances workbench showing live ledger balances and BSB / Account details.
+  - Added visual AR vs AP Aging breakdown comparison bars.
+  - Added Operating Performance cards (MTD vs YTD Revenue, Expense, Net Profit).
+  - Added Live Recent Financial Activity audit stream.
+- `frontend/src/App.tsx`:
+  - Added `<Route path="/reports" element={<ReportsPage />} />`.
+- `frontend/src/components/AppShell.tsx`:
+  - Added "Reports & BAS" navigation node under the General Ledger group.
+- `docs/ARCHITECTURE.md`:
+  - Documented Section 18 (`/api/v1/reports/*`), Section 19 (`/api/v1/dashboard/*`), and `/reports` client route.
+- `docs/SECURITY.md`:
+  - Documented Financial Statements, BAS Engine, and Period Lock capabilities in the 7-Role RBAC Matrix.
+- `docs/STAGES_ROADMAP.md`:
+  - Marked all Module 8 deliverables (8.1, 8.2, 8.3, 8.4) as completed `[x]`.
+
+---
+
 ## [0.19.1] — 2026-11-08 — Stage 5.6: AP Precision UX, Line Item Coding Parity, Universal Modal Scaling & Horizontal Vendor Bill Preview Engine
 
 ### Added

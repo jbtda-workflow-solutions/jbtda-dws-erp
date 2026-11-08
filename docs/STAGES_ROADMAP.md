@@ -339,12 +339,12 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 ### Module 8: Financial Statements, Australian BAS Engine, Live Dashboard & Plug-In Contract
 **Objective:** Deliver real-time financial statements, ATO Business Activity Statement (BAS) reporting, a 100% live executive dashboard, and the standardized integration contract for custom client modules.
 
-- [ ] **8.1 Interactive Financial Statements (`/reports` & `/api/v1/reports/*`)**:
+- [x] **8.1 Interactive Financial Statements (`/reports` & `/api/v1/reports/*`)**:
   - **Trial Balance**: As-of any date; verifies Total Debits == Total Credits across all accounts.
   - **Profit & Loss Statement (Income Statement)**: Custom date range (e.g., This Month, Last Quarter, Financial Year to Date), filterable by **Tracking Dimension** (e.g., P&L for a specific Department, Project, or Fleet Vehicle).
   - **Balance Sheet**: Point-in-time statement grouping Assets, Liabilities, and Equity (including dynamically calculated Current Year Unappropriated Earnings) proving $\text{Assets} == \text{Liabilities} + \text{Equity}$.
   - **Aged Receivables (AR) & Aged Payables (AP) Summary & Detail**: Bucketed into `Current`, `1–30 Days`, `31–60 Days`, `61–90 Days`, and `90+ Days Overdue`.
-- [ ] **8.2 Australian BAS (Business Activity Statement) Engine (`/reports/bas`)**:
+- [x] **8.2 Australian BAS (Business Activity Statement) Engine (`/reports/bas`)**:
   - Computes official ATO GST worksheet metrics for any selected monthly or quarterly tax period:
     - **G1**: Total Sales (Gross or Net revenue per org preference)
     - **G2 / G3**: GST-Free Sales
@@ -353,7 +353,7 @@ Development proceeds strictly **one module at a time**. We complete the backend 
     - **1B**: GST on Purchases (`2200 GST Paid` debits minus AP credit note reversals)
     - **Net GST Payable / Refundable**: $1\text{A} - 1\text{B}$.
   - Includes a **"Lock BAS Period"** button that sets `organization.lockDate` to the end of the BAS quarter.
-- [ ] **8.3 Real-Time Executive Dashboard (`/`) — Zero-Mock Policy**:
+- [x] **8.3 Real-Time Executive Dashboard (`/`) — Zero-Mock Policy**:
   - Replaces all static `"—"` placeholders in `DashboardPage.tsx` with live PostgreSQL aggregations (`GET /api/v1/dashboard/summary`):
     - Cash Position across all bank/card accounts.
     - Outstanding AR (Total + Overdue count & amount).
@@ -362,7 +362,7 @@ Development proceeds strictly **one module at a time**. We complete the backend 
     - Month-to-Date & Year-to-Date Revenue, Expenses, and Net Operating Profit.
     - Visual AR & AP Aging bars.
     - Live Recent Financial Activity & Audit feed.
-- [ ] **8.4 Enterprise Plug-In Module Contract (Future Custom Modules)**:
+- [x] **8.4 Enterprise Plug-In Module Contract (Future Custom Modules)**:
   - Documented extension interface allowing future client-specific modules to plug into the monolith without touching core tables:
     - **Fleet Management Module (`FLEET`)**: Links vehicles to `TrackingOption` records so fuel expenses, maintenance bills, and lease payments automatically roll up into per-vehicle P&L and cost-per-kilometer reports.
     - **Inventory & Warehouse Module (`INVENTORY`)**: Extends `Item` (`isTrackedInventory: true`) with stock ledger movements, Purchase Order goods receipts, and automated Cost of Goods Sold (COGS) journals on invoice issuance.

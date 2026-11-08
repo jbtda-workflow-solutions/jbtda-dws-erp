@@ -170,6 +170,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │       │   ├── bills.ts           # GET/POST /api/v1/bills, recurring schedules, approval GL & payments out
 │       │   ├── contacts.ts        # GET/api/v1/contacts, POST, GET /:id, PATCH /:id, GET /:id/360
 │       │   ├── credit-notes.ts    # GET/POST /api/v1/credit-notes, /:id/issue (contra-AR GL), /:id/allocate
+│       │   ├── dashboard.ts       # GET /api/v1/dashboard/summary (100% live PostgreSQL KPI aggregations)
 │       │   ├── direct-transactions.ts # GET/POST /api/v1/direct-transactions (Spend/Receive Money, atomic GL)
 │       │   ├── expense-claims.ts  # GET/POST/PATCH/DELETE /api/v1/expense-claims, approve GL, pay
 │       │   ├── invoices.ts        # GET/POST /api/v1/invoices, recurring schedules, GL issuance & payments in
@@ -178,6 +179,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │       │   ├── organizations.ts   # Organization profile, multi-company list, members, invites, & audit logs
 │       │   ├── purchase-orders.ts # GET/POST /api/v1/purchase-orders, approval workflow, 1-click bill convert
 │       │   ├── quotes.ts          # GET/POST /api/v1/quotes, 1-click convert-to-invoice
+│       │   ├── reports.ts         # GET /api/v1/reports/* (Trial Balance, P&L, Balance Sheet, Aged AR/AP, ATO BAS Engine)
 │       │   └── vendor-credits.ts  # GET/POST /api/v1/vendor-credits, /:id/issue (contra-AP GL), /:id/allocate
 │       └── server.ts          # Fastify server entry point, static serving, plugins
 ├── docs/                      # Technical Documentation
@@ -186,6 +188,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │   ├── DATABASE_SCHEMA.md     # PostgreSQL tables, relations, and migration log
 │   ├── DESIGN_SYSTEM.md       # Corporate Precision Design System specification
 │   ├── INTEGRATIONS.md        # Async webhook payloads and n8n contracts
+│   ├── PLUGINS.md             # Enterprise Plug-In Module Contract (FLEET, INVENTORY, ATTACHMENTS, N8N)
 │   ├── SECURITY.md            # Auth mechanics, 7-role RBAC matrix, and crypto standards
 │   └── STAGES_ROADMAP.md      # 8-Module Deep-Build Execution Plan & completion checklist
 └── frontend/                  # React SPA (Vite + TypeScript + Tailwind)
@@ -225,12 +228,13 @@ Every variable and secret must be explicitly defined. **No configuration values 
             ├── BankingPage.tsx       # Module 7 Multi-Account Banking, Inter-Account Transfers & Split-Pane Reconciliation
             ├── BillsPage.tsx         # Accounts Payable bills (list, line items, payments out, GL modal)
             ├── ContactsPage.tsx      # Contacts directory (list, filter, create, edit modal)
-            ├── DashboardPage.tsx     # Landing dashboard page
+            ├── DashboardPage.tsx     # Executive dashboard with live working capital KPIs & actionable approvals queue
             ├── ExpensesPage.tsx      # Module 6 Direct spend money, expense claims & reimbursement payouts
             ├── InvoicesPage.tsx      # Customer Invoices (list, draft, issue with GL posting, payments in)
             ├── ItemsPage.tsx         # Products & Services catalog workbench (list, filter, create, edit, drawer)
             ├── LedgerPage.tsx        # General Ledger audit trail & Trial Balance account totals
             ├── LoginPage.tsx         # Google sign-in landing page
             ├── OnboardingModal.tsx   # First-time organization creation modal
+            ├── ReportsPage.tsx       # Module 8 Financial Statements, Dimensional P&L, Balance Sheet & ATO BAS Engine
             └── SettingsPage.tsx      # Module 1 Workspace Governance, EFT Banking, RBAC Team & Audit Log UI
 ```

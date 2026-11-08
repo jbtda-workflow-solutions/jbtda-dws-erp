@@ -297,10 +297,26 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `POST` | `/api/v1/banking/reconciliation/unmatch` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Reverses an existing match, restoring both statement line and GL journal entry to unreconciled status. |
 | `POST` | `/api/v1/banking/reconciliation/create-and-reconcile` | Cookie Session | `ADMIN`, `ACCOUNTANT` | On-the-fly creates a direct spend/receive transaction or inter-account transfer directly from a statement line and immediately reconciles it. |
 
-### 18. Frontend Client Routes (`frontend/src/App.tsx`)
+### 18. Financial Statements & Australian BAS Engine API (`/api/v1/reports/*`)
+| Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/reports/trial-balance` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR` | Point-in-time Trial Balance verifying total debits equal total credits across all active accounts. Supports `?asOfDate=YYYY-MM-DD`. |
+| `GET` | `/api/v1/reports/profit-and-loss` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR` | Multi-tiered Profit & Loss (Revenue, COGS, Gross Profit, Operating Expenses, Operating Profit) over date range with optional Tracking Dimension filtering (`?startDate=&endDate=&trackingOptionId=`). |
+| `GET` | `/api/v1/reports/balance-sheet` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR` | Point-in-time Balance Sheet grouping Assets, Liabilities, and Equity with dynamically calculated Current Year Unappropriated Earnings, mathematically proving Assets == Liabilities + Equity. |
+| `GET` | `/api/v1/reports/aged-receivables` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AR_SPECIALIST`, `AUDITOR` | Aged Receivables breakdown bucketed into Current, 1-30, 31-60, 61-90, and 90+ days overdue, aggregated by customer contact with outstanding invoice schedules. |
+| `GET` | `/api/v1/reports/aged-payables` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AP_SPECIALIST`, `AUDITOR` | Aged Payables breakdown bucketed into Current, 1-30, 31-60, 61-90, and 90+ days overdue, aggregated by supplier contact with outstanding bill schedules. |
+| `GET` | `/api/v1/reports/bas` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR` | Computes official Australian Taxation Office (ATO) Business Activity Statement GST worksheet boxes: G1 Total Sales, G2/G3 Export/GST-Free Sales, G10 Capital Purchases, G11 Non-Capital Purchases, 1A GST on Sales, 1B GST on Purchases, and Net GST Settlement (Payable/Refundable). |
+| `POST` | `/api/v1/reports/bas/lock` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Locks accounting period up to specified BAS end date (`lockDate`), freezing the General Ledger and preventing any retrospective transactions, modifications, or approvals. |
+
+### 19. Executive Live Dashboard API (`/api/v1/dashboard/*`)
+| Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/dashboard/summary` | Cookie Session | All Authenticated Roles | Computes 100% real-time financial intelligence: liquid cash position across bank accounts, AR & AP totals and aging brackets, actionable pending approvals queue (bills, POs, claims, journals), MTD and YTD P&L performance, and recent audit activity feed. |
+
+### 20. Frontend Client Routes (`frontend/src/App.tsx`)
 | Client Route | Guard Status | Rendered Component | Purpose / Description |
 | :--- | :--- | :--- | :--- |
-| `/` | Authenticated | `<DashboardPage />` | Executive dashboard overview, KPI summaries, and quick actions. |
+| `/` | Authenticated | `<DashboardPage />` | Executive dashboard overview, live working capital metrics, actionable approvals banner, and financial KPIs. |
 | `/` | Unauthenticated | `<LoginPage />` | Google OAuth 2.0 Sign-In page. |
 | `/` | Onboarding | `<OnboardingModal />` | First-time organization creation modal with ABN verification. |
 | `/contacts` | Authenticated | `<ContactsPage />` | Contacts directory workbench (Customers, Vendors, Employees). |
@@ -310,6 +326,7 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `/expenses` | Authenticated | `<ExpensesPage />` | Direct Spend Money, Out-of-Pocket Expense Claims, Approvals Queue, and Reimbursement Payouts workbench. |
 | `/banking` | Authenticated | `<BankingPage />` | Bank & Credit Card Accounts, Inter-Account Transfers, Statement CSV Import, and Smart Split-Pane Reconciliation workbench. |
 | `/accounts` | Authenticated | `<AccountsPage />` | Chart of Accounts and Tracking Dimensions workbench. |
-| `/ledger` | Authenticated | `<LedgerPage />` | General Ledger audit trail and financial reports (Trial Balance, P&L, Balance Sheet). |
+| `/ledger` | Authenticated | `<LedgerPage />` | General Ledger audit trail and manual journal entry management. |
+| `/reports` | Authenticated | `<ReportsPage />` | Financial Statements (Trial Balance, Dimensional P&L, Balance Sheet, Aged AR/AP) and Australian ATO BAS Engine workbench. |
 | `/settings` | Authenticated | `<SettingsPage />` | Organization profile, lock dates, EFT banking, team members, invites, and system audit logs. |
 | `/*` | Authenticated | Navigate to `/` | Client-side catch-all redirect to `/`. |
