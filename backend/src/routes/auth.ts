@@ -10,10 +10,27 @@
  */
 
 import type { FastifyPluginAsync } from 'fastify';
+import type { Prisma, User } from '@prisma/client';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import { getSession, requireAuth, setSession } from '../plugins/auth.js';
 import { recordAuditLog } from '../lib/audit.js';
+
+type MemberWithOrg = Prisma.OrganizationMemberGetPayload<{
+  include: {
+    organization: {
+      select: {
+        id: true;
+        name: true;
+        legalName: true;
+        abn: true;
+        lockDate: true;
+        enabledModules: true;
+        enforceTwoPersonApproval: true;
+      };
+    };
+  };
+}>;
 
 const GoogleLoginBody = z.object({
   idToken: z.string().min(1),
@@ -72,8 +89,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(401).send({ error: 'Google token verification failed' });
     }
 
-    let user;
-    let memberships;
+    let user: User;
+    let memberships: MemberWithOrg[];
     try {
       user = await fastify.prisma.user.upsert({
         where: { googleSub },

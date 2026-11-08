@@ -30,6 +30,7 @@ Chronological log of all changes, schema diffs, and new dependencies.
 ### Changed
 - `backend/src/routes/auth.ts`:
   - Added automatic multi-invite claiming upon Google OAuth sign-in, full membership list & active organization profile in `GET /api/v1/auth/me`, and `POST /api/v1/auth/switch-organization`.
+  - Added explicit TypeScript annotations for `User` and `MemberWithOrg` satisfying strict `noImplicitAny` compiler constraints.
 - `backend/src/routes/organizations.ts`:
   - Added `GET /api/v1/users/organizations`, `GET/PATCH /api/v1/organizations/profile`, `PATCH /api/v1/organizations/my-profile`, `GET/PATCH/DELETE /api/v1/organizations/members`, `GET/POST/DELETE /api/v1/organizations/invites`, and `GET /api/v1/audit-logs`.
 - `backend/src/routes/contacts.ts`, `bills.ts`, `invoices.ts`, & `ledger.ts`:
