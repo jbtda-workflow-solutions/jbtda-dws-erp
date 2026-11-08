@@ -815,7 +815,7 @@ export function SettingsPage() {
                     Tax Invoice Header & EFT Slip Preview
                   </h3>
                 </div>
-                <StatusTag variant="info" label="LIVE PREVIEW" mono />
+                <StatusTag tone="info" label="LIVE PREVIEW" mono />
               </div>
 
               <div className="p-3.5 rounded bg-slate-50 border border-slate-200 space-y-3 text-xs">
@@ -1108,7 +1108,7 @@ export function SettingsPage() {
                         </td>
                         <td className="px-4 py-2">
                           <StatusTag
-                            variant={
+                            tone={
                               m.role === 'ADMIN'
                                 ? 'posted'
                                 : m.role === 'ACCOUNTANT'
@@ -1197,7 +1197,7 @@ export function SettingsPage() {
                         </td>
                         <td className="px-4 py-2">
                           <StatusTag
-                            variant="pending"
+                            tone="pending"
                             label={inv.role.replace(/_/g, ' ')}
                             mono
                           />

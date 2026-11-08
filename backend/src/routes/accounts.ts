@@ -735,7 +735,7 @@ const accountRoutes: FastifyPluginAsync = async (fastify) => {
       const option = await fastify.prisma.$transaction(async (tx) => {
         const created = await tx.trackingOption.create({
           data: {
-            categoryId: category.id,
+            trackingCategoryId: category.id,
             organizationId,
             name,
             code,

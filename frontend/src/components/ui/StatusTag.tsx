@@ -6,17 +6,24 @@ export type StatusTagTone =
   | 'slate'
   | 'draft'
   | 'rose'
-  | 'forest';
+  | 'forest'
+  | 'posted'
+  | 'pending'
+  | 'info'
+  | 'locked'
+  | 'neutral'
+  | 'danger';
 
-interface StatusTagProps {
+export interface StatusTagProps {
   label: string;
   tone?: StatusTagTone;
+  variant?: StatusTagTone;
   mono?: boolean;
   className?: string;
 }
 
 const toneClasses: Record<
-  StatusTagTone,
+  'emerald' | 'amber' | 'slate' | 'draft' | 'rose' | 'forest',
   { wrapper: string; dot: string }
 > = {
   emerald: {
@@ -45,10 +52,38 @@ const toneClasses: Record<
   },
 };
 
+function normalizeTone(
+  input: StatusTagTone,
+): 'emerald' | 'amber' | 'slate' | 'draft' | 'rose' | 'forest' {
+  switch (input) {
+    case 'emerald':
+    case 'posted':
+      return 'emerald';
+    case 'amber':
+    case 'pending':
+      return 'amber';
+    case 'slate':
+    case 'info':
+      return 'slate';
+    case 'rose':
+    case 'danger':
+      return 'rose';
+    case 'forest':
+    case 'locked':
+      return 'forest';
+    case 'draft':
+    case 'neutral':
+    default:
+      return 'draft';
+  }
+}
+
 /**
  * Maps standard ERP statuses & roles to semantic tones automatically.
  */
-export function resolveStatusTone(status: string): StatusTagTone {
+export function resolveStatusTone(
+  status: string,
+): 'emerald' | 'amber' | 'slate' | 'draft' | 'rose' | 'forest' {
   const s = status.toUpperCase();
   if (
     [
@@ -115,10 +150,14 @@ export function resolveStatusTone(status: string): StatusTagTone {
 export function StatusTag({
   label,
   tone,
+  variant,
   mono = false,
   className,
 }: StatusTagProps) {
-  const resolved = tone ?? resolveStatusTone(label);
+  const explicitTone = tone ?? variant;
+  const resolved = explicitTone
+    ? normalizeTone(explicitTone)
+    : resolveStatusTone(label);
   const styles = toneClasses[resolved];
 
   return (
@@ -135,4 +174,3 @@ export function StatusTag({
     </span>
   );
 }
-
