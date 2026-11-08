@@ -47,13 +47,17 @@ by reading:
     staging, commits, and pushes manually. At the conclusion of any task or
     revision where a commit would typically occur, the agent MUST provide a
     ready-to-use, conventional git commit message summarizing the changes made.
-11. **No Local Installation or Execution:** Never run `npm install`, `npm run dev`,
-    or any dependency installation/execution commands on the local host development
-    machine. The development machine is not used to run, demo, or execute the project.
-    All dependencies and build steps are declared directly in configuration files
-    (e.g., `package.json`, `Dockerfile`) and are executed exclusively by Cloud Build /
-    Docker during remote deployment to Cloud Run. Agents must modify `package.json`
-    manifests directly.
+11. **Local Type Verification Allowed / No Runtime Execution:**
+    Agents MAY run `npm install --cache /tmp/.npm-cache`, `npx prisma generate`,
+    and non-emitting typecheck commands (`npm run typecheck`, `tsc --noEmit`, or
+    `npm run build`) solely to verify TypeScript types and prevent compiler breaks
+    before concluding tasks.
+    Agents MUST NOT run `npm run dev`, start background dev servers, or execute
+    runtime application code on the host machine. The development machine is not
+    used to run, demo, or execute the project. Production builds, runtime execution,
+    and database migrations remain strictly handled by Cloud Build / Docker during
+    deployment to Cloud Run. All new dependencies must still be declared directly in
+    `package.json` manifests.
 12. **Clean Imports & Compiler Tolerance:** Frontend builds use `tsc && vite build`.
     Never leave unused icon imports or variables in files. `frontend/tsconfig.json`
     has `noUnusedLocals: false` and `noUnusedParameters: false` configured as an

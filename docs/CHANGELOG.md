@@ -4,6 +4,24 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.17.2] — 2026-11-08 — Local Typecheck Verification & AP Bills Route Invariants
+
+### Changed
+- `AGENTS.md`:
+  - Updated Rule 11 from strict zero-install policy to permit non-emitting verification commands (`npm install --cache /tmp/.npm-cache`, `npx prisma generate`, and `npm run typecheck` / `tsc --noEmit`). Runtime application execution (`npm run dev`) remains strictly forbidden on the host.
+
+### Fixed
+- `backend/src/routes/bills.ts`:
+  - Fixed `initialStatus` assignment in bill creation (`AWAITING_PAYMENT` on autoApprove, `PENDING_APPROVAL` otherwise).
+  - Aligned `postJournalEntry` parameters to `PostJournalParams` interface (`actorUserId`, `referenceType`, `referenceId`, `postedAt`, and `lines` with `entryType: EntryType.DEBIT | CREDIT` and `amountCents: bigint`).
+  - Removed invalid relation `purchaseOrder` from `bill.findFirst` includes (`purchaseOrderId` string attribute preserved).
+  - Corrected journal entry void lookup to use `reversedById: null` and `status: JournalStatus.POSTED`.
+  - Updated `reverseJournalEntry` call to use `ReverseJournalParams` object parameter.
+  - Aligned `PaymentOut` records to remove invalid `contactId` and `paymentMethod` attributes; associated with `bankAccountId`.
+  - Aligned recurring bills to `RecurringSchedule` schema: mapped frequency to `RecurrenceFrequency` enum (`ANNUALLY`), persisted template payload into `templatePayloadJson`, and removed invalid `contact` relation includes and non-existent `endDate`/`templateData` columns.
+
+---
+
 ## [0.17.1] — 2026-11-08 — Build Verification: Schema Alignment and Route Compiler Fixes
 
 ### Fixed

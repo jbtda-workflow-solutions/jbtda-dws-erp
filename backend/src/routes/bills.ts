@@ -26,10 +26,11 @@ import { requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
 import { checkOrganizationLockDate, postJournalEntry, reverseJournalEntry } from '../lib/ledger-posting.js';
-import { BillStatus, EntryType, Role, TaxTreatment } from '@prisma/client';
+import { BillStatus, EntryType, JournalStatus, RecurrenceFrequency, Role, TaxTreatment } from '@prisma/client';
 
 const TaxTreatmentEnum = z.nativeEnum(TaxTreatment);
 const BillStatusEnum = z.nativeEnum(BillStatus);
+const RecurrenceFrequencyEnum = z.nativeEnum(RecurrenceFrequency);
 
 const LineItemInput = z.object({
   itemId: z.string().uuid().optional(),
@@ -88,7 +89,7 @@ const CreatePaymentOutBody = RecordPaymentBody.extend({
 const RecurringBillBody = z.object({
   name: z.string().min(1),
   contactId: z.string().uuid(),
-  frequency: z.enum(['WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY']),
+  frequency: RecurrenceFrequencyEnum,
   startDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   endDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
   notes: z.string().optional(),
@@ -186,6 +187,10 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
       const organizationId = request.user.organizationId!;
       const parsedIssueDate = new Date(issueDate);
       const parsedDueDate = new Date(dueDate);
+
+      const initialStatus: BillStatus = autoApprove
+        ? BillStatus.AWAITING_PAYMENT
+        : BillStatus.PENDING_APPROVAL;
 
       if (autoApprove) {
         await checkOrganizationLockDate(fastify.prisma, organizationId, parsedIssueDate);
@@ -288,55 +293,51 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
 
         // GL Journal Entry if auto-approved
         if (autoApprove && totalResult.totalCents > 0n) {
-          const journalLinesData: Array<{
+          const lines: Array<{
             accountId: string;
             description: string;
-            debitCents: bigint;
-            creditCents: bigint;
-            trackingOptionId?: string;
+            entryType: EntryType;
+            amountCents: bigint;
+            trackingOptionId?: string | null;
           }> = [];
 
           // Group debits by account & tracking option
           for (const item of processedLineItems) {
             if (item.amountCents > 0n) {
-              journalLinesData.push({
+              lines.push({
                 accountId: item.accountId,
                 description: `${bill.reference || bill.id}: ${item.description}`,
-                debitCents: item.amountCents,
-                creditCents: 0n,
+                entryType: EntryType.DEBIT,
+                amountCents: item.amountCents,
                 trackingOptionId: item.trackingOptionId,
               });
             }
           }
 
           if (totalResult.gstCents > 0n) {
-            journalLinesData.push({
+            lines.push({
               accountId: gstPaidAccount.id,
               description: `GST Paid on Bill ${bill.reference || bill.id}`,
-              debitCents: totalResult.gstCents,
-              creditCents: 0n,
+              entryType: EntryType.DEBIT,
+              amountCents: totalResult.gstCents,
             });
           }
 
-          journalLinesData.push({
+          lines.push({
             accountId: apAccount.id,
             description: `Bill ${bill.reference || bill.id} - ${contact.name}`,
-            debitCents: 0n,
-            creditCents: totalResult.totalCents,
+            entryType: EntryType.CREDIT,
+            amountCents: totalResult.totalCents,
           });
-
-          const count = await tx.journalEntry.count({ where: { organizationId } });
-          const entryNumber = `JE-BILL-${String(count + 1).padStart(5, '0')}`;
 
           await postJournalEntry(tx, {
             organizationId,
-            entryNumber,
-            date: parsedIssueDate,
-            memo: `Bill ${bill.reference || bill.id} from ${contact.name}${reference ? ` (${reference})` : ''}`,
-            source: 'BILL',
-            sourceId: bill.id,
-            lines: journalLinesData,
-            userId: request.user.userId,
+            actorUserId: request.user.userId,
+            description: `Bill ${bill.reference || bill.id} from ${contact.name}${reference ? ` (${reference})` : ''}`,
+            referenceType: 'BILL',
+            referenceId: bill.id,
+            postedAt: parsedIssueDate,
+            lines,
           });
         }
 
@@ -385,7 +386,6 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           contact: true,
           lineItems: true,
           paymentsOut: true,
-          purchaseOrder: true,
         },
       });
 
@@ -566,53 +566,49 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const journalLinesData: Array<{
+      const lines: Array<{
         accountId: string;
         description: string;
-        debitCents: bigint;
-        creditCents: bigint;
+        entryType: EntryType;
+        amountCents: bigint;
       }> = [];
 
       for (const item of bill.lineItems) {
         if (item.amountCents > 0n) {
-          journalLinesData.push({
+          lines.push({
             accountId: expenseAccount.id,
             description: `${bill.reference || bill.id}: ${item.description}`,
-            debitCents: item.amountCents,
-            creditCents: 0n,
+            entryType: EntryType.DEBIT,
+            amountCents: item.amountCents,
           });
         }
       }
 
       if (bill.gstCents > 0n) {
-        journalLinesData.push({
+        lines.push({
           accountId: gstPaidAccount.id,
           description: `GST Paid on Bill ${bill.reference || bill.id}`,
-          debitCents: bill.gstCents,
-          creditCents: 0n,
+          entryType: EntryType.DEBIT,
+          amountCents: bill.gstCents,
         });
       }
 
-      journalLinesData.push({
+      lines.push({
         accountId: apAccount.id,
         description: `Bill ${bill.reference || bill.id} - ${bill.contact.name}`,
-        debitCents: 0n,
-        creditCents: bill.totalCents,
+        entryType: EntryType.CREDIT,
+        amountCents: bill.totalCents,
       });
-
-      const count = await fastify.prisma.journalEntry.count({ where: { organizationId } });
-      const entryNumber = `JE-BILL-${String(count + 1).padStart(5, '0')}`;
 
       const updated = await fastify.prisma.$transaction(async (tx) => {
         await postJournalEntry(tx, {
           organizationId,
-          entryNumber,
-          date: bill.issueDate,
-          memo: `Bill ${bill.reference || bill.id} from ${bill.contact.name}`,
-          source: 'BILL',
-          sourceId: bill.id,
-          lines: journalLinesData,
-          userId: request.user.userId,
+          actorUserId: request.user.userId,
+          description: `Bill ${bill.reference || bill.id} from ${bill.contact.name}`,
+          referenceType: 'BILL',
+          referenceId: bill.id,
+          postedAt: bill.issueDate,
+          lines,
         });
 
         return tx.bill.update({
@@ -655,18 +651,20 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           organizationId,
           referenceType: 'BILL',
           referenceId: bill.id,
-          isReversed: false,
+          reversedById: null,
+          status: JournalStatus.POSTED,
         },
       });
 
       const updatedBill = await fastify.prisma.$transaction(async (tx) => {
         if (originalJe) {
-          await reverseJournalEntry(
-            tx,
-            originalJe.id,
-            `Reversal for voided bill ${bill.reference || bill.id}`,
-            request.user.userId,
-          );
+          await reverseJournalEntry(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            journalEntryId: originalJe.id,
+            reversalDate: new Date(),
+            reason: `Reversal for voided bill ${bill.reference || bill.id}`,
+          });
         }
 
         return tx.bill.update({
@@ -752,11 +750,10 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
         const paymentOut = await tx.paymentOut.create({
           data: {
             organizationId,
-            contactId: bill.contactId,
             billId: bill.id,
             paymentDate: parsedPaymentDate,
             amountCents: amountBigInt,
-            paymentMethod,
+            bankAccountId: bankAccount.id,
             reference: reference ?? null,
           },
         });
@@ -774,31 +771,27 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           },
         });
 
-        const count = await tx.journalEntry.count({ where: { organizationId } });
-        const entryNumber = `JE-PMTOUT-${String(count + 1).padStart(5, '0')}`;
-
         const journalEntry = await postJournalEntry(tx, {
           organizationId,
-          entryNumber,
-          date: parsedPaymentDate,
-          memo: `Payment for bill ${bill.reference || bill.id} from ${bill.contact.name}${reference ? ` (${reference})` : ''}`,
-          source: 'PAYMENT_OUT',
-          sourceId: paymentOut.id,
+          actorUserId: request.user.userId,
+          description: `Payment for bill ${bill.reference || bill.id} from ${bill.contact.name}${reference ? ` (${reference})` : ''}`,
+          referenceType: 'PAYMENT_OUT',
+          referenceId: paymentOut.id,
+          postedAt: parsedPaymentDate,
           lines: [
             {
               accountId: apAccount.id,
               description: `AP Settlement: Bill ${bill.reference || bill.id}`,
-              debitCents: amountBigInt,
-              creditCents: 0n,
+              entryType: EntryType.DEBIT,
+              amountCents: amountBigInt,
             },
             {
               accountId: bankAccount.id,
               description: `Cash Outflow: Bill ${bill.reference || bill.id}`,
-              debitCents: 0n,
-              creditCents: amountBigInt,
+              entryType: EntryType.CREDIT,
+              amountCents: amountBigInt,
             },
           ],
-          userId: request.user.userId,
         });
 
         return { paymentOut, bill: updatedBill, journalEntry };
@@ -897,11 +890,10 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
         const paymentOut = await tx.paymentOut.create({
           data: {
             organizationId,
-            contactId: bill.contactId,
             billId: bill.id,
             paymentDate: parsedPaymentDate,
             amountCents: amountBigInt,
-            paymentMethod,
+            bankAccountId: bankAccount.id,
             reference: reference ?? null,
           },
         });
@@ -919,31 +911,27 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           },
         });
 
-        const count = await tx.journalEntry.count({ where: { organizationId } });
-        const entryNumber = `JE-PMTOUT-${String(count + 1).padStart(5, '0')}`;
-
         const journalEntry = await postJournalEntry(tx, {
           organizationId,
-          entryNumber,
-          date: parsedPaymentDate,
-          memo: `Payment for bill ${bill.reference || bill.id} from ${bill.contact.name}${reference ? ` (${reference})` : ''}`,
-          source: 'PAYMENT_OUT',
-          sourceId: paymentOut.id,
+          actorUserId: request.user.userId,
+          description: `Payment for bill ${bill.reference || bill.id} from ${bill.contact.name}${reference ? ` (${reference})` : ''}`,
+          referenceType: 'PAYMENT_OUT',
+          referenceId: paymentOut.id,
+          postedAt: parsedPaymentDate,
           lines: [
             {
               accountId: apAccount.id,
               description: `AP Settlement: Bill ${bill.reference || bill.id}`,
-              debitCents: amountBigInt,
-              creditCents: 0n,
+              entryType: EntryType.DEBIT,
+              amountCents: amountBigInt,
             },
             {
               accountId: bankAccount.id,
               description: `Cash Outflow: Bill ${bill.reference || bill.id}`,
-              debitCents: 0n,
-              creditCents: amountBigInt,
+              entryType: EntryType.CREDIT,
+              amountCents: amountBigInt,
             },
           ],
-          userId: request.user.userId,
         });
 
         return { paymentOut, bill: updatedBill, journalEntry };
@@ -972,9 +960,6 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
 
       const schedules = await fastify.prisma.recurringSchedule.findMany({
         where: { organizationId, scheduleType: 'BILL' },
-        include: {
-          contact: { select: { id: true, name: true, email: true } },
-        },
         orderBy: { createdAt: 'desc' },
       });
 
@@ -1002,15 +987,13 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           organizationId,
           scheduleType: 'BILL',
           name,
-          contactId,
           frequency,
           startDate: new Date(startDate),
           nextRunDate: new Date(startDate),
-          endDate: endDate ? new Date(endDate) : null,
-          templateData: { notes, lineItems },
+          templatePayloadJson: JSON.stringify({ contactId, notes, lineItems, endDate }),
           isActive: true,
+          createdByUserId: request.user.userId,
         },
-        include: { contact: true },
       });
 
       return reply.code(201).send({ recurringBill: schedule });
@@ -1040,10 +1023,11 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           frequency: body.frequency ?? existing.frequency,
           isActive: body.isActive !== undefined ? body.isActive : existing.isActive,
           nextRunDate: body.nextRunDate ? new Date(body.nextRunDate) : existing.nextRunDate,
-          endDate: body.endDate ? new Date(body.endDate) : existing.endDate,
-          templateData: body.templateData ?? existing.templateData,
+          templatePayloadJson:
+            body.templatePayload || body.templateData
+              ? JSON.stringify(body.templatePayload || body.templateData)
+              : existing.templatePayloadJson,
         },
-        include: { contact: true },
       });
 
       return reply.send({ recurringBill: updated });
@@ -1080,18 +1064,23 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
 
       const schedule = await fastify.prisma.recurringSchedule.findFirst({
         where: { id, organizationId, scheduleType: 'BILL' },
-        include: { contact: true },
       });
 
       if (!schedule) return reply.status(404).send({ error: 'Recurring bill schedule not found' });
 
-      const template = schedule.templateData as { notes?: string; lineItems: any[] };
+      let template: { contactId: string; notes?: string; lineItems: any[] };
+      try {
+        template = JSON.parse(schedule.templatePayloadJson);
+      } catch {
+        return reply.status(500).send({ error: 'Corrupt template payload JSON in recurring schedule' });
+      }
+
       const issueDate = new Date();
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + 14);
 
       // Calculate totals
-      const processedLines = template.lineItems.map((item) => {
+      const processedLines = (template.lineItems || []).map((item) => {
         const rawAmount = item.amountCents
           ? BigInt(item.amountCents)
           : BigInt(Math.round(item.quantity * (item.unitPriceCents ?? 0)));
@@ -1118,7 +1107,7 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
       const bill = await fastify.prisma.bill.create({
         data: {
           organizationId,
-          contactId: schedule.contactId,
+          contactId: template.contactId,
           reference: `Recurring: ${schedule.name}`,
           issueDate,
           dueDate,
@@ -1138,13 +1127,14 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
       // Calculate next run date
       const nextDate = new Date(schedule.nextRunDate);
       if (schedule.frequency === 'WEEKLY') nextDate.setDate(nextDate.getDate() + 7);
+      else if (schedule.frequency === 'FORTNIGHTLY') nextDate.setDate(nextDate.getDate() + 14);
       else if (schedule.frequency === 'MONTHLY') nextDate.setMonth(nextDate.getMonth() + 1);
       else if (schedule.frequency === 'QUARTERLY') nextDate.setMonth(nextDate.getMonth() + 3);
-      else if (schedule.frequency === 'YEARLY') nextDate.setFullYear(nextDate.getFullYear() + 1);
+      else if (schedule.frequency === 'ANNUALLY') nextDate.setFullYear(nextDate.getFullYear() + 1);
 
       await fastify.prisma.recurringSchedule.update({
         where: { id: schedule.id },
-        data: { nextRunDate: nextDate },
+        data: { nextRunDate: nextDate, lastRunDate: new Date() },
       });
 
       return reply.send({
