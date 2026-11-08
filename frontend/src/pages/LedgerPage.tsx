@@ -1612,6 +1612,7 @@ function CreateManualJournalEntryModal({
       onClose={handleClose}
       title="New Manual Adjusting Journal"
       description="Post an adjusting double-entry journal directly to the General Ledger or save as draft."
+      size="5xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4 pt-2 text-xs">
         {error && (
@@ -2045,6 +2046,7 @@ function CreateRecurringJournalModal({
       onClose={handleClose}
       title="New Recurring Journal Schedule"
       description="Set up an automated schedule for depreciation, amortizations, or recurring month-end accruals."
+      size="5xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4 pt-2 text-xs">
         {error && (

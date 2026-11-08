@@ -4,6 +4,32 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.18.1] — 2026-11-08 — Stage 4.6 Revision: AR Precision UX, Modal Scaling & Items / SKU Catalog Integration
+
+### Added & Enhanced
+- `docs/STAGES_ROADMAP.md`:
+  - Added Stage 4.6 AR Precision UX, Modal Scaling & Items / SKU Catalog Integration checklist item covering framed max-width gutters, responsive multi-screen modal scaling, and the enhanced catalog-aware invoice creator.
+- `frontend/src/components/AppShell.tsx`:
+  - Enforced structured framing for the workbench viewport: wrapped `<main>` children in a unified `max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8` container.
+  - Eliminated window boundary clipping where tables, action buttons, and tabs collided directly with browser edges on unpadded pages.
+- `frontend/src/components/ui/Modal.tsx`:
+  - Enhanced modal sizing architecture with a responsive `size` preset system (`sm`, `md`, `lg`, `xl`, `2xl`, `3xl`, `4xl`, `5xl`, `6xl`, `full`).
+  - Added responsive scaling for large screens (e.g. `size="5xl"` expands to `max-w-6xl` on wide viewports) and increased max vertical height to `max-h-[92vh]`.
+- `frontend/src/pages/LedgerPage.tsx`:
+  - Upgraded Manual Journal Entry modal and Recurring Journal Template modal to `size="5xl"`, providing comfortable breathing room and wide tabular alignment for multi-line journal entries on large screens.
+- `frontend/src/pages/InvoicesPage.tsx`:
+  - Completely revamped `CreateInvoiceModal`:
+    - **Item / SKU Catalog Auto-fill**: Select active sales items from `/api/v1/items` with automatic population of SKU/code, description, sale unit price, tax treatment, and assigned revenue account.
+    - **Multi-Quantity Support**: Added quantity input with live line subtotal calculation (`quantity * unitPrice`).
+    - **Ad-Hoc / Custom Lines**: Retained full capability to create free-text descriptions and custom prices without requiring a catalog item.
+    - **Cost Centers & Tracking Dimensions**: Added line-level dimension selector (`trackingOptionId`) for Department, Project, Location, or Fleet tracking.
+    - **Line-Level Revenue Account Picker**: Added GL account picker to route individual lines to specific `REVENUE` accounts.
+    - **Real-Time Australian GST Calculation**: Previews subtotal, GST (10%), and invoice grand total across Tax Exclusive, Tax Inclusive, and GST-free lines.
+    - Set modal size to `size="5xl"` for spacious, structured data entry.
+- Cleaned up redundant outer paddings across `BillsPage.tsx`, `ContactsPage.tsx`, `DashboardPage.tsx`, `InvoicesPage.tsx`, `ItemsPage.tsx`, and `SettingsPage.tsx` to align cleanly with the AppShell outer container.
+
+---
+
 ## [0.18.0] — 2026-11-08 — Module 6: Enterprise Expenses — Direct "Spend Money" & Employee Expense Claims
 
 ### Added

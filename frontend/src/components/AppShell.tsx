@@ -682,7 +682,9 @@ export function AppShell({ children }: AppShellProps) {
       {/* Main Content Workbench Viewport                                    */}
       {/* ------------------------------------------------------------------ */}
       <main className="flex-1 overflow-y-auto min-w-0 bg-slate-50">
-        {children}
+        <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8">
+          {children}
+        </div>
       </main>
 
       {/* ------------------------------------------------------------------ */}

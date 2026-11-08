@@ -212,6 +212,19 @@ Development proceeds strictly **one module at a time**. We complete the backend 
   - **Mode A — Invoice Settlement**: Apply incoming payment to one or more open Customer Invoices into any selected Bank/Asset account (`DEBIT Selected Bank Account`, `CREDIT 1200 Accounts Receivable`).
   - **Mode B — Direct Income Receipt ("Receive Money" without Invoice)**: When no invoice is used, code directly to a `REVENUE` account + GST (`DEBIT Selected Bank Account`, `CREDIT Revenue Account`, `CREDIT 2100 GST Collected`).
   - **Mode C — Customer Prepayment / Deposit on Account**: Record an unallocated customer deposit (`DEBIT Selected Bank Account`, `CREDIT 2300 Customer Prepayments`), which can later be applied to settle a newly issued invoice.
+- [x] **4.6 AR Precision UX, Modal Scaling & Items / SKU Catalog Integration**:
+  - **Framed Max-Width Viewport & Workbench Boundaries**:
+    - Update the top workbench layout and pages (`AccountsPage`, `LedgerPage`, `ExpensesPage`, `InvoicesPage`, `BillsPage`, `ContactsPage`, `ItemsPage`, `DashboardPage`, `SettingsPage`) to adopt a unified framed max-width layout (`max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8`) with consistent outer gutters so buttons, tables, and tabs never collide with window boundaries.
+  - **Responsive & Dynamic Modal System (`Modal.tsx`)**:
+    - Enhance `Modal.tsx` with dynamic size presets (`sm`, `md`, `lg`, `xl`, `2xl`, `3xl`, `4xl`, `5xl`, `6xl`, `full`) that scale intelligently on larger viewports (`max-w-xl md:max-w-2xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-6xl`).
+    - Expand multi-line transaction modals (Manual Journal Entry composer, Recurring Journal modal, Bill Creator, and Invoice Creator) to utilize generous, comfortable widths on wide monitors.
+  - **Full-Featured Invoice Creation Workbench (`CreateInvoiceModal`)**:
+    - **Catalog Item / SKU Autocomplete**: Select pre-built sales items from `/api/v1/items` (auto-fills SKU/Code, Description, Unit Price, Tax Treatment, and default Revenue Account).
+    - **Multi-Quantity Calculation**: Support fractional/integer `quantity` * `unitPrice` ($ / cents) with real-time subtotal calculation.
+    - **Free-Text & Ad-Hoc Overrides**: Allow custom non-catalog line items with free-text descriptions and arbitrary unit prices.
+    - **Tracking Dimensions / Cost Centers**: Expose tracking dimension tags (`trackingOptionId`) per line item (Cost Center / Project / Department).
+    - **Line-Level Revenue Account Picker**: Select specific `REVENUE` GL accounts per line item.
+    - **Real-Time Australian GST Preview**: Calculate and preview subtotal, GST collected, and total cents across Tax Exclusive, Tax Inclusive, and GST Free treatments.
 
 ---
 

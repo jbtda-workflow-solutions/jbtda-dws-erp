@@ -7,7 +7,7 @@ import { FileText, Receipt, Users, TrendingUp } from 'lucide-react';
  */
 export function DashboardPage() {
   return (
-    <div className="p-6 lg:p-8 space-y-8">
+    <div className="space-y-8">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-medium tracking-tight text-slate-900">

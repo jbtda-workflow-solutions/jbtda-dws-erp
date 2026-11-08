@@ -39,6 +39,7 @@ import {
   type Account,
   type Item,
   type TaxTreatment,
+  type TrackingCategory,
   ApiError,
 } from '@/api/client';
 import { Button } from '@/components/ui/Button';
@@ -216,7 +217,7 @@ export function InvoicesPage() {
   }, [creditNotes, creditNoteSearch]);
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -987,11 +988,15 @@ function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
   }
 }
 
-interface LineItemDraft {
+interface InvoiceLineDraft {
   id: string;
+  itemId?: string;
   description: string;
-  amount: string;
+  quantity: number;
+  unitPrice: string;
   taxTreatment: TaxTreatment;
+  accountId?: string;
+  trackingOptionId?: string;
 }
 
 interface CreateInvoiceModalProps {
@@ -1006,7 +1011,10 @@ function CreateInvoiceModal({
   onCreated,
 }: CreateInvoiceModalProps) {
   const [customers, setCustomers] = useState<Contact[]>([]);
-  const [loadingCustomers, setLoadingCustomers] = useState(true);
+  const [items, setItems] = useState<Item[]>([]);
+  const [revenueAccounts, setRevenueAccounts] = useState<Account[]>([]);
+  const [trackingCategories, setTrackingCategories] = useState<TrackingCategory[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
 
   // Form fields
   const [contactId, setContactId] = useState('');
@@ -1021,11 +1029,12 @@ function CreateInvoiceModal({
   });
   const [notes, setNotes] = useState('');
 
-  const [lineItems, setLineItems] = useState<LineItemDraft[]>([
+  const [lineItems, setLineItems] = useState<InvoiceLineDraft[]>([
     {
       id: '1',
       description: 'Professional Services',
-      amount: '500.00',
+      quantity: 1,
+      unitPrice: '150.00',
       taxTreatment: 'TAX_EXCLUSIVE',
     },
   ]);
@@ -1033,12 +1042,18 @@ function CreateInvoiceModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch customers on load
+  // Fetch initial master data
   useEffect(() => {
-    async function loadCustomers() {
+    async function loadData() {
       try {
-        const res = await contactApi.list();
-        const customerList = res.contacts.filter(
+        setLoadingData(true);
+        const [cRes, iRes, aRes, tRes] = await Promise.all([
+          contactApi.list(),
+          itemApi.list(),
+          accountApi.list(),
+          accountApi.listTrackingCategories(),
+        ]);
+        const customerList = cRes.contacts.filter(
           (c) => c.type === 'CUSTOMER' || c.type === 'BOTH',
         );
         setCustomers(customerList);
@@ -1049,13 +1064,19 @@ function CreateInvoiceModal({
           d.setDate(d.getDate() + days);
           setDueDate(d.toISOString().slice(0, 10));
         }
+
+        setItems(iRes.items.filter((it: Item) => it.isActive && it.isSold));
+        setRevenueAccounts(
+          aRes.accounts.filter((a: Account) => a.type === 'REVENUE' && a.isActive),
+        );
+        setTrackingCategories(tRes.categories || []);
       } catch {
-        setError('Failed to load customers.');
+        setError('Failed to load customers, catalog items, or accounts.');
       } finally {
-        setLoadingCustomers(false);
+        setLoadingData(false);
       }
     }
-    void loadCustomers();
+    void loadData();
   }, []);
 
   const handleCustomerChange = (id: string) => {
@@ -1069,13 +1090,31 @@ function CreateInvoiceModal({
     }
   };
 
+  const handleItemSelect = (index: number, itemId: string) => {
+    const found = items.find((i) => i.id === itemId);
+    setLineItems((prev) =>
+      prev.map((l, i) => {
+        if (i !== index) return l;
+        return {
+          ...l,
+          itemId: itemId || undefined,
+          description: found ? (found.saleDescription || found.name) : l.description,
+          unitPrice: found ? (found.saleUnitPriceCents / 100).toFixed(2) : l.unitPrice,
+          taxTreatment: found ? found.saleTaxTreatment : l.taxTreatment,
+          accountId: found?.incomeAccountId || l.accountId,
+        };
+      }),
+    );
+  };
+
   const addLineItem = () => {
     setLineItems((prev) => [
       ...prev,
       {
         id: String(Date.now()),
         description: '',
-        amount: '',
+        quantity: 1,
+        unitPrice: '0.00',
         taxTreatment: 'TAX_EXCLUSIVE',
       },
     ]);
@@ -1086,10 +1125,10 @@ function CreateInvoiceModal({
     setLineItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const updateLineItem = (
+  const updateLineItem = <K extends keyof InvoiceLineDraft>(
     id: string,
-    field: keyof LineItemDraft,
-    value: string,
+    field: K,
+    value: InvoiceLineDraft[K],
   ) => {
     setLineItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)),
@@ -1102,8 +1141,9 @@ function CreateInvoiceModal({
     let gstCents = 0;
 
     for (const item of lineItems) {
-      const dollars = parseFloat(item.amount) || 0;
-      const rawCents = Math.round(dollars * 100);
+      const dollars = parseFloat(item.unitPrice) || 0;
+      const qty = item.quantity || 1;
+      const rawCents = Math.round(dollars * 100) * qty;
 
       if (rawCents <= 0) continue;
 
@@ -1151,15 +1191,26 @@ function CreateInvoiceModal({
         setError('All line items must have a description.');
         return;
       }
-      const dollars = parseFloat(item.amount);
-      if (isNaN(dollars) || dollars <= 0) {
-        setError('Line item amount must be a positive number.');
+      const dollars = parseFloat(item.unitPrice);
+      if (isNaN(dollars) || dollars < 0) {
+        setError('Unit price must be a non-negative number.');
         return;
       }
+      const qty = item.quantity || 1;
+      if (qty <= 0) {
+        setError('Quantity must be greater than zero.');
+        return;
+      }
+      const priceCents = Math.round(dollars * 100);
       parsedLineItems.push({
+        itemId: item.itemId || undefined,
         description: item.description.trim(),
-        amountCents: Math.round(dollars * 100),
+        quantity: qty,
+        unitPriceCents: priceCents,
+        amountCents: priceCents * qty,
         taxTreatment: item.taxTreatment,
+        accountId: item.accountId || undefined,
+        trackingOptionId: item.trackingOptionId || undefined,
       });
     }
 
@@ -1190,8 +1241,8 @@ function CreateInvoiceModal({
       open={open}
       onClose={onClose}
       title="Create Customer Invoice"
-      description="Create a draft invoice with line items and automatic GST computation."
-      maxWidth="max-w-2xl"
+      description="Create a draft invoice with item catalog auto-fill, custom line items, tracking dimensions, and automatic GST."
+      size="5xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4 mt-2">
         {error && (
@@ -1207,8 +1258,8 @@ function CreateInvoiceModal({
             <label className="block text-xs font-medium text-slate-700 mb-1">
               Customer <span className="text-red-500">*</span>
             </label>
-            {loadingCustomers ? (
-              <div className="text-xs text-slate-400 py-2">Loading customers…</div>
+            {loadingData ? (
+              <div className="text-xs text-slate-400 py-2">Loading customer contacts…</div>
             ) : customers.length === 0 ? (
               <div className="text-xs text-amber-700 bg-amber-50 p-2 rounded-md">
                 No customer contacts found. Add a contact with type CUSTOMER or BOTH first.
@@ -1259,7 +1310,7 @@ function CreateInvoiceModal({
         <div className="space-y-2 pt-2 border-t border-slate-100">
           <div className="flex items-center justify-between">
             <label className="text-xs font-medium text-slate-700">
-              Line Items
+              Line Items (Catalog or Ad-Hoc Description & Multi-Qty)
             </label>
             <Button
               type="button"
@@ -1269,68 +1320,181 @@ function CreateInvoiceModal({
               className="inline-flex items-center gap-1 text-xs py-1 h-7"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Item</span>
+              <span>Add Line Item</span>
             </Button>
           </div>
 
-          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {lineItems.map((item, idx) => (
-              <div
-                key={item.id}
-                className="grid grid-cols-12 gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-200/80"
-              >
-                <div className="col-span-12 sm:col-span-5">
-                  <input
-                    type="text"
-                    placeholder={`Description #${idx + 1}`}
-                    value={item.description}
-                    onChange={(e) =>
-                      updateLineItem(item.id, 'description', e.target.value)
-                    }
-                    className="w-full text-xs rounded border border-slate-200 px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900"
-                    required
-                  />
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+            {lineItems.map((item, idx) => {
+              const lineTotalDollars =
+                ((parseFloat(item.unitPrice) || 0) * (item.quantity || 1)).toFixed(2);
+
+              return (
+                <div
+                  key={item.id}
+                  className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/80 space-y-2"
+                >
+                  <div className="grid grid-cols-12 gap-2 items-center">
+                    {/* Item / SKU Selector */}
+                    <div className="col-span-12 sm:col-span-3">
+                      <select
+                        value={item.itemId || ''}
+                        onChange={(e) => handleItemSelect(idx, e.target.value)}
+                        className="w-full text-xs rounded border border-slate-200 px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900"
+                      >
+                        <option value="">(Custom / Ad-Hoc Item)</option>
+                        {items.map((it) => (
+                          <option key={it.id} value={it.id}>
+                            {it.code} — {it.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Description */}
+                    <div className="col-span-12 sm:col-span-4">
+                      <input
+                        type="text"
+                        placeholder="Description"
+                        value={item.description}
+                        onChange={(e) =>
+                          updateLineItem(item.id, 'description', e.target.value)
+                        }
+                        className="w-full text-xs rounded border border-slate-200 px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900"
+                        required
+                      />
+                    </div>
+
+                    {/* Quantity */}
+                    <div className="col-span-3 sm:col-span-1">
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        placeholder="Qty"
+                        value={item.quantity}
+                        onChange={(e) =>
+                          updateLineItem(
+                            item.id,
+                            'quantity',
+                            parseInt(e.target.value, 10) || 1,
+                          )
+                        }
+                        className="w-full text-xs rounded border border-slate-200 px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900 font-mono text-center"
+                        required
+                      />
+                    </div>
+
+                    {/* Unit Price */}
+                    <div className="col-span-4 sm:col-span-2">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="Unit ($)"
+                        value={item.unitPrice}
+                        onChange={(e) =>
+                          updateLineItem(item.id, 'unitPrice', e.target.value)
+                        }
+                        className="w-full text-xs rounded border border-slate-200 px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900 font-mono"
+                        required
+                      />
+                    </div>
+
+                    {/* Line Amount Preview */}
+                    <div className="col-span-4 sm:col-span-1 text-right font-mono text-xs font-semibold text-slate-800 pr-1">
+                      ${lineTotalDollars}
+                    </div>
+
+                    {/* Delete Line */}
+                    <div className="col-span-1 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => removeLineItem(item.id)}
+                        disabled={lineItems.length === 1}
+                        className="p-1.5 text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:hover:text-slate-400"
+                        title="Remove item"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Sub-row: Revenue Account, Tax Treatment & Cost Center Tracking */}
+                  <div className="grid grid-cols-12 gap-2 items-center pt-1 border-t border-slate-200/50 text-[11px]">
+                    {/* Revenue Account */}
+                    <div className="col-span-12 sm:col-span-4 flex items-center gap-1.5">
+                      <span className="text-slate-500 whitespace-nowrap">Account:</span>
+                      <select
+                        value={item.accountId || ''}
+                        onChange={(e) =>
+                          updateLineItem(
+                            item.id,
+                            'accountId',
+                            e.target.value || undefined,
+                          )
+                        }
+                        className="w-full rounded border border-slate-200 px-1.5 py-1 bg-white text-[11px] focus:outline-none focus:ring-1 focus:ring-forest-900"
+                      >
+                        <option value="">Default 4000 Sales Revenue</option>
+                        {revenueAccounts.map((acc) => (
+                          <option key={acc.id} value={acc.id}>
+                            {acc.code} - {acc.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Tax Treatment */}
+                    <div className="col-span-12 sm:col-span-4 flex items-center gap-1.5">
+                      <span className="text-slate-500 whitespace-nowrap">Tax:</span>
+                      <select
+                        value={item.taxTreatment}
+                        onChange={(e) =>
+                          updateLineItem(
+                            item.id,
+                            'taxTreatment',
+                            e.target.value as TaxTreatment,
+                          )
+                        }
+                        className="w-full rounded border border-slate-200 px-1.5 py-1 bg-white text-[11px] focus:outline-none focus:ring-1 focus:ring-forest-900"
+                      >
+                        <option value="TAX_EXCLUSIVE">Tax Exclusive (10% GST)</option>
+                        <option value="TAX_INCLUSIVE">Tax Inclusive (GST incl.)</option>
+                        <option value="GST_FREE">GST Free (0%)</option>
+                      </select>
+                    </div>
+
+                    {/* Cost Center / Tracking Category */}
+                    <div className="col-span-12 sm:col-span-4 flex items-center gap-1.5">
+                      <span className="text-slate-500 whitespace-nowrap">Dimension:</span>
+                      <select
+                        value={item.trackingOptionId || ''}
+                        onChange={(e) =>
+                          updateLineItem(
+                            item.id,
+                            'trackingOptionId',
+                            e.target.value || undefined,
+                          )
+                        }
+                        className="w-full rounded border border-slate-200 px-1.5 py-1 bg-white text-[11px] focus:outline-none focus:ring-1 focus:ring-forest-900"
+                      >
+                        <option value="">No Cost Center</option>
+                        {trackingCategories.flatMap((cat) =>
+                          (cat.options || [])
+                            .filter((opt) => opt.isActive)
+                            .map((opt) => (
+                              <option key={opt.id} value={opt.id}>
+                                {cat.name}: {opt.name}
+                              </option>
+                            )),
+                        )}
+                      </select>
+                    </div>
+                  </div>
                 </div>
-                <div className="col-span-6 sm:col-span-3">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    placeholder="Amount ($)"
-                    value={item.amount}
-                    onChange={(e) =>
-                      updateLineItem(item.id, 'amount', e.target.value)
-                    }
-                    className="w-full text-xs rounded border border-slate-200 px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900 font-mono"
-                    required
-                  />
-                </div>
-                <div className="col-span-5 sm:col-span-3">
-                  <select
-                    value={item.taxTreatment}
-                    onChange={(e) =>
-                      updateLineItem(item.id, 'taxTreatment', e.target.value)
-                    }
-                    className="w-full text-xs rounded border border-slate-200 px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900"
-                  >
-                    <option value="TAX_EXCLUSIVE">Tax Exclusive (10% GST)</option>
-                    <option value="TAX_INCLUSIVE">Tax Inclusive (GST incl.)</option>
-                    <option value="GST_FREE">GST Free (0%)</option>
-                  </select>
-                </div>
-                <div className="col-span-1 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => removeLineItem(item.id)}
-                    disabled={lineItems.length === 1}
-                    className="p-1.5 text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:hover:text-slate-400"
-                    title="Remove item"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Real-time Subtotal, GST, Total Breakdown */}
