@@ -59,6 +59,11 @@ by reading:
     has `noUnusedLocals: false` and `noUnusedParameters: false` configured as an
     operational tolerance safeguard against transient Docker build breaks, but
     agents must always keep imports clean and prune unused symbols.
+13. **Module-Gate Review Protocol:** Development proceeds one module at a time per
+    `docs/STAGES_ROADMAP.md`. When a module is completed, the agent MUST mark its
+    checklist items `[x]` in `docs/STAGES_ROADMAP.md`, synchronize `AGENTS.md` and
+    `docs/CHANGELOG.md`, provide a ready-to-use conventional git commit message,
+    and STOP for user review before beginning the next module.
 
 ## Tech Stack Quick-Reference
 
@@ -112,37 +117,44 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │   ├── tsconfig.build.json    # TypeScript compiler configuration for production build
 │   ├── prisma/
 │   │   ├── migrations/
-│   │   │   └── 001_init/
-│   │   │       └── migration.sql # Initial PostgreSQL schema DDL (14 tables, 8 enums)
-│   │   └── schema.prisma      # PostgreSQL schema, enums, models
+│   │   │   ├── 001_init/
+│   │   │   │   └── migration.sql # Initial PostgreSQL schema DDL (14 tables, 8 enums)
+│   │   │   └── 002_enterprise_foundation/
+│   │   │       └── migration.sql # Unified 8-Module Enterprise PostgreSQL DDL
+│   │   └── schema.prisma      # Unified Enterprise PostgreSQL schema, enums, models
 │   └── src/
 │       ├── lib/
-│       │   ├── abn.ts         # ATO ABN checksum validation algorithm
-│       │   └── gst.ts         # Integer-cent Australian GST calculation utilities
+│       │   ├── abn.ts             # ATO ABN checksum validation algorithm
+│       │   ├── audit.ts           # Append-only immutable system audit log helper
+│       │   ├── gst.ts             # Integer-cent Australian GST calculation utilities
+│       │   ├── ledger-posting.ts  # Accounting period lock date validation helper
+│       │   ├── schema-sync.ts     # Idempotent startup DDL & system account synchronizer
+│       │   └── system-accounts.ts # 10 Protected System GL Accounts definition & seeder
 │       ├── plugins/
-│       │   ├── auth.ts        # Fastify auth plugin, session cookies, requireAuth hooks
-│       │   └── prisma.ts      # Fastify PrismaClient plugin with Cloud SQL discovery
+│       │   ├── auth.ts        # Fastify auth plugin, session cookies, 7-role requireRole hooks
+│       │   └── prisma.ts      # Fastify PrismaClient plugin with Cloud SQL discovery & auto-sync
 │       ├── routes/
-│       │   ├── auth.ts        # POST /api/v1/auth/google, GET /api/v1/auth/me, DELETE /logout
-│       │   ├── bills.ts       # GET /api/v1/bills, POST, GET /:id, POST /:id/payments (AP & GL posting)
-│       │   ├── contacts.ts    # GET /api/v1/contacts, POST, GET /:id, PATCH /:id
-│       │   ├── invoices.ts    # GET /api/v1/invoices, POST, GET /:id, POST /:id/issue, POST /:id/payments (AR & GL posting)
-│       │   ├── ledger.ts      # GET /api/v1/ledger (journal entries audit log), GET /api/v1/ledger/accounts
-│       │   └── organizations.ts # POST /api/v1/organizations (ABN check & CoA seeding)
+│       │   ├── accounts.ts      # GET/POST/PATCH /api/v1/accounts, decommission sweep, tracking categories
+│       │   ├── auth.ts          # POST /api/v1/auth/google, GET /me, POST /switch-organization, DELETE /logout
+│       │   ├── bills.ts         # GET /api/v1/bills, POST, GET /:id, POST /:id/payments (AP & GL posting)
+│       │   ├── contacts.ts      # GET /api/v1/contacts, POST, GET /:id, PATCH /:id
+│       │   ├── invoices.ts      # GET /api/v1/invoices, POST, GET /:id, POST /:id/issue, POST /:id/payments
+│       │   ├── ledger.ts        # GET /api/v1/ledger, GET /api/v1/ledger/accounts, POST /api/v1/ledger/entries
+│       │   └── organizations.ts # Organization profile, multi-company list, members, invites, & audit logs
 │       └── server.ts          # Fastify server entry point, static serving, plugins
 ├── docs/                      # Technical Documentation
 │   ├── ARCHITECTURE.md        # Topology, service boundaries, and Cloud Run configuration
 │   ├── CHANGELOG.md           # Chronological change log and schema diffs
 │   ├── DATABASE_SCHEMA.md     # PostgreSQL tables, relations, and migration log
-│   ├── DESIGN_SYSTEM.md       # Typography, Tailwind tokens, and table conventions
+│   ├── DESIGN_SYSTEM.md       # Corporate Precision Design System specification
 │   ├── INTEGRATIONS.md        # Async webhook payloads and n8n contracts
-│   ├── SECURITY.md            # Auth mechanics, RBAC matrix, and crypto standards
-│   └── STAGES_ROADMAP.md      # Detailed breakdown of Stage 1 through Stage 3
+│   ├── SECURITY.md            # Auth mechanics, 7-role RBAC matrix, and crypto standards
+│   └── STAGES_ROADMAP.md      # 8-Module Deep-Build Execution Plan & completion checklist
 └── frontend/                  # React SPA (Vite + TypeScript + Tailwind)
-    ├── index.html             # HTML entry point with Inter & Open Sans font links
+    ├── index.html             # HTML entry point with Inter & JetBrains Mono font links
     ├── package.json           # Frontend dependencies and scripts
     ├── postcss.config.js      # PostCSS configuration for Tailwind
-    ├── tailwind.config.ts     # Brand palette and styling tokens
+    ├── tailwind.config.ts     # Corporate Precision palette (obsidian, forest) & typography tokens
     ├── tsconfig.json          # TypeScript client configuration
     ├── tsconfig.node.json     # TypeScript Vite runner configuration
     ├── vite.config.ts         # Vite server with /api proxy to Fastify backend
@@ -150,19 +162,22 @@ The application relies strictly on Google Cloud Run container configuration (zer
     │   └── favicon.svg        # Brand favicon
     └── src/
         ├── App.tsx            # Main router and shell layout
-        ├── index.css          # Tailwind base & component stylesheets
+        ├── index.css          # Tailwind base, JetBrains Mono tabular-nums & scrollbar utilities
         ├── main.tsx           # React DOM root mounting point
         ├── vite-env.d.ts      # Vite client type definitions
         ├── api/
         │   └── client.ts      # Typed API client wrapper with credentials
         ├── components/
-        │   ├── AppShell.tsx   # Authenticated layout with header and sidebar navigation
+        │   ├── AppShell.tsx   # Obsidian Carbon sidebar, multi-company switcher & h-12 context bar
         │   └── ui/
-        │       ├── Button.tsx # Brand button component
-        │       ├── Input.tsx  # Form input component
-        │       └── Modal.tsx  # Accessible dialog modal component
+        │       ├── Button.tsx         # Crisp 4px Corporate Precision button primitive
+        │       ├── Drawer.tsx         # Right-hand slide-over inspector drawer primitive
+        │       ├── Input.tsx          # Crisp 4px form input with monospace support
+        │       ├── Modal.tsx          # Architectural 6px dialog modal component
+        │       ├── PipelineRibbon.tsx # Connected horizontal lifecycle process bar
+        │       └── StatusTag.tsx      # Squared technical status badge with 6px semantic dot
         ├── hooks/
-        │   └── useAuth.tsx    # Global auth context, state, and provider
+        │   └── useAuth.tsx    # Global auth context, multi-org memberships, and switcher state
         ├── lib/
         │   └── utils.ts       # Utility helper functions
         └── pages/
@@ -172,5 +187,6 @@ The application relies strictly on Google Cloud Run container configuration (zer
             ├── InvoicesPage.tsx      # Customer Invoices (list, draft, issue with GL posting, payments in)
             ├── LedgerPage.tsx        # General Ledger audit trail & Trial Balance account totals
             ├── LoginPage.tsx         # Google sign-in landing page
-            └── OnboardingModal.tsx   # First-time organization creation modal
+            ├── OnboardingModal.tsx   # First-time organization creation modal
+            └── SettingsPage.tsx      # Module 1 Workspace Governance, EFT Banking, RBAC Team & Audit Log UI
 ```

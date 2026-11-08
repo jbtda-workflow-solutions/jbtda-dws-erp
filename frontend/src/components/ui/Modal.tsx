@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 interface ModalProps {
@@ -7,7 +8,7 @@ interface ModalProps {
   title: string;
   description?: string;
   children: ReactNode;
-  /** Max width class, e.g. 'max-w-md' */
+  /** Max width class, e.g. 'max-w-md', 'max-w-2xl', 'max-w-4xl' */
   maxWidth?: string;
 }
 
@@ -30,38 +31,48 @@ export function Modal({
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-obsidian-950/60 backdrop-blur-[1px]"
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Panel */}
+      {/* Panel — Crisp 6px rounded-md geometry with 1px structural border */}
       <div
         className={cn(
-          'relative w-full rounded-2xl bg-white shadow-2xl',
-          'ring-1 ring-slate-200',
+          'relative w-full rounded-md bg-white border border-slate-200 shadow-2xl flex flex-col max-h-[90vh]',
           maxWidth,
         )}
       >
         {/* Header */}
-        <div className="px-6 pt-6 pb-4 border-b border-slate-100">
-          <h2
-            id="modal-title"
-            className="text-lg font-medium tracking-tight text-slate-900"
-          >
-            {title}
-          </h2>
-          {description && (
-            <p className="mt-1 text-sm font-light text-slate-500">
-              {description}
-            </p>
+        <div className="px-5 py-3.5 bg-slate-50/80 border-b border-slate-200 flex items-start justify-between gap-4 shrink-0">
+          <div>
+            <h2
+              id="modal-title"
+              className="text-sm font-medium tracking-tight text-slate-900"
+            >
+              {title}
+            </h2>
+            {description && (
+              <p className="mt-0.5 text-xs text-slate-500">
+                {description}
+              </p>
+            )}
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+              aria-label="Close modal"
+            >
+              <X className="w-4 h-4" />
+            </button>
           )}
         </div>
 
         {/* Content */}
-        <div className="px-6 py-5">{children}</div>
+        <div className="p-5 overflow-y-auto">{children}</div>
       </div>
     </div>
   );
 }
-

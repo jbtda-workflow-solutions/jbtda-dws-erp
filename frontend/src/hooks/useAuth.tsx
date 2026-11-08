@@ -1,11 +1,11 @@
 /**
- * AuthContext — global authentication state.
+ * AuthContext — global authentication & multi-entity workspace state.
  *
  * States:
- *  - loading:       initial cookie-check in flight
+ *  - loading:         initial cookie-check in flight
  *  - unauthenticated: no valid session
- *  - onboarding:    authenticated user, no organization yet
- *  - authenticated: full session (userId + organizationId + role)
+ *  - onboarding:      authenticated user, no organization yet
+ *  - authenticated:   full session (user + active organization + role + memberships)
  */
 
 import React, {
@@ -15,11 +15,14 @@ import React, {
   useEffect,
   useState,
 } from 'react';
-import { authApi, ApiError } from '@/api/client';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import {
+  authApi,
+  ApiError,
+  type Organization,
+  type OrganizationMembership,
+  type MemberProfile,
+  type Role,
+} from '@/api/client';
 
 export type AuthStatus =
   | 'loading'
@@ -27,23 +30,32 @@ export type AuthStatus =
   | 'onboarding'
   | 'authenticated';
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  avatarUrl?: string | null;
+}
+
 export interface AuthState {
   status: AuthStatus;
   userId: string | null;
+  user: AuthUser | null;
   organizationId: string | null;
-  role: string | null;
+  organization: Organization | null;
+  role: Role | null;
+  memberProfile: MemberProfile | null;
+  memberships: OrganizationMembership[];
 }
 
 interface AuthContextValue extends AuthState {
   loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
+  switchOrganization: (organizationId: string) => Promise<void>;
+  refreshSession: () => Promise<void>;
   /** Called after successful org creation to promote onboarding → authenticated */
   completeOnboarding: (organizationId: string, role: string) => void;
 }
-
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -53,75 +65,90 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
     status: 'loading',
     userId: null,
+    user: null,
     organizationId: null,
+    organization: null,
     role: null,
+    memberProfile: null,
+    memberships: [],
   });
 
-  // On mount, check session via /api/v1/auth/me
-  useEffect(() => {
-    let mounted = true;
-    authApi
-      .me()
-      .then((res) => {
-        if (!mounted) return;
-        if (res.status === 'onboarding') {
-          setState({
-            status: 'onboarding',
-            userId: res.user?.id ?? null,
-            organizationId: null,
-            role: null,
-          });
-        } else {
-          setState({
-            status: 'authenticated',
-            userId: res.user?.id ?? null,
-            organizationId: res.organizationId ?? null,
-            role: res.role ?? null,
-          });
-        }
-      })
-      .catch(() => {
-        if (mounted) {
-          setState({
-            status: 'unauthenticated',
-            userId: null,
-            organizationId: null,
-            role: null,
-          });
-        }
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const loginWithGoogle = useCallback(async (idToken: string) => {
-    const res = await authApi.loginWithGoogle(idToken);
-    if (res.status === 'onboarding') {
+  const refreshSession = useCallback(async () => {
+    try {
+      const res = await authApi.me();
+      if (res.status === 'onboarding') {
+        setState({
+          status: 'onboarding',
+          userId: res.user?.id ?? null,
+          user: res.user ?? null,
+          organizationId: null,
+          organization: null,
+          role: null,
+          memberProfile: null,
+          memberships: [],
+        });
+      } else {
+        setState({
+          status: 'authenticated',
+          userId: res.user?.id ?? null,
+          user: res.user ?? null,
+          organizationId: res.organizationId ?? null,
+          organization: res.organization ?? null,
+          role: (res.role as Role) ?? null,
+          memberProfile: res.memberProfile ?? null,
+          memberships: res.memberships ?? [],
+        });
+      }
+    } catch {
       setState({
-        status: 'onboarding',
+        status: 'unauthenticated',
         userId: null,
+        user: null,
         organizationId: null,
+        organization: null,
         role: null,
-      });
-    } else {
-      setState({
-        status: 'authenticated',
-        userId: null, // backend does not expose userId in response yet
-        organizationId: res.organizationId ?? null,
-        role: res.role ?? null,
+        memberProfile: null,
+        memberships: [],
       });
     }
   }, []);
+
+  useEffect(() => {
+    void refreshSession();
+  }, [refreshSession]);
+
+  const loginWithGoogle = useCallback(
+    async (idToken: string) => {
+      const res = await authApi.loginWithGoogle(idToken);
+      if (res.status === 'onboarding') {
+        setState({
+          status: 'onboarding',
+          userId: res.user?.id ?? null,
+          user: res.user ?? null,
+          organizationId: null,
+          organization: null,
+          role: null,
+          memberProfile: null,
+          memberships: [],
+        });
+      } else {
+        await refreshSession();
+      }
+    },
+    [refreshSession],
+  );
+
+  const switchOrganization = useCallback(
+    async (organizationId: string) => {
+      await authApi.switchOrganization(organizationId);
+      await refreshSession();
+    },
+    [refreshSession],
+  );
 
   const logout = useCallback(async () => {
     try {
@@ -136,8 +163,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState({
       status: 'unauthenticated',
       userId: null,
+      user: null,
       organizationId: null,
+      organization: null,
       role: null,
+      memberProfile: null,
+      memberships: [],
     });
   }, []);
 
@@ -147,18 +178,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ...s,
         status: 'authenticated',
         organizationId,
-        role,
+        role: role as Role,
       }));
+      void refreshSession();
     },
-    [],
+    [refreshSession],
   );
 
   return (
     <AuthContext.Provider
-      value={{ ...state, loginWithGoogle, logout, completeOnboarding }}
+      value={{
+        ...state,
+        loginWithGoogle,
+        logout,
+        switchOrganization,
+        refreshSession,
+        completeOnboarding,
+      }}
     >
       {children}
     </AuthContext.Provider>
   );
 }
-

@@ -2,8 +2,7 @@
  * Typed API client for the Fastify backend.
  *
  * All requests are sent with credentials: 'include' so the HttpOnly session
- * cookie is automatically attached. The Vite dev proxy forwards /api/* to
- * http://localhost:8080.
+ * cookie is automatically attached.
  */
 
 const BASE = '/api/v1';
@@ -41,10 +40,108 @@ async function request<T>(
     throw new ApiError(res.status, message);
   }
 
-  // 204 No Content
   if (res.status === 204) return undefined as unknown as T;
 
   return res.json() as Promise<T>;
+}
+
+// ---------------------------------------------------------------------------
+// Enterprise 7-Tier Roles & Organizations
+// ---------------------------------------------------------------------------
+
+export type Role =
+  | 'ADMIN'
+  | 'ACCOUNTANT'
+  | 'MANAGER'
+  | 'AR_SPECIALIST'
+  | 'AP_SPECIALIST'
+  | 'EMPLOYEE'
+  | 'AUDITOR';
+
+export interface Organization {
+  id: string;
+  name: string;
+  legalName?: string | null;
+  tradingName?: string | null;
+  abn: string;
+  email?: string | null;
+  phone?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postcode?: string | null;
+  bankBsb?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountName?: string | null;
+  apcaUserId?: string | null;
+  defaultPaymentTermsDays?: number;
+  fiscalYearStartMonth?: number;
+  lockDate?: string | null;
+  enforceTwoPersonApproval?: boolean;
+  enabledModules?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MemberProfile {
+  id: string;
+  organizationId?: string;
+  userId?: string;
+  role: Role;
+  jobTitle?: string | null;
+  department?: string | null;
+  bankBsb?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountName?: string | null;
+  createdAt?: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    avatarUrl?: string | null;
+  };
+}
+
+export interface OrganizationMembership {
+  id: string;
+  organizationId: string;
+  role: Role;
+  jobTitle?: string | null;
+  department?: string | null;
+  organization: Organization;
+}
+
+export interface OrganizationInvite {
+  id: string;
+  organizationId: string;
+  email: string;
+  role: Role;
+  department?: string | null;
+  jobTitle?: string | null;
+  invitedByUserId: string;
+  acceptedAt?: string | null;
+  expiresAt: string;
+  createdAt: string;
+  invitedBy?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+}
+
+export interface AuditLogEntry {
+  id: string;
+  organizationId: string;
+  actorUserId: string | null;
+  actorEmail: string | null;
+  actorName: string | null;
+  action: string;
+  entityType: string;
+  entityId: string;
+  summary: string;
+  metadataJson: string | null;
+  createdAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,18 +151,16 @@ async function request<T>(
 export interface AuthResponse {
   status: 'authenticated' | 'onboarding';
   organizationId?: string;
-  role?: string;
+  role?: Role;
   user?: {
     id: string;
     email: string;
     name: string;
-    avatarUrl?: string;
+    avatarUrl?: string | null;
   };
-  organization?: {
-    id: string;
-    name: string;
-    abn: string;
-  };
+  organization?: Organization;
+  memberProfile?: MemberProfile;
+  memberships?: OrganizationMembership[];
 }
 
 export const authApi = {
@@ -74,23 +169,169 @@ export const authApi = {
   loginWithGoogle: (idToken: string) =>
     request<AuthResponse>('POST', '/auth/google', { idToken }),
 
+  switchOrganization: (organizationId: string) =>
+    request<{
+      status: 'authenticated';
+      organization: Organization;
+      organizationId: string;
+      role: Role;
+    }>('POST', '/auth/switch-organization', { organizationId }),
+
   logout: () => request<{ status: string }>('DELETE', '/auth/logout'),
 };
 
 // ---------------------------------------------------------------------------
-// Organizations
+// Organization & Workspace Governance API
 // ---------------------------------------------------------------------------
 
-export interface Organization {
-  id: string;
+export interface CreateOrganizationInput {
   name: string;
+  legalName?: string | null;
+  tradingName?: string | null;
   abn: string;
-  createdAt: string;
+  email?: string | null;
+  phone?: string | null;
+  addressLine1?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postcode?: string | null;
+  bankBsb?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountName?: string | null;
+}
+
+export interface UpdateOrganizationProfileInput {
+  name?: string;
+  legalName?: string | null;
+  tradingName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postcode?: string | null;
+  bankBsb?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountName?: string | null;
+  apcaUserId?: string | null;
+  defaultPaymentTermsDays?: number;
+  fiscalYearStartMonth?: number;
+  lockDate?: string | null;
+  enforceTwoPersonApproval?: boolean;
+  enabledModules?: string[];
 }
 
 export const orgApi = {
-  create: (data: { name: string; abn: string }) =>
-    request<{ organization: Organization; role: string }>('POST', '/organizations', data),
+  create: (data: CreateOrganizationInput) =>
+    request<{ organization: Organization; role: Role }>(
+      'POST',
+      '/organizations',
+      data,
+    ),
+
+  listUserOrganizations: () =>
+    request<{
+      organizations: Array<{
+        membershipId: string;
+        organizationId: string;
+        role: Role;
+        jobTitle?: string | null;
+        department?: string | null;
+        organization: Organization;
+        isActiveSession: boolean;
+      }>;
+    }>('GET', '/users/organizations'),
+
+  getProfile: () =>
+    request<{ organization: Organization; memberProfile: MemberProfile }>(
+      'GET',
+      '/organizations/profile',
+    ),
+
+  updateProfile: (data: UpdateOrganizationProfileInput) =>
+    request<{ organization: Organization }>(
+      'PATCH',
+      '/organizations/profile',
+      data,
+    ),
+
+  updateMyProfile: (data: {
+    jobTitle?: string | null;
+    department?: string | null;
+    bankBsb?: string | null;
+    bankAccountNumber?: string | null;
+    bankAccountName?: string | null;
+  }) =>
+    request<{ memberProfile: MemberProfile }>(
+      'PATCH',
+      '/organizations/my-profile',
+      data,
+    ),
+
+  listMembers: () =>
+    request<{ members: MemberProfile[] }>('GET', '/organizations/members'),
+
+  updateMember: (
+    id: string,
+    data: {
+      role?: Role;
+      jobTitle?: string | null;
+      department?: string | null;
+      bankBsb?: string | null;
+      bankAccountNumber?: string | null;
+      bankAccountName?: string | null;
+    },
+  ) =>
+    request<{ member: MemberProfile }>(
+      'PATCH',
+      `/organizations/members/${id}`,
+      data,
+    ),
+
+  removeMember: (id: string) =>
+    request<{ deleted: boolean }>('DELETE', `/organizations/members/${id}`),
+
+  listInvites: () =>
+    request<{ invites: OrganizationInvite[] }>(
+      'GET',
+      '/organizations/invites',
+    ),
+
+  createInvite: (data: {
+    email: string;
+    role: Role;
+    department?: string | null;
+    jobTitle?: string | null;
+  }) =>
+    request<{
+      status: 'added_immediately' | 'invite_created';
+      member?: MemberProfile;
+      invite?: OrganizationInvite;
+    }>('POST', '/organizations/invites', data),
+
+  revokeInvite: (id: string) =>
+    request<{ revoked: boolean }>('DELETE', `/organizations/invites/${id}`),
+
+  listAuditLogs: (params?: {
+    entityType?: string;
+    action?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.entityType) query.set('entityType', params.entityType);
+    if (params?.action) query.set('action', params.action);
+    if (params?.search) query.set('search', params.search);
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+    const qs = query.toString();
+    return request<{ logs: AuditLogEntry[]; totalCount: number }>(
+      'GET',
+      `/audit-logs${qs ? `?${qs}` : ''}`,
+    );
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -104,10 +345,18 @@ export interface Contact {
   organizationId: string;
   type: ContactType;
   name: string;
+  legalName?: string | null;
   email: string | null;
+  phone?: string | null;
+  billingAddress?: string | null;
   abn: string | null;
   paymentTermsDays: number;
   requiresInvoiceForPayment: boolean;
+  defaultRevenueAccountId?: string | null;
+  defaultExpenseAccountId?: string | null;
+  bankBsb?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountName?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -133,13 +382,21 @@ export interface UpdateContactInput {
 }
 
 export const contactApi = {
-  list: (params?: { type?: ContactType; search?: string; isActive?: boolean }) => {
+  list: (params?: {
+    type?: ContactType;
+    search?: string;
+    isActive?: boolean;
+  }) => {
     const query = new URLSearchParams();
     if (params?.type) query.set('type', params.type);
     if (params?.search) query.set('search', params.search);
-    if (params?.isActive !== undefined) query.set('isActive', String(params.isActive));
+    if (params?.isActive !== undefined)
+      query.set('isActive', String(params.isActive));
     const qs = query.toString();
-    return request<{ contacts: Contact[] }>('GET', `/contacts${qs ? `?${qs}` : ''}`);
+    return request<{ contacts: Contact[] }>(
+      'GET',
+      `/contacts${qs ? `?${qs}` : ''}`,
+    );
   },
 
   get: (id: string) => request<{ contact: Contact }>('GET', `/contacts/${id}`),
@@ -155,7 +412,13 @@ export const contactApi = {
 // Bills
 // ---------------------------------------------------------------------------
 
-export type BillStatus = 'AWAITING_PAYMENT' | 'PARTIALLY_PAID' | 'PAID' | 'VOID';
+export type BillStatus =
+  | 'DRAFT'
+  | 'PENDING_APPROVAL'
+  | 'AWAITING_PAYMENT'
+  | 'PARTIALLY_PAID'
+  | 'PAID'
+  | 'VOID';
 export type TaxTreatment = 'TAX_EXCLUSIVE' | 'TAX_INCLUSIVE' | 'GST_FREE';
 
 export interface BillLineItem {
@@ -220,7 +483,11 @@ export interface CreateBillInput {
 }
 
 export const billApi = {
-  list: (params?: { status?: BillStatus; contactId?: string; search?: string }) => {
+  list: (params?: {
+    status?: BillStatus;
+    contactId?: string;
+    search?: string;
+  }) => {
     const query = new URLSearchParams();
     if (params?.status) query.set('status', params.status);
     if (params?.contactId) query.set('contactId', params.contactId);
@@ -229,7 +496,8 @@ export const billApi = {
     return request<{ bills: Bill[] }>('GET', `/bills${qs ? `?${qs}` : ''}`);
   },
 
-  get: (id: string) => request<{ bill: Bill; journalEntry?: any }>('GET', `/bills/${id}`),
+  get: (id: string) =>
+    request<{ bill: Bill; journalEntry?: any }>('GET', `/bills/${id}`),
 
   create: (data: CreateBillInput) =>
     request<{ bill: Bill }>('POST', '/bills', data),
@@ -252,7 +520,13 @@ export const billApi = {
 // Invoices
 // ---------------------------------------------------------------------------
 
-export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIALLY_PAID' | 'PAID' | 'VOID';
+export type InvoiceStatus =
+  | 'DRAFT'
+  | 'PENDING_APPROVAL'
+  | 'ISSUED'
+  | 'PARTIALLY_PAID'
+  | 'PAID'
+  | 'VOID';
 
 export interface InvoiceLineItem {
   id: string;
@@ -307,13 +581,20 @@ export interface CreateInvoiceInput {
 }
 
 export const invoiceApi = {
-  list: (params?: { status?: InvoiceStatus; contactId?: string; search?: string }) => {
+  list: (params?: {
+    status?: InvoiceStatus;
+    contactId?: string;
+    search?: string;
+  }) => {
     const query = new URLSearchParams();
     if (params?.status) query.set('status', params.status);
     if (params?.contactId) query.set('contactId', params.contactId);
     if (params?.search) query.set('search', params.search);
     const qs = query.toString();
-    return request<{ invoices: Invoice[] }>('GET', `/invoices${qs ? `?${qs}` : ''}`);
+    return request<{ invoices: Invoice[] }>(
+      'GET',
+      `/invoices${qs ? `?${qs}` : ''}`,
+    );
   },
 
   get: (id: string) =>
@@ -323,10 +604,20 @@ export const invoiceApi = {
     request<{ invoice: Invoice }>('POST', '/invoices', data),
 
   issue: (id: string) =>
-    request<{ invoice: Invoice; journalEntry?: any }>('POST', `/invoices/${id}/issue`),
+    request<{ invoice: Invoice; journalEntry?: any }>(
+      'POST',
+      `/invoices/${id}/issue`,
+    ),
 
-  recordPayment: (id: string, data: { paymentDate: string; amountCents: number; reference?: string | null }) =>
-    request<{ paymentIn: PaymentIn; invoice: Invoice; journalEntry: any }>('POST', `/invoices/${id}/payments`, data),
+  recordPayment: (
+    id: string,
+    data: { paymentDate: string; amountCents: number; reference?: string | null },
+  ) =>
+    request<{ paymentIn: PaymentIn; invoice: Invoice; journalEntry: any }>(
+      'POST',
+      `/invoices/${id}/payments`,
+      data,
+    ),
 
   getPayments: (id: string) =>
     request<{ payments: PaymentIn[] }>('GET', `/invoices/${id}/payments`),
@@ -357,7 +648,11 @@ export interface RecordPaymentInInput {
 
 export const paymentInApi = {
   create: (data: RecordPaymentInInput) =>
-    request<{ paymentIn: PaymentIn; invoice?: Invoice; journalEntry: any }>('POST', '/payments-in', data),
+    request<{ paymentIn: PaymentIn; invoice?: Invoice; journalEntry: any }>(
+      'POST',
+      '/payments-in',
+      data,
+    ),
 };
 
 // ---------------------------------------------------------------------------
@@ -366,7 +661,12 @@ export const paymentInApi = {
 
 export type EntryType = 'DEBIT' | 'CREDIT';
 export type NormalBalance = 'DEBIT' | 'CREDIT';
-export type AccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE';
+export type AccountType =
+  | 'ASSET'
+  | 'LIABILITY'
+  | 'EQUITY'
+  | 'REVENUE'
+  | 'EXPENSE';
 
 export interface JournalLineAccount {
   id: string;
@@ -409,6 +709,11 @@ export interface AccountWithBalance {
   type: AccountType;
   normalBalance: NormalBalance;
   description: string | null;
+  isSystem?: boolean;
+  systemKey?: string | null;
+  parentId?: string | null;
+  isBankAccount?: boolean;
+  defaultTaxTreatment?: TaxTreatment;
   isActive: boolean;
   debitsCents: number;
   creditsCents: number;
@@ -460,4 +765,3 @@ export interface CreateManualJournalEntryInput {
   postedAt: string;
   lines: CreateManualJournalLineInput[];
 }
-

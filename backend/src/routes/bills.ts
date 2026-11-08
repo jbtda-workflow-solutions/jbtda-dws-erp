@@ -10,8 +10,9 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { requireOrgAuth, requireRole } from '../plugins/auth.js';
+import { requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
+import { recordAuditLog } from '../lib/audit.js';
 import { BillStatus, EntryType, Role, TaxTreatment } from '@prisma/client';
 
 const TaxTreatmentEnum = z.nativeEnum(TaxTreatment);
@@ -69,7 +70,17 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
   // -------------------------------------------------------------------------
   fastify.get(
     '/api/v1/bills',
-    { preHandler: [requireOrgAuth] },
+    {
+      preHandler: [
+        requireRole(
+          Role.ADMIN,
+          Role.ACCOUNTANT,
+          Role.MANAGER,
+          Role.AP_SPECIALIST,
+          Role.AUDITOR,
+        ),
+      ],
+    },
     async (request, reply) => {
       const parse = ListBillsQuery.safeParse(request.query);
       if (!parse.success) {
@@ -161,25 +172,27 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // 2. Fetch Chart of Accounts entries required for AP posting
-      // Code 5000: Operating Expenses (EXPENSE - Normal Balance DEBIT)
+      // Code 6000 (or legacy 5000): Operating Expenses (EXPENSE - Normal Balance DEBIT)
       // Code 2200: GST Paid (Purchases) (ASSET - Normal Balance DEBIT)
       // Code 2000: Accounts Payable (LIABILITY - Normal Balance CREDIT)
       const accounts = await fastify.prisma.account.findMany({
         where: {
           organizationId,
-          code: { in: ['5000', '2200', '2000'] },
+          code: { in: ['6000', '5000', '2200', '2000'] },
           isActive: true,
         },
       });
 
-      const expenseAccount = accounts.find((a) => a.code === '5000');
+      const expenseAccount =
+        accounts.find((a) => a.code === '6000') ??
+        accounts.find((a) => a.code === '5000');
       const gstPaidAccount = accounts.find((a) => a.code === '2200');
       const apAccount = accounts.find((a) => a.code === '2000');
 
       if (!expenseAccount || !gstPaidAccount || !apAccount) {
         return reply.code(500).send({
           error:
-            'Required Chart of Accounts entries (2000, 2200, 5000) are missing for this organization.',
+            'Required Chart of Accounts entries (2000, 2200, 6000) are missing for this organization.',
         });
       }
 
@@ -312,6 +325,15 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
             });
           }
 
+          await recordAuditLog(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            action: 'BILL_CREATED',
+            entityType: 'BILL',
+            entityId: bill.id,
+            summary: `Recorded vendor bill from ${contact.name}${reference ? ` (${reference})` : ''} for $${(Number(totalResult.totalCents) / 100).toFixed(2)}`,
+          });
+
           return bill;
         },
       );
@@ -325,7 +347,17 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
   // -------------------------------------------------------------------------
   fastify.get(
     '/api/v1/bills/:id',
-    { preHandler: [requireOrgAuth] },
+    {
+      preHandler: [
+        requireRole(
+          Role.ADMIN,
+          Role.ACCOUNTANT,
+          Role.MANAGER,
+          Role.AP_SPECIALIST,
+          Role.AUDITOR,
+        ),
+      ],
+    },
     async (request, reply) => {
       const paramParse = ParamsWithId.safeParse(request.params);
       if (!paramParse.success) {
@@ -542,7 +574,17 @@ const billRoutes: FastifyPluginAsync = async (fastify) => {
   // -------------------------------------------------------------------------
   fastify.get(
     '/api/v1/bills/:id/payments',
-    { preHandler: [requireOrgAuth] },
+    {
+      preHandler: [
+        requireRole(
+          Role.ADMIN,
+          Role.ACCOUNTANT,
+          Role.MANAGER,
+          Role.AP_SPECIALIST,
+          Role.AUDITOR,
+        ),
+      ],
+    },
     async (request, reply) => {
       const paramParse = ParamsWithId.safeParse(request.params);
       if (!paramParse.success) {

@@ -10,9 +10,9 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Ensure financial number cells always use tabular figures */
-  .font-numbers {
+  /* Ensure financial number & mono cells always use tabular figures */
+  .font-numbers,
+  .font-mono {
     font-variant-numeric: tabular-nums;
   }
 }
-

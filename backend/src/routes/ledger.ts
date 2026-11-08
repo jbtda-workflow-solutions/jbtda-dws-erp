@@ -11,6 +11,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { requireOrgAuth, requireRole } from '../plugins/auth.js';
+import { recordAuditLog } from '../lib/audit.js';
 import { EntryType, NormalBalance, Role } from '@prisma/client';
 
 const ListLedgerQuery = z.object({
@@ -52,7 +53,11 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
   // -------------------------------------------------------------------------
   fastify.get(
     '/api/v1/ledger',
-    { preHandler: [requireOrgAuth] },
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AUDITOR),
+      ],
+    },
     async (request, reply) => {
       const parse = ListLedgerQuery.safeParse(request.query);
       if (!parse.success) {
@@ -205,6 +210,11 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
           type: acc.type,
           normalBalance: acc.normalBalance,
           description: acc.description,
+          isSystem: acc.isSystem,
+          systemKey: acc.systemKey,
+          parentId: acc.parentId,
+          isBankAccount: acc.isBankAccount,
+          defaultTaxTreatment: acc.defaultTaxTreatment,
           isActive: acc.isActive,
           debitsCents: Number(debitsCents),
           creditsCents: Number(creditsCents),
@@ -312,6 +322,15 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
             ],
           },
         },
+      });
+
+      await recordAuditLog(fastify.prisma, {
+        organizationId,
+        actorUserId: request.user.userId,
+        action: 'MANUAL_JOURNAL_POSTED',
+        entityType: 'JOURNAL_ENTRY',
+        entityId: journalEntry.id,
+        summary: `Posted manual adjusting journal "${description}" ($${(Number(sumDebitsCents) / 100).toFixed(2)})`,
       });
 
       return reply.code(201).send({

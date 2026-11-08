@@ -1,54 +1,53 @@
 /**
- * POST /api/v1/auth/google
+ * Authentication & Session Switching Routes — Module 1
  *
- * Verifies a Google OIDC ID token, upserts the user, determines onboarding
- * state, and issues a signed session cookie.
- *
- * Flow:
- *  1. Verify idToken with google-auth-library.
- *  2. Upsert the user record (keyed on google_sub).
- *  3. Check organization_members for existing memberships.
- *  4. Check organization_invites for pending invitations by email.
- *  5a. Existing member → issue full session (userId + organizationId + role).
- *  5b. Pending invite → accept it, issue full session.
- *  5c. No org, no invite → issue ONBOARDING session (organizationId: null).
+ * Endpoints:
+ *  - GET    /api/v1/auth/config               (Public Google OAuth Client ID)
+ *  - POST   /api/v1/auth/google               (Google OIDC verification, auto-invite claim, session issue)
+ *  - GET    /api/v1/auth/me                   (Restore session, active org, and multi-company memberships)
+ *  - POST   /api/v1/auth/switch-organization  (Switch active organization context in session cookie)
+ *  - DELETE /api/v1/auth/logout               (Clear session cookie)
  */
 
 import type { FastifyPluginAsync } from 'fastify';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
-import { setSession } from '../plugins/auth.js';
+import { getSession, requireAuth, setSession } from '../plugins/auth.js';
+import { recordAuditLog } from '../lib/audit.js';
 
-const RequestBody = z.object({
+const GoogleLoginBody = z.object({
   idToken: z.string().min(1),
+});
+
+const SwitchOrgBody = z.object({
+  organizationId: z.string().uuid(),
 });
 
 const authRoutes: FastifyPluginAsync = async (fastify) => {
   const googleClient = new OAuth2Client(process.env['GOOGLE_CLIENT_ID']);
 
   // -------------------------------------------------------------------------
-  // Public auth configuration (exposes client ID to frontend SPA at runtime)
+  // GET /api/v1/auth/config — Public auth configuration for SPA
   // -------------------------------------------------------------------------
   fastify.get('/api/v1/auth/config', async () => ({
     googleClientId: process.env['GOOGLE_CLIENT_ID'] ?? '',
   }));
 
+  // -------------------------------------------------------------------------
+  // POST /api/v1/auth/google — Verify Google ID token & resolve memberships
+  // -------------------------------------------------------------------------
   fastify.post('/api/v1/auth/google', async (request, reply) => {
-    // -----------------------------------------------------------------------
-    // 1. Parse & validate body
-    // -----------------------------------------------------------------------
-    const parse = RequestBody.safeParse(request.body);
+    const parse = GoogleLoginBody.safeParse(request.body);
     if (!parse.success) {
       return reply.code(400).send({ error: 'idToken is required' });
     }
     const { idToken } = parse.data;
 
-    // -----------------------------------------------------------------------
-    // 2. Verify Google ID token
-    // -----------------------------------------------------------------------
     const googleClientId = process.env['GOOGLE_CLIENT_ID'];
     if (!googleClientId) {
-      return reply.code(500).send({ error: 'Server misconfiguration: GOOGLE_CLIENT_ID missing' });
+      return reply
+        .code(500)
+        .send({ error: 'Server misconfiguration: GOOGLE_CLIENT_ID missing' });
     }
 
     let googleSub: string;
@@ -66,16 +65,13 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(401).send({ error: 'Invalid Google token payload' });
       }
       googleSub = payload.sub;
-      email = payload.email;
+      email = payload.email.toLowerCase().trim();
       name = payload.name ?? email;
       avatarUrl = payload.picture ?? null;
     } catch {
       return reply.code(401).send({ error: 'Google token verification failed' });
     }
 
-    // -----------------------------------------------------------------------
-    // 3. Upsert user (immutable key: google_sub)
-    // -----------------------------------------------------------------------
     let user;
     let memberships;
     try {
@@ -85,10 +81,75 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         update: { email, name, avatarUrl },
       });
 
+      // Automatically claim any pending, non-expired invitations for this email
+      const pendingInvites = await fastify.prisma.organizationInvite.findMany({
+        where: {
+          email: { equals: email, mode: 'insensitive' },
+          acceptedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+      });
+
+      if (pendingInvites.length > 0) {
+        for (const invite of pendingInvites) {
+          await fastify.prisma.$transaction(async (tx) => {
+            await tx.organizationInvite.update({
+              where: { id: invite.id },
+              data: { acceptedAt: new Date() },
+            });
+
+            const existingMember = await tx.organizationMember.findUnique({
+              where: {
+                organizationId_userId: {
+                  organizationId: invite.organizationId,
+                  userId: user.id,
+                },
+              },
+            });
+
+            if (!existingMember) {
+              await tx.organizationMember.create({
+                data: {
+                  organizationId: invite.organizationId,
+                  userId: user.id,
+                  role: invite.role,
+                  department: invite.department,
+                  jobTitle: invite.jobTitle,
+                },
+              });
+
+              await recordAuditLog(tx, {
+                organizationId: invite.organizationId,
+                actorUserId: user.id,
+                actorEmail: user.email,
+                actorName: user.name,
+                action: 'INVITE_ACCEPTED',
+                entityType: 'ORGANIZATION_INVITE',
+                entityId: invite.id,
+                summary: `${user.name} (${user.email}) accepted invitation as ${invite.role}`,
+                metadata: { role: invite.role },
+              });
+            }
+          });
+        }
+      }
+
       memberships = await fastify.prisma.organizationMember.findMany({
         where: { userId: user.id },
+        include: {
+          organization: {
+            select: {
+              id: true,
+              name: true,
+              legalName: true,
+              abn: true,
+              lockDate: true,
+              enabledModules: true,
+              enforceTwoPersonApproval: true,
+            },
+          },
+        },
         orderBy: { createdAt: 'asc' },
-        take: 1,
       });
     } catch (err: unknown) {
       fastify.log.error({ err }, 'Database error during Google auth flow');
@@ -98,90 +159,77 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       });
     }
 
+    const secret = process.env['SESSION_SECRET']!;
+
     if (memberships.length > 0 && memberships[0] !== undefined) {
-      // User already belongs to an org — issue full session
-      const membership = memberships[0];
-      const secret = process.env['SESSION_SECRET']!;
-      setSession(reply, {
-        userId: user.id,
-        organizationId: membership.organizationId,
-        role: membership.role,
-      }, secret);
+      const primary = memberships[0];
+      setSession(
+        reply,
+        {
+          userId: user.id,
+          organizationId: primary.organizationId,
+          role: primary.role,
+        },
+        secret,
+      );
 
       return reply.code(200).send({
         status: 'authenticated',
-        organizationId: membership.organizationId,
-        role: membership.role,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+        },
+        organization: primary.organization,
+        organizationId: primary.organizationId,
+        role: primary.role,
+        memberships: memberships.map((m) => ({
+          id: m.id,
+          organizationId: m.organizationId,
+          role: m.role,
+          jobTitle: m.jobTitle,
+          department: m.department,
+          organization: m.organization,
+        })),
       });
     }
 
-    // -----------------------------------------------------------------------
-    // 5. Check for a pending invite by verified email
-    // -----------------------------------------------------------------------
-    const invite = await fastify.prisma.organizationInvite.findFirst({
-      where: {
-        email,
-        acceptedAt: null,
-        expiresAt: { gt: new Date() },
+    // No organization memberships and no pending invites -> ONBOARDING
+    setSession(
+      reply,
+      {
+        userId: user.id,
+        organizationId: null,
+        role: null,
+      },
+      secret,
+    );
+
+    return reply.code(200).send({
+      status: 'onboarding',
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
       },
     });
-
-    if (invite) {
-      // Accept the invite atomically
-      const [, member] = await fastify.prisma.$transaction([
-        fastify.prisma.organizationInvite.update({
-          where: { id: invite.id },
-          data: { acceptedAt: new Date() },
-        }),
-        fastify.prisma.organizationMember.create({
-          data: {
-            organizationId: invite.organizationId,
-            userId: user.id,
-            role: invite.role,
-          },
-        }),
-      ]);
-
-      const secret = process.env['SESSION_SECRET']!;
-      setSession(reply, {
-        userId: user.id,
-        organizationId: member.organizationId,
-        role: member.role,
-      }, secret);
-
-      return reply.code(200).send({
-        status: 'authenticated',
-        organizationId: member.organizationId,
-        role: member.role,
-      });
-    }
-
-    // -----------------------------------------------------------------------
-    // 6. No org, no invite → ONBOARDING session
-    // -----------------------------------------------------------------------
-    const secret = process.env['SESSION_SECRET']!;
-    setSession(reply, {
-      userId: user.id,
-      organizationId: null,
-      role: null,
-    }, secret);
-
-    return reply.code(200).send({ status: 'onboarding' });
   });
 
-  // -----------------------------------------------------------------------
-  // GET /api/v1/auth/me
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // GET /api/v1/auth/me — Restore active session & all company memberships
+  // -------------------------------------------------------------------------
   fastify.get('/api/v1/auth/me', async (request, reply) => {
     const secret = process.env['SESSION_SECRET'];
-    if (!secret) return reply.code(500).send({ error: 'Server misconfiguration' });
+    if (!secret) {
+      return reply.code(500).send({ error: 'Server misconfiguration' });
+    }
 
-    const raw = request.cookies['erp_session'];
-    if (!raw) return reply.code(401).send({ error: 'Unauthenticated' });
-
-    const { getSession } = await import('../plugins/auth.js');
     const session = getSession(request, secret);
-    if (!session) return reply.code(401).send({ error: 'Invalid session' });
+    if (!session) {
+      return reply.code(401).send({ error: 'Unauthenticated' });
+    }
 
     try {
       const user = await fastify.prisma.user.findUnique({
@@ -189,26 +237,94 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         select: { id: true, email: true, name: true, avatarUrl: true },
       });
 
-      if (!user) return reply.code(401).send({ error: 'User not found' });
+      if (!user) {
+        return reply.code(401).send({ error: 'User not found' });
+      }
 
-      if (!session.organizationId) {
+      const memberships = await fastify.prisma.organizationMember.findMany({
+        where: { userId: user.id },
+        include: {
+          organization: {
+            select: {
+              id: true,
+              name: true,
+              legalName: true,
+              tradingName: true,
+              abn: true,
+              email: true,
+              phone: true,
+              addressLine1: true,
+              addressLine2: true,
+              city: true,
+              state: true,
+              postcode: true,
+              bankBsb: true,
+              bankAccountNumber: true,
+              bankAccountName: true,
+              apcaUserId: true,
+              defaultPaymentTermsDays: true,
+              fiscalYearStartMonth: true,
+              lockDate: true,
+              enforceTwoPersonApproval: true,
+              enabledModules: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      if (memberships.length === 0) {
         return reply.code(200).send({
           status: 'onboarding',
           user,
+          memberships: [],
         });
       }
 
-      const org = await fastify.prisma.organization.findUnique({
-        where: { id: session.organizationId },
-        select: { id: true, name: true, abn: true },
-      });
+      // Resolve active membership (fallback to first membership if session org was removed or null)
+      const activeMembership =
+        memberships.find((m) => m.organizationId === session.organizationId) ??
+        memberships[0]!;
+
+      // Keep cookie synchronized if fallback occurred or role changed
+      if (
+        session.organizationId !== activeMembership.organizationId ||
+        session.role !== activeMembership.role
+      ) {
+        setSession(
+          reply,
+          {
+            userId: user.id,
+            organizationId: activeMembership.organizationId,
+            role: activeMembership.role,
+          },
+          secret,
+        );
+      }
 
       return reply.code(200).send({
         status: 'authenticated',
         user,
-        organization: org,
-        organizationId: session.organizationId,
-        role: session.role,
+        organization: activeMembership.organization,
+        organizationId: activeMembership.organizationId,
+        role: activeMembership.role,
+        memberProfile: {
+          id: activeMembership.id,
+          role: activeMembership.role,
+          jobTitle: activeMembership.jobTitle,
+          department: activeMembership.department,
+          bankBsb: activeMembership.bankBsb,
+          bankAccountNumber: activeMembership.bankAccountNumber,
+          bankAccountName: activeMembership.bankAccountName,
+        },
+        memberships: memberships.map((m) => ({
+          id: m.id,
+          organizationId: m.organizationId,
+          role: m.role,
+          jobTitle: m.jobTitle,
+          department: m.department,
+          organization: m.organization,
+        })),
       });
     } catch (err: unknown) {
       fastify.log.error({ err }, 'Database error during auth/me lookup');
@@ -219,9 +335,71 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // POST /api/v1/auth/switch-organization — Toggle active company context
+  // -------------------------------------------------------------------------
+  fastify.post(
+    '/api/v1/auth/switch-organization',
+    { preHandler: [requireAuth] },
+    async (request, reply) => {
+      const parse = SwitchOrgBody.safeParse(request.body);
+      if (!parse.success) {
+        return reply.code(400).send({ error: 'Valid organizationId is required' });
+      }
+
+      const { organizationId } = parse.data;
+      const userId = request.user.userId;
+
+      const membership = await fastify.prisma.organizationMember.findUnique({
+        where: {
+          organizationId_userId: {
+            organizationId,
+            userId,
+          },
+        },
+        include: {
+          organization: true,
+        },
+      });
+
+      if (!membership) {
+        return reply.code(403).send({
+          error: 'You are not a member of the requested organization.',
+        });
+      }
+
+      const secret = process.env['SESSION_SECRET']!;
+      setSession(
+        reply,
+        {
+          userId,
+          organizationId: membership.organizationId,
+          role: membership.role,
+        },
+        secret,
+      );
+
+      await recordAuditLog(fastify.prisma, {
+        organizationId: membership.organizationId,
+        actorUserId: userId,
+        action: 'WORKSPACE_SWITCHED',
+        entityType: 'ORGANIZATION',
+        entityId: membership.organizationId,
+        summary: `Switched active workspace to ${membership.organization.name} (${membership.role})`,
+      });
+
+      return reply.code(200).send({
+        status: 'authenticated',
+        organization: membership.organization,
+        organizationId: membership.organizationId,
+        role: membership.role,
+      });
+    },
+  );
+
+  // -------------------------------------------------------------------------
   // DELETE /api/v1/auth/logout
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
   fastify.delete('/api/v1/auth/logout', async (_request, reply) => {
     void reply.clearCookie('erp_session', { path: '/' });
     return reply.code(200).send({ status: 'logged_out' });
@@ -229,4 +407,3 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 };
 
 export default authRoutes;
-

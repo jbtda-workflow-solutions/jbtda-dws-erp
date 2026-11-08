@@ -112,29 +112,33 @@ Access is strictly compartmentalized by domain so regular staff and specialists 
 
 Development proceeds strictly **one module at a time**. We complete the backend routes, validations, ledger integrations, audit logging, and frontend interfaces for a module before moving to the next.
 
+> **Module-Gate Review Protocol (Mandatory):** When a module is completed, all checklist items for that module MUST be marked `[x]` in this document, `AGENTS.md` and `docs/CHANGELOG.md` must be updated, a conventional git commit message must be provided, and the agent MUST STOP for user review before beginning the next module.
+
 ---
 
-### Module 1: Enterprise Workspace, RBAC, Governance & Unified Database Schema
+### Module 1: Enterprise Workspace, RBAC, Governance & Unified Database Schema (✅ COMPLETED)
 **Objective:** Lay down the complete enterprise PostgreSQL schema upfront so all foreign keys, enums, and domain relationships exist cleanly from day one, and build the complete multi-company workspace, RBAC security layer, and audit log engine.
 
-- [ ] **1.1 Unified Enterprise Prisma Schema Migration**:
+- [x] **1.1 Unified Enterprise Prisma Schema Migration**:
   - Define the complete schema across all 8 modules in `backend/prisma/schema.prisma` (Organizations, Members with Employee Bank BSB/Acct, Invites, AuditLogs, Accounts with `isSystem`/`parentId`, TrackingCategories & Options, Contacts with Vendor BSB/Acct, Items, Quotes, Invoices, CreditNotes, PurchaseOrders, Bills, VendorCredits, ExpenseClaims, DirectTransactions, RecurringSchedules, PaymentsIn, PaymentsOut, BatchPayments, BankStatementLines, JournalEntries, JournalLines).
-- [ ] **1.2 Organization Profile, Governance & Feature Flags**:
+- [x] **1.2 Organization Profile, Governance & Feature Flags**:
   - Expand `Organization` with `legalName`, `tradingName`, `abn`, `email`, `phone`, `addressLine1`, `addressLine2`, `city`, `state`, `postcode`, `bankBsb`, `bankAccountNumber`, `bankAccountName`, `apcaUserId` (for `.aba` exports), `defaultPaymentTermsDays`, `fiscalYearStartMonth` (default `7` for July AU), `lockDate`, `enforceTwoPersonApproval`, and `enabledModules` (`['CORE_FINANCE', 'EXPENSES']`).
   - Endpoints: `GET /api/v1/organizations/profile` and `PATCH /api/v1/organizations/profile`.
-- [ ] **1.3 Multi-Company Switching & Self-Service Creation**:
+- [x] **1.3 Multi-Company Switching & Self-Service Creation**:
   - `GET /api/v1/users/organizations`: List all organizations the user belongs to with their role and enabled modules.
   - `POST /api/v1/auth/switch-organization`: Verify membership and issue a re-signed session cookie for the selected company.
   - `POST /api/v1/organizations`: Allow authenticated users to create additional companies at any time, seeding the 10 protected system accounts.
-- [ ] **1.4 Team Invitations, 7-Role RBAC & Employee Banking Profile**:
+- [x] **1.4 Team Invitations, 7-Role RBAC & Employee Banking Profile**:
   - Invite users by email with any of the 7 roles (`ADMIN`, `ACCOUNTANT`, `MANAGER`, `AR_SPECIALIST`, `AP_SPECIALIST`, `EMPLOYEE`, `AUDITOR`).
   - Store employee reimbursement bank details (`bankBsb`, `bankAccountNumber`, `bankAccountName`) on `OrganizationMember`.
   - Enforce domain-isolated RBAC middleware across all routes (e.g., `EMPLOYEE` cannot access `/ledger`, `/bills`, `/invoices`, or `/contacts`).
-- [ ] **1.5 Immutable System Audit Log Engine**:
+- [x] **1.5 Immutable System Audit Log Engine**:
   - Helper service `recordAuditLog(tx, { organizationId, actorUserId, action, entityType, entityId, summary, metadata })` called inside transactional mutations.
   - `GET /api/v1/audit-logs`: Paginated, filterable audit trail for `ADMIN`, `ACCOUNTANT`, and `AUDITOR`.
-- [ ] **1.6 Module 1 Frontend UI**:
-  - Sidebar Company Switcher dropdown with role badge and `+ Create New Company`.
+- [x] **1.6 Corporate Precision Design System Primitives & Module 1 UI**:
+  - Upgrade `tailwind.config.ts` and `index.html` (`Inter` + `JetBrains Mono`, `obsidian-950` `#0B1311`, sharp `4px–6px` geometry).
+  - Build core reusable precision primitives: `Drawer.tsx` (Right-Hand Slide-Over Inspector), `PipelineRibbon.tsx` (Connected Lifecycle Process Bar), `StatusTag.tsx` (Squared bordered tag with `6px` dot), and crisp `Button.tsx` / `Input.tsx` / `Modal.tsx`.
+  - Upgrade `AppShell.tsx` to the **Obsidian Carbon** institutional frame with domain-grouped navigation, `h-12` Top Context Bar, Company Switcher dropdown, role badge, and `+ Create New Company`.
   - Dynamic sidebar navigation filtered by user `Role` and `organization.enabledModules`.
   - **Workspace Settings Page (`/settings`)** with tabs for:
     1. *Company Profile & Bank Remittance*

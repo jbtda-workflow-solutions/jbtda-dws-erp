@@ -11,8 +11,9 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { requireOrgAuth, requireRole } from '../plugins/auth.js';
+import { requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
+import { recordAuditLog } from '../lib/audit.js';
 import { EntryType, InvoiceStatus, Role, TaxTreatment } from '@prisma/client';
 
 const TaxTreatmentEnum = z.nativeEnum(TaxTreatment);
@@ -74,7 +75,17 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
   // -------------------------------------------------------------------------
   fastify.get(
     '/api/v1/invoices',
-    { preHandler: [requireOrgAuth] },
+    {
+      preHandler: [
+        requireRole(
+          Role.ADMIN,
+          Role.ACCOUNTANT,
+          Role.MANAGER,
+          Role.AR_SPECIALIST,
+          Role.AUDITOR,
+        ),
+      ],
+    },
     async (request, reply) => {
       const parse = ListInvoicesQuery.safeParse(request.query);
       if (!parse.success) {
@@ -261,6 +272,15 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
+      await recordAuditLog(fastify.prisma, {
+        organizationId,
+        actorUserId: request.user.userId,
+        action: 'INVOICE_DRAFT_CREATED',
+        entityType: 'INVOICE',
+        entityId: createdInvoice.id,
+        summary: `Created draft invoice ${createdInvoice.invoiceNumber} for ${contact.name} ($${(Number(totalResult.totalCents) / 100).toFixed(2)})`,
+      });
+
       return reply.code(201).send({ invoice: serializeInvoice(createdInvoice) });
     },
   );
@@ -270,7 +290,17 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
   // -------------------------------------------------------------------------
   fastify.get(
     '/api/v1/invoices/:id',
-    { preHandler: [requireOrgAuth] },
+    {
+      preHandler: [
+        requireRole(
+          Role.ADMIN,
+          Role.ACCOUNTANT,
+          Role.MANAGER,
+          Role.AR_SPECIALIST,
+          Role.AUDITOR,
+        ),
+      ],
+    },
     async (request, reply) => {
       const paramParse = ParamsWithId.safeParse(request.params);
       if (!paramParse.success) {
@@ -463,6 +493,15 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
           });
         }
 
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'INVOICE_ISSUED',
+          entityType: 'INVOICE',
+          entityId: invoice.id,
+          summary: `Issued invoice ${invoice.invoiceNumber} to ${invoice.contact.name} and posted to General Ledger`,
+        });
+
         return { invoice: updatedInvoice, journalEntry };
       });
 
@@ -652,7 +691,17 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
   // -------------------------------------------------------------------------
   fastify.get(
     '/api/v1/invoices/:id/payments',
-    { preHandler: [requireOrgAuth] },
+    {
+      preHandler: [
+        requireRole(
+          Role.ADMIN,
+          Role.ACCOUNTANT,
+          Role.MANAGER,
+          Role.AR_SPECIALIST,
+          Role.AUDITOR,
+        ),
+      ],
+    },
     async (request, reply) => {
       const paramParse = ParamsWithId.safeParse(request.params);
       if (!paramParse.success) {

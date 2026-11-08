@@ -4,6 +4,45 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.13.0] — 2026-11-08 — Module 1 Complete: Enterprise Workspace, 7-Role RBAC, Governance, Audit Log & Corporate Precision UI Shell
+
+### Added
+- `backend/prisma/schema.prisma` & `backend/prisma/migrations/002_enterprise_foundation/migration.sql`:
+  - Implemented the **Unified Enterprise Prisma Schema** across all 8 planned modules (`Role` expanded to 7 roles, `Organization` governance/banking/lockDate/enforceTwoPersonApproval/enabledModules, `OrganizationMember` employee BSB/account fields, `OrganizationInvite`, `AuditLog`, hierarchical `Account` with `isSystem`/`systemKey`/`parentId`, `TrackingCategory` & `TrackingOption`, `Item`, `Quote`, `CreditNote`, `PurchaseOrder`, `VendorCredit`, `BatchPayment`, `DirectTransaction`, `ExpenseClaim`, `BankTransfer`, `BankStatementLine`, `RecurringSchedule`).
+- `backend/src/lib/system-accounts.ts`:
+  - Defined the **10 Protected System GL Accounts** (`1000`, `1200`, `2000`, `2050`, `2100`, `2200`, `2300`, `3000`, `4000`, `6000`) and idempotent `ensureOrganizationSystemAccounts` seeding helper.
+- `backend/src/lib/schema-sync.ts`:
+  - Added idempotent startup schema synchronizer executed automatically on server boot in `backend/src/plugins/prisma.ts` so Cloud Run deployments apply `002_enterprise_foundation` DDL and backfill the 10 system accounts on existing organizations automatically.
+- `backend/src/lib/audit.ts`:
+  - Implemented append-only `recordAuditLog` helper for recording structured audit events into `audit_logs`.
+- `backend/src/lib/ledger-posting.ts` & `backend/src/routes/accounts.ts`:
+  - Added accounting period `lockDate` check helper and foundational Chart of Accounts / Tracking Categories API routes.
+- `frontend/src/components/ui/Drawer.tsx`, `StatusTag.tsx`, & `PipelineRibbon.tsx`:
+  - Built core **Corporate Precision Design System** UI primitives (Right-Hand Slide-Over Inspector Drawer, squared technical StatusTag with `6px` dot, and connected horizontal Process Pipeline Ribbon).
+- `frontend/src/pages/SettingsPage.tsx`:
+  - Built the 5-tab **Workspace Governance & Entity Controls (`/settings`)** workbench:
+    1. *Entity Profile & EFT Banking* (with live Tax Invoice Header & EFT Remittance Slip preview)
+    2. *Period Locks & Feature Modules* (`lockDate`, Fiscal Year month, 2-Person Approval toggle, Enabled Modules)
+    3. *Team & 7-Role RBAC* (Authorized Members table, Pending Invites table, Invite/Assign Modal, and Right-Hand Member Inspector Drawer)
+    4. *My Reimbursement Profile* (Employee BSB & Account Number for `2050` expense payouts)
+    5. *Immutable System Audit Log* (Filterable table + Right-Hand Audit Event JSON Inspector Drawer)
+
+### Changed
+- `backend/src/routes/auth.ts`:
+  - Added automatic multi-invite claiming upon Google OAuth sign-in, full membership list & active organization profile in `GET /api/v1/auth/me`, and `POST /api/v1/auth/switch-organization`.
+- `backend/src/routes/organizations.ts`:
+  - Added `GET /api/v1/users/organizations`, `GET/PATCH /api/v1/organizations/profile`, `PATCH /api/v1/organizations/my-profile`, `GET/PATCH/DELETE /api/v1/organizations/members`, `GET/POST/DELETE /api/v1/organizations/invites`, and `GET /api/v1/audit-logs`.
+- `backend/src/routes/contacts.ts`, `bills.ts`, `invoices.ts`, & `ledger.ts`:
+  - Updated with 7-Role domain-isolated RBAC guards and immutable `recordAuditLog` instrumentation.
+- `frontend/index.html`, `frontend/tailwind.config.ts`, `frontend/src/index.css`, `Button.tsx`, `Input.tsx`, & `Modal.tsx`:
+  - Upgraded to the **Corporate Precision Design System** (`Inter` + `JetBrains Mono` with `tabular-nums`, `obsidian-950` `#0B1311`, `forest-900` `#14382C`, crisp `4px–6px` geometry).
+- `frontend/src/components/AppShell.tsx`, `frontend/src/hooks/useAuth.tsx`, `frontend/src/api/client.ts`, & `frontend/src/App.tsx`:
+  - Rebuilt `AppShell.tsx` with the Obsidian Carbon (`#0B1311`) sidebar, interactive Multi-Company Switcher dropdown, `+ Create New Entity` modal, role/module-filtered navigation, and lean `48px` (`h-12`) Top Context Bar with Period Lock and 2-Person Approval badges.
+- `docs/STAGES_ROADMAP.md` & `AGENTS.md`:
+  - Marked **Module 1 (1.1 – 1.6)** as `[x]` Completed and added the mandatory **Module-Gate Review Protocol** (Rule 13).
+
+---
+
 ## [0.12.0] — 2026-11-08 — Enterprise Ledger-First Architecture & 8-Module Deep-Build Specification
 
 ### Changed
@@ -19,6 +58,12 @@ Chronological log of all changes, schema diffs, and new dependencies.
     - **Module 8 (Financial Statements, Australian BAS Engine, Live Dashboard & Plug-Ins):** Trial Balance, Dimensional Profit & Loss, Balance Sheet, AR/AP Aging buckets, ATO BAS Worksheet (G1, 1A, 1B), 100% live PostgreSQL Executive Dashboard, and standardized plug-in contracts for Fleet Management, Inventory, and GCS Attachments.
 - `AGENT_SPECIFICATION.md`, `docs/SECURITY.md`, & `docs/DATABASE_SCHEMA.md`:
   - Synchronized specifications with the 10 Protected System Accounts, 7-Role RBAC Matrix, Adaptive Maker-Checker Approval rules, Immutable Audit Log, and Unified Enterprise Schema blueprint.
+- `docs/DESIGN_SYSTEM.md`:
+  - Established the **Corporate Precision Design System**:
+    - Replaced bubbly `rounded-xl`/`rounded-2xl` cards, drop-shadows, and pastel icon boxes with crisp `4px–6px` (`rounded` / `rounded-md`) architectural geometry, `1px` hairline structural grids (`border-slate-200`), and compact `36px–40px` table rows.
+    - Upgraded financial and technical typography to `JetBrains Mono` (`font-numbers` / `font-mono` with `tabular-nums`) paired with `Inter` (`font-sans`).
+    - Defined the **Obsidian Carbon & Institutional Forest** palette (`#0B1311` sidebar, `#14382C` primary actions, `#10B981` emerald signal, `#B45309` brass approval indicators) and squared technical Status Tags (`rounded` with `1px` border and `6px` dot).
+    - Standardized the **Connected Process Pipeline Ribbon** (workflow lifecycle bar with live counts and AUD totals) and **Right-Hand Slide-Over Inspector Drawer** across all operational modules.
 
 ---
 

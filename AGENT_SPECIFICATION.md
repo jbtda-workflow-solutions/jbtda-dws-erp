@@ -290,74 +290,24 @@ Roles defined in `organization_members.role` (strictly compartmentalized by doma
 
 ---
 
-## 9. Design System & UI/UX Specifications
+## 9. Corporate Precision Design System & UI/UX Specifications
 
-The frontend implements a clean, high-performance financial interface using Tailwind CSS with an explicit hybrid typography strategy.
+The frontend implements an institutional, high-density financial interface codified in `docs/DESIGN_SYSTEM.md`.
 
-### Typography Hierarchy (Hybrid Approach)
-1. **Interface Text (`font-sans`):** **Inter**
-   - Headings: `font-medium` (500) with slight tight tracking (`tracking-tight`). Avoid bold weights (`font-bold`, 700).
-   - Body & Descriptions: `font-light` (300) or `font-normal` (400) with relaxed line heights.
-2. **Financial Numbers & Metrics (`font-numbers`):** **Open Sans**
-   - All monetary amounts, line-item totals, subtotal/tax calculations, and transaction dates MUST use `font-numbers`.
-   - **Tabular Alignment Rule:** Every single financial figure cell MUST include the `tabular-nums` class. This forces proportional alignment so decimal points line up vertically down columns.
+### Core Aesthetic Principles
+- **Architectural & Crisp Geometry:** Max corner radius of `4px` (`rounded`) on buttons/inputs/status tags and `6px` (`rounded-md`) on structural containers. Zero drop-shadows on cards/tables; rely on `1px solid` hairline borders (`border-slate-200`). Never use `rounded-xl`, `rounded-2xl`, `rounded-full` pill badges, or pastel icon boxes.
+- **Process Pipeline Ribbons:** Every workflow module features a connected horizontal lifecycle pipeline (`Draft ➔ Pending Approval ➔ Open ➔ Overdue ➔ Paid`) displaying live record counts and AUD totals in `JetBrains Mono` that acts as both a process map and a 1-click filter.
+- **Right-Hand Slide-Over Inspector Drawers (`Drawer`):** Clicking a table row opens a full-height right-hand drawer showing metadata, approval controls, the exact Double-Entry General Ledger impact (`DEBIT`/`CREDIT`), and the record's audit log while preserving table context on the left.
 
-### Color Tokens & Palette
-- **Canvas / Background:** Canvas Off-White `#F8FAFC` (`bg-slate-50`)
-- **Structure & Typography:** Midnight Navy `#0F172A` (`text-slate-900`), Muted Slate `#64748B` (`text-slate-500`)
-- **Brand / Primary Actions:**
-  - Primary CTA: Deep Forest Green `#14382C` (`bg-forest-900`)
-  - Hover CTA: Medium Forest `#1B4D3E` (`hover:bg-forest-700`)
-  - Soft Brand Tint: Soft Sage `#EAF3EE` (`bg-forest-50`)
-- **Semantic Status Badges (Pastel Background + Saturated Text):**
-  - **Paid / Settled:** Pastel Mint `#DCFCE7` background with Deep Green `#14532D` text
-  - **Pending / Draft:** Soft Sand `#FEF3C7` background with Deep Bronze `#78350F` text
-  - **Overdue / Void:** Soft Rose `#FFE4E6` background with Deep Wine `#881337` text
+### Typography Hierarchy (`Inter` + `JetBrains Mono`)
+1. **Interface & Prose (`font-sans`):** **Inter** (`300`, `400`, `500`, `600`). Headings use `font-medium` (500) with `tracking-tight`.
+2. **Financial Figures, GL Codes & Identifiers (`font-numbers` / `font-mono`):** **JetBrains Mono** (`400`, `500`, `600`) with `tabular-nums`. Mandatory on all monetary amounts, GL account codes (`1000`), document numbers (`INV-1001`), ABNs, BSBs, and transaction dates.
 
-### Data Table Standards (Classic Tailwind Clean)
-- **Table Container:** `bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm`
-- **Header Row:** Light slate background (`bg-slate-50`), muted slate text (`text-slate-500`), small uppercase with wide tracking (`text-xs font-medium uppercase tracking-wider`).
-- **Data Rows:** White background with subtle row dividers (`border-b border-slate-100` or `divide-y divide-slate-200`). Row hover: `hover:bg-slate-50 transition-colors`.
-- **Column Alignment:** Contact/Vendor names and descriptions left-aligned; status badges centered or left-aligned; all monetary figures strictly right-aligned (`text-right font-numbers tabular-nums`).
-
-### Tailwind Configuration (`tailwind.config.ts`)
-```typescript
-import type { Config } from 'tailwindcss';
-
-export default {
-  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
-  theme: {
-    extend: {
-      colors: {
-        forest: {
-          50: '#EAF3EE',
-          500: '#236551',
-          700: '#1B4D3E',
-          900: '#14382C',
-        },
-        navy: {
-          50: '#F8FAFC',
-          500: '#64748B',
-          900: '#0F172A',
-        },
-        badge: {
-          paidBg: '#DCFCE7',
-          paidText: '#14532D',
-          pendingBg: '#FEF3C7',
-          pendingText: '#78350F',
-          overdueBg: '#FFE4E6',
-          overdueText: '#881337',
-        },
-      },
-      fontFamily: {
-        sans: ['Inter', 'sans-serif'],
-        numbers: ['"Open Sans"', 'sans-serif'],
-      },
-    },
-  },
-  plugins: [],
-} satisfies Config;
-```
+### Brand Palette (Obsidian Carbon & Institutional Forest)
+- **Obsidian Carbon Navigation Frame:** `#0B1311` (`bg-obsidian-950`) sidebar with `#111E1A` (`bg-obsidian-900`) active surfaces and `border-white/[0.08]` hairline dividers.
+- **Work Surface:** `#F8FAFC` (`bg-slate-50`) canvas with `#FFFFFF` (`bg-white`) bordered workbenches and `36px–40px` compact table rows.
+- **Primary Accents:** Institutional Forest `#14382C` (`bg-forest-900`), Hover `#1B4D3E` (`hover:bg-forest-700`), Emerald Signal `#10B981` (`text-emerald-500`), and Warm Brass/Amber (`#B45309`) for approval states.
+- **Squared Status Tags:** `rounded` (`4px`) bordered tags with a `6px` semantic dot (`border-emerald-200`, `border-amber-200`, `border-rose-200`, `border-slate-300`).
 
 ---
 

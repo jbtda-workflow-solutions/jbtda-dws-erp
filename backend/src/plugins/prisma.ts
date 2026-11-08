@@ -2,6 +2,7 @@ import fp from 'fastify-plugin';
 import { PrismaClient } from '@prisma/client';
 import type { FastifyPluginAsync } from 'fastify';
 import fs from 'node:fs';
+import { runStartupSchemaSync } from '../lib/schema-sync.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -132,6 +133,8 @@ const prismaPlugin: FastifyPluginAsync = fp(async (fastify) => {
 
   await prisma.$connect();
   fastify.log.info('Connected to PostgreSQL database');
+
+  await runStartupSchemaSync(prisma, fastify.log);
 
   fastify.decorate('prisma', prisma);
 

@@ -11,8 +11,9 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { requireOrgAuth, requireRole } from '../plugins/auth.js';
+import { requireRole } from '../plugins/auth.js';
 import { validateABN } from '../lib/abn.js';
+import { recordAuditLog } from '../lib/audit.js';
 import { ContactType, Role } from '@prisma/client';
 
 const ContactTypeEnum = z.nativeEnum(ContactType);
@@ -55,7 +56,18 @@ const contactRoutes: FastifyPluginAsync = async (fastify) => {
   // -------------------------------------------------------------------------
   fastify.get(
     '/api/v1/contacts',
-    { preHandler: [requireOrgAuth] },
+    {
+      preHandler: [
+        requireRole(
+          Role.ADMIN,
+          Role.ACCOUNTANT,
+          Role.MANAGER,
+          Role.AR_SPECIALIST,
+          Role.AP_SPECIALIST,
+          Role.AUDITOR,
+        ),
+      ],
+    },
     async (request, reply) => {
       const parse = ListContactsQuery.safeParse(request.query);
       if (!parse.success) {
@@ -166,6 +178,15 @@ const contactRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
+      await recordAuditLog(fastify.prisma, {
+        organizationId,
+        actorUserId: request.user.userId,
+        action: 'CONTACT_CREATED',
+        entityType: 'CONTACT',
+        entityId: contact.id,
+        summary: `Created ${contact.type} contact "${contact.name}"`,
+      });
+
       return reply.code(201).send({ contact });
     },
   );
@@ -175,7 +196,18 @@ const contactRoutes: FastifyPluginAsync = async (fastify) => {
   // -------------------------------------------------------------------------
   fastify.get(
     '/api/v1/contacts/:id',
-    { preHandler: [requireOrgAuth] },
+    {
+      preHandler: [
+        requireRole(
+          Role.ADMIN,
+          Role.ACCOUNTANT,
+          Role.MANAGER,
+          Role.AR_SPECIALIST,
+          Role.AP_SPECIALIST,
+          Role.AUDITOR,
+        ),
+      ],
+    },
     async (request, reply) => {
       const paramParse = ParamsWithId.safeParse(request.params);
       if (!paramParse.success) {
