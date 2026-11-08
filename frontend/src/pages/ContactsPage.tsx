@@ -779,7 +779,7 @@ export function ContactsPage() {
         open={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={editingContact ? `Edit Contact: ${editingContact.name}` : 'New Commercial Contact'}
-        maxWidth="max-w-2xl"
+        size="2xl"
       >
         <form onSubmit={handleSubmitModal} className="space-y-4">
           {modalFormError && (

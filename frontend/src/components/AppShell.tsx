@@ -844,7 +844,7 @@ function CreateEntityModal({
       onClose={onClose}
       title="Provision New Corporate Entity"
       description="Seeds the 10 protected system GL accounts and default cost-center dimensions automatically."
-      maxWidth="max-w-lg"
+      size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

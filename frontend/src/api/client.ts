@@ -561,6 +561,8 @@ export interface BillLineItem {
   organizationId: string;
   itemId?: string | null;
   description: string;
+  quantity?: number;
+  unitPriceCents?: number;
   amountCents: number;
   taxTreatment: TaxTreatment;
   gstCents: number;

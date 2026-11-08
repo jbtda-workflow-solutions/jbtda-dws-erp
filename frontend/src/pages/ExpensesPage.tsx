@@ -1788,6 +1788,7 @@ function RecordDirectSpendModal({
       open={open}
       onClose={onClose}
       title="Record Direct Spend Money (Card / Bank)"
+      size="5xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4 text-xs">
         {error && (
@@ -2183,6 +2184,7 @@ function CreateEditClaimModal({
       open={open}
       onClose={onClose}
       title={claim ? `Edit Claim ${claim.claimNumber}` : 'New Out-of-Pocket Expense Claim'}
+      size="5xl"
     >
       <div className="space-y-4 text-xs">
         {error && (
@@ -2400,7 +2402,7 @@ function SettleSingleClaimModal({
   if (!claim) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title="Settle Single Reimbursement">
+    <Modal open={open} onClose={onClose} title="Settle Single Reimbursement" size="lg">
       <div className="space-y-4 text-xs text-slate-600">
         <p>
           Disburse reimbursement for claim{' '}
@@ -2518,6 +2520,7 @@ function CreateBatchModal({
       open={open}
       onClose={onClose}
       title="Create APCA Cemtex .ABA Reimbursement Run"
+      size="4xl"
     >
       <div className="space-y-4 text-xs text-slate-600">
         <p>

@@ -1601,7 +1601,7 @@ function InviteUserModal({
       onClose={onClose}
       title="Invite or Assign Workspace User"
       description="If the user already has an account, they are added to this company immediately. Otherwise, a pending invite is claimed automatically when they sign in with Google."
-      maxWidth="max-w-lg"
+      size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input

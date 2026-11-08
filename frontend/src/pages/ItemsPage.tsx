@@ -663,7 +663,7 @@ export function ItemsPage() {
         open={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={editingItem ? `Edit Item: ${editingItem.code}` : 'New Products & Services Catalog Item'}
-        maxWidth="max-w-2xl"
+        size="3xl"
       >
         <form onSubmit={handleSubmitModal} className="space-y-4">
           {modalFormError && (

@@ -4,6 +4,53 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.19.1] — 2026-11-08 — Stage 5.6: AP Precision UX, Line Item Coding Parity, Universal Modal Scaling & Horizontal Vendor Bill Preview Engine
+
+### Added
+- `frontend/src/components/BillPreviewModal.tsx`:
+  - Created dedicated commercial Landscape A4 Vendor Bill Voucher document preview and print engine.
+  - Complete supplier card (trading name, legal name, formatted Australian ABN, address, contact email/phone).
+  - Purchaser entity card (organization legal name, ABN, address).
+  - Wide landscape line item schedule showing line number, item code / description, quantity, unit price, tax treatment, account code & name, cost center / tracking option, subtotal, GST (10%), and total.
+  - Financial totals box displaying subtotal, GST, total bill amount, amount paid to date, and remaining balance due with draft watermark styling.
+  - Vendor EFT Remittance Advice slip rendering payee BSB, account number, payee name, and historical payment allocations.
+  - `@media print` rules with `@page { size: A4 landscape; margin: 8mm; }` cleanly isolating `#bill-print-sheet` and suppressing screen UI chrome during browser print or "Save as PDF" actions.
+- `frontend/src/api/client.ts`:
+  - Added optional `quantity?: number;` and `unitPriceCents?: number;` to `BillLineItem` interface.
+
+### Changed
+- `frontend/src/pages/BillsPage.tsx`:
+  - Upgraded `CreateBillModal`: Added catalog item selector (`isPurchased: true`), GL expense/asset account selector, cost center dimension selector, multi-quantity, unit price, live subtotal preview, auto-approve toggle ("Approve Immediately" vs "Save as Draft"), and resized to `size="5xl"`.
+  - Upgraded `BillDetailModal`: Added account code and cost center dimension resolution on line items, added "Print Preview (A4)" button opening `BillPreviewModal`, and resized to `size="5xl"`.
+  - Resized all other AP modals: `RecordPaymentModal` (`size="lg"`), `CreatePurchaseOrder` (`size="5xl"`), `PODetailModal` (`size="4xl"`), `CreateVendorCreditModal` (`size="5xl"`), `VendorCreditDetailModal` (`size="4xl"`), `AllocateCreditModal` (`size="lg"`), `BatchPaymentModal` (`size="4xl"`), `CreateRecurringBillModal` (`size="xl"`).
+- `frontend/src/pages/ExpensesPage.tsx`:
+  - Upgraded `RecordDirectSpendModal` to `size="5xl"`.
+  - Upgraded `CreateEditClaimModal` to `size="5xl"`.
+  - Upgraded `SettleSingleClaimModal` to `size="lg"`.
+  - Upgraded `CreateBatchModal` to `size="4xl"`.
+- `frontend/src/pages/InvoicesPage.tsx`:
+  - Upgraded `RecordCustomerPaymentModal` (both instances) to `size="lg"`.
+  - Upgraded `CreateQuoteModal` to `size="5xl"`.
+  - Upgraded `QuoteDetailModal` to `size="4xl"`.
+  - Upgraded `CreateCreditNoteModal` to `size="5xl"`.
+  - Upgraded `CreditNoteDetailModal` to `size="4xl"`.
+  - Upgraded `AllocateCreditNoteModal` to `size="lg"`.
+  - Upgraded `CreateRecurringInvoiceModal` to `size="xl"`.
+- `frontend/src/pages/ContactsPage.tsx`:
+  - Upgraded Create/Edit Contact modal to `size="2xl"`.
+- `frontend/src/pages/ItemsPage.tsx`:
+  - Upgraded Create/Edit Catalog Item modal to `size="3xl"`.
+- `frontend/src/pages/SettingsPage.tsx`:
+  - Upgraded Invite Workspace User modal to `size="lg"`.
+- `frontend/src/components/AppShell.tsx`:
+  - Upgraded Provision Corporate Entity modal to `size="lg"`.
+- `docs/STAGES_ROADMAP.md`:
+  - Added and marked Stage 5.6 as completed `[x]`.
+- `AGENTS.md`:
+  - Registered `BillPreviewModal.tsx` in Directory Layout.
+
+---
+
 ## [0.19.0] — 2026-11-08 — Module 7: Multi-Account Banking, Inter-Account Transfers & Statement Reconciliation
 
 ### Added

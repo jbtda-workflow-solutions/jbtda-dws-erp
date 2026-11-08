@@ -1938,7 +1938,7 @@ function RecordPaymentInModal({
       onClose={onClose}
       title="Record Customer Payment"
       description={`Record incoming payment from ${invoice.contact?.name} for invoice ${invoice.invoiceNumber}.`}
-      maxWidth="max-w-md"
+      size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4 mt-3">
         {error && (
@@ -2173,7 +2173,7 @@ function ReceiveDirectPaymentModal({
       onClose={onClose}
       title="Receive Customer Payment"
       description="Record an incoming payment from a customer with direct General Ledger posting (Debit 1000 Bank, Credit 1200 AR)."
-      maxWidth="max-w-md"
+      size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4 mt-3">
         {error && (
@@ -2520,7 +2520,7 @@ function CreateQuoteModal({ open, onClose, onCreated }: CreateQuoteModalProps) {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Create Sales Quote / Estimate" maxWidth="max-w-3xl">
+    <Modal open={open} onClose={onClose} title="Create Sales Quote / Estimate" size="5xl">
       <form onSubmit={handleSubmit} className="space-y-4 text-xs mt-3">
         {error && (
           <div className="p-3 rounded-lg bg-red-50 text-red-700 flex items-center gap-2">
@@ -2753,7 +2753,7 @@ function QuoteDetailModal({
   };
 
   return (
-    <Modal open={Boolean(quoteId)} onClose={onClose} title={`Quote ${quote?.quoteNumber ?? ''}`} maxWidth="max-w-2xl">
+    <Modal open={Boolean(quoteId)} onClose={onClose} title={`Quote ${quote?.quoteNumber ?? ''}`} size="4xl">
       {loading ? (
         <div className="py-12 flex justify-center">
           <div className="w-6 h-6 border-2 border-forest-900 border-t-transparent rounded-full animate-spin" />
@@ -2933,7 +2933,7 @@ function CreateCreditNoteModal({ open, onClose, onCreated }: CreateCreditNoteMod
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Issue Customer Credit Note" maxWidth="max-w-2xl">
+    <Modal open={open} onClose={onClose} title="Issue Customer Credit Note" size="5xl">
       <form onSubmit={handleSubmit} className="space-y-4 text-xs mt-3">
         {error && (
           <div className="p-3 bg-red-50 text-red-700 rounded flex items-center gap-2">
@@ -3084,7 +3084,7 @@ function CreditNoteDetailModal({
   };
 
   return (
-    <Modal open={Boolean(creditNoteId)} onClose={onClose} title={`Credit Note ${creditNote?.creditNoteNumber ?? ''}`} maxWidth="max-w-2xl">
+    <Modal open={Boolean(creditNoteId)} onClose={onClose} title={`Credit Note ${creditNote?.creditNoteNumber ?? ''}`} size="4xl">
       {loading ? (
         <div className="py-12 flex justify-center">
           <div className="w-6 h-6 border-2 border-forest-900 border-t-transparent rounded-full animate-spin" />
@@ -3223,7 +3223,7 @@ function AllocateCreditNoteModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Allocate Credit Note to Open Invoice" maxWidth="max-w-md">
+    <Modal open={open} onClose={onClose} title="Allocate Credit Note to Open Invoice" size="lg">
       <form onSubmit={handleSubmit} className="space-y-4 text-xs mt-3">
         {error && (
           <div className="p-3 bg-red-50 text-red-700 rounded flex items-center gap-2">
@@ -3354,7 +3354,7 @@ function CreateRecurringScheduleModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Create Recurring Invoice Schedule" maxWidth="max-w-md">
+    <Modal open={open} onClose={onClose} title="Create Recurring Invoice Schedule" size="xl">
       <form onSubmit={handleSubmit} className="space-y-4 text-xs mt-3">
         {error && (
           <div className="p-3 bg-red-50 text-red-700 rounded flex items-center gap-2">

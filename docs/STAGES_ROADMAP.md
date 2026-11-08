@@ -264,6 +264,29 @@ Development proceeds strictly **one module at a time**. We complete the backend 
     - Select multiple unpaid approved Bills (and/or approved Employee Expense Reimbursements).
     - Validate that the Organization and all selected payees have valid 6-digit Australian BSBs and Account Numbers.
     - Atomically record all constituent payments, update bill/claim statuses, post the consolidated GL entry, and generate a downloadable **APCA-compliant `.aba` (Cemtex) bank file** for 1-click upload to Australian business banking portals.
+- [x] **5.6 AP Precision UX, Line Item Coding Parity, Modal Scaling & Horizontal (Landscape A4) Vendor Bill Preview Engine**:
+  - **Comprehensive Bill Coding Section (`CreateBillModal`)**:
+    - Item / SKU catalog selector from `/api/v1/items` (`isPurchased: true`) with auto-population of description, purchase unit price, tax rate, and expense account.
+    - Multi-quantity lines with live unit price multiplication (`quantity * unitPrice`).
+    - Account selector: Allows coding lines to specific `EXPENSE`, `COGS`, or `ASSET` accounts (default `6000 Operating Expenses`).
+    - Cost Center / Tracking Dimension selector (`trackingOptionId`) for project/department attribution.
+    - "Save as Draft" vs "Approve Immediately & Post to GL" toggle for `ADMIN`/`ACCOUNTANT` users.
+    - Real-time Australian GST calculation preview (Subtotal, GST 10%, Total).
+    - Upgraded modal size to responsive `size="5xl"`.
+  - **Bill Detail & GL Coding Inspection (`BillDetailModal`)**:
+    - Upgraded modal size to `size="5xl"`.
+    - Tabular display of coded GL accounts and Cost Centers on each line item.
+    - "Print Preview (A4)" action opening `BillPreviewModal`.
+  - **Horizontal (Landscape A4) Vendor Bill & Remittance Preview (`BillPreviewModal`)**:
+    - Commercial Landscape A4 preview sheet (`@page { size: A4 landscape; margin: 8mm; }`).
+    - Complete supplier card (ABN, address, contact), purchaser card, line items schedule with GL account codes and cost centers, financial calculation summary, and vendor EFT remittance advice (BSB, Account Number from Contact profile).
+    - Browser print / "Save as PDF" engine with print-isolated styles.
+  - **Universal Modal Scaling & Parity Sweep**:
+    - Expenses: Upgraded `RecordDirectSpendModal` and `CreateEditClaimModal` to `size="5xl"`, `ExpenseClaimDetailModal` and `CreateBatchModal` to `size="4xl"`.
+    - Purchase Orders: Upgraded `CreatePOModal` to `size="5xl"` with Tracking Dimension support, `PODetailModal` to `size="4xl"`.
+    - Vendor Credits: Upgraded `CreateVendorCreditModal` to `size="5xl"` with Item/Account/Tracking coding, `VendorCreditDetailModal` to `size="4xl"`.
+    - Quotes & AR Credit Notes: Upgraded `CreateQuoteModal` and `CreateCreditNoteModal` to `size="5xl"` with Tracking Dimension support, detail modals to `size="4xl"`.
+    - Legacy sizing cleanup: Replaced deprecated `maxWidth` props with standard `size` presets across all application modals.
 
 ---
 

@@ -19,6 +19,7 @@ import {
   ArrowRight,
   Receipt,
   FileCheck2,
+  Printer,
 } from 'lucide-react';
 import {
   billApi,
@@ -40,6 +41,7 @@ import {
   type Contact,
   type Account,
   type Item,
+  type TrackingCategory,
   type TaxTreatment,
   ApiError,
 } from '@/api/client';
@@ -47,6 +49,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { StatusTag } from '@/components/ui/StatusTag';
+import { BillPreviewModal } from '@/components/BillPreviewModal';
 
 function formatCents(cents: number): string {
   return new Intl.NumberFormat('en-AU', {
@@ -1052,11 +1055,15 @@ function BillStatusBadge({ status }: { status: BillStatus }) {
   }
 }
 
-interface LineItemDraft {
+interface BillLineDraft {
   id: string;
+  itemId?: string;
   description: string;
-  amount: string;
+  quantity: number;
+  unitPrice: string;
   taxTreatment: TaxTreatment;
+  accountId?: string;
+  trackingOptionId?: string;
 }
 
 interface CreateBillModalProps {
@@ -1067,10 +1074,14 @@ interface CreateBillModalProps {
 
 function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
   const [vendors, setVendors] = useState<Contact[]>([]);
-  const [loadingVendors, setLoadingVendors] = useState(true);
+  const [items, setItems] = useState<Item[]>([]);
+  const [expenseAccounts, setExpenseAccounts] = useState<Account[]>([]);
+  const [trackingCategories, setTrackingCategories] = useState<TrackingCategory[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
 
   // Form fields
   const [contactId, setContactId] = useState('');
+  const [billNumber, setBillNumber] = useState('');
   const [reference, setReference] = useState('');
   const [issueDate, setIssueDate] = useState(
     new Date().toISOString().slice(0, 10),
@@ -1080,13 +1091,15 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
     d.setDate(d.getDate() + 30);
     return d.toISOString().slice(0, 10);
   });
+  const [autoApprove, setAutoApprove] = useState(true);
   const [notes, setNotes] = useState('');
 
-  const [lineItems, setLineItems] = useState<LineItemDraft[]>([
+  const [lineItems, setLineItems] = useState<BillLineDraft[]>([
     {
       id: '1',
-      description: 'Consulting services',
-      amount: '100.00',
+      description: 'Vendor Supplies / Consulting Services',
+      quantity: 1,
+      unitPrice: '100.00',
       taxTreatment: 'TAX_EXCLUSIVE',
     },
   ]);
@@ -1094,30 +1107,43 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch vendors on load
+  // Fetch initial master data
   useEffect(() => {
-    async function loadVendors() {
+    async function loadData() {
       try {
-        const res = await contactApi.list();
-        const vendorList = res.contacts.filter(
+        setLoadingData(true);
+        const [cRes, iRes, aRes, tRes] = await Promise.all([
+          contactApi.list(),
+          itemApi.list(),
+          accountApi.list(),
+          accountApi.listTrackingCategories(),
+        ]);
+        const vendorList = cRes.contacts.filter(
           (c) => c.type === 'VENDOR' || c.type === 'BOTH',
         );
         setVendors(vendorList);
         if (vendorList.length > 0) {
           setContactId(vendorList[0]!.id);
-          // Set due date based on contact paymentTermsDays
           const days = vendorList[0]!.paymentTermsDays || 30;
           const d = new Date();
           d.setDate(d.getDate() + days);
           setDueDate(d.toISOString().slice(0, 10));
         }
+
+        setItems(iRes.items.filter((it: Item) => it.isActive && it.isPurchased));
+        setExpenseAccounts(
+          aRes.accounts.filter(
+            (a: Account) => (a.type === 'EXPENSE' || a.type === 'ASSET') && a.isActive,
+          ),
+        );
+        setTrackingCategories(tRes.categories || []);
       } catch {
-        setError('Failed to load vendors.');
+        setError('Failed to load vendors, catalog items, or accounts.');
       } finally {
-        setLoadingVendors(false);
+        setLoadingData(false);
       }
     }
-    void loadVendors();
+    void loadData();
   }, []);
 
   const handleVendorChange = (id: string) => {
@@ -1131,13 +1157,31 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
     }
   };
 
+  const handleItemSelect = (index: number, itemId: string) => {
+    const found = items.find((i) => i.id === itemId);
+    setLineItems((prev) =>
+      prev.map((l, i) => {
+        if (i !== index) return l;
+        return {
+          ...l,
+          itemId: itemId || undefined,
+          description: found ? (found.purchaseDescription || found.name) : l.description,
+          unitPrice: found ? (found.purchaseUnitPriceCents / 100).toFixed(2) : l.unitPrice,
+          taxTreatment: found ? found.purchaseTaxTreatment : l.taxTreatment,
+          accountId: found?.expenseAccountId || l.accountId,
+        };
+      }),
+    );
+  };
+
   const addLineItem = () => {
     setLineItems((prev) => [
       ...prev,
       {
         id: String(Date.now()),
         description: '',
-        amount: '',
+        quantity: 1,
+        unitPrice: '0.00',
         taxTreatment: 'TAX_EXCLUSIVE',
       },
     ]);
@@ -1148,83 +1192,106 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
     setLineItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const updateLineItem = (
+  const updateLineItem = <K extends keyof BillLineDraft>(
     id: string,
-    field: keyof LineItemDraft,
-    val: string,
+    field: K,
+    val: BillLineDraft[K],
   ) => {
     setLineItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, [field]: val } : item)),
     );
   };
 
-  // Preview computations
+  // Real-time GST calculation preview
   const previewTotals = useMemo(() => {
     let subtotalCents = 0;
     let gstCents = 0;
 
     for (const item of lineItems) {
-      const val = parseFloat(item.amount) || 0;
-      const cents = Math.round(val * 100);
-      if (cents <= 0) continue;
+      const dollars = parseFloat(item.unitPrice) || 0;
+      const qty = item.quantity || 1;
+      const rawCents = Math.round(dollars * 100) * qty;
 
-      if (item.taxTreatment === 'TAX_EXCLUSIVE') {
-        const sub = cents;
-        const gst = Math.round(sub * 0.1);
-        subtotalCents += sub;
-        gstCents += gst;
-      } else if (item.taxTreatment === 'TAX_INCLUSIVE') {
-        const total = cents;
-        const gst = Math.round(total - total / 1.1);
-        const sub = total - gst;
-        subtotalCents += sub;
-        gstCents += gst;
-      } else {
-        // GST_FREE
-        subtotalCents += cents;
+      if (rawCents <= 0) continue;
+
+      switch (item.taxTreatment) {
+        case 'TAX_EXCLUSIVE': {
+          const gst = Math.round(rawCents * 0.1);
+          subtotalCents += rawCents;
+          gstCents += gst;
+          break;
+        }
+        case 'TAX_INCLUSIVE': {
+          const subtotal = Math.round(rawCents / 1.1);
+          const gst = rawCents - subtotal;
+          subtotalCents += subtotal;
+          gstCents += gst;
+          break;
+        }
+        case 'GST_FREE': {
+          subtotalCents += rawCents;
+          break;
+        }
       }
     }
 
-    const totalCents = subtotalCents + gstCents;
-    return { subtotalCents, gstCents, totalCents };
+    return {
+      subtotalCents,
+      gstCents,
+      totalCents: subtotalCents + gstCents,
+    };
   }, [lineItems]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+
     if (!contactId) {
-      setError('Please select a vendor.');
+      setError('Please select a vendor contact.');
       return;
     }
 
-    const payloadLineItems = [];
+    // Validate line items
+    const parsedLineItems = [];
     for (const item of lineItems) {
       if (!item.description.trim()) {
-        setError('Line item description cannot be empty.');
+        setError('All line items must have a description.');
         return;
       }
-      const dollars = parseFloat(item.amount);
-      if (isNaN(dollars) || dollars <= 0) {
-        setError('Line item amount must be a positive number.');
+      const dollars = parseFloat(item.unitPrice);
+      if (isNaN(dollars) || dollars < 0) {
+        setError('Unit price must be a non-negative number.');
         return;
       }
-      payloadLineItems.push({
+      const qty = item.quantity || 1;
+      if (qty <= 0) {
+        setError('Quantity must be greater than zero.');
+        return;
+      }
+      const priceCents = Math.round(dollars * 100);
+      parsedLineItems.push({
+        itemId: item.itemId || undefined,
         description: item.description.trim(),
-        amountCents: Math.round(dollars * 100),
+        quantity: qty,
+        unitPriceCents: priceCents,
+        amountCents: priceCents * qty,
         taxTreatment: item.taxTreatment,
+        accountId: item.accountId || undefined,
+        trackingOptionId: item.trackingOptionId || undefined,
       });
     }
 
     setSubmitting(true);
-    setError(null);
-
     try {
       const res = await billApi.create({
         contactId,
+        billNumber: billNumber.trim() || undefined,
         reference: reference.trim() || null,
         issueDate,
         dueDate,
+        autoApprove,
         notes: notes.trim() || null,
-        lineItems: payloadLineItems,
+        lineItems: parsedLineItems,
       });
       onCreated(res.bill);
     } catch (err) {
@@ -1242,35 +1309,35 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Record New Bill"
-      description="Create a vendor bill with line items and automatic double-entry ledger posting."
-      maxWidth="max-w-2xl"
+      title="Record Vendor Bill"
+      description="Record a supplier invoice with item catalog auto-fill, custom line items, tracking dimensions, and automatic double-entry ledger posting."
+      size="5xl"
     >
-      <form onSubmit={handleSubmit} className="space-y-5 mt-4">
+      <form onSubmit={handleSubmit} className="space-y-4 mt-2">
         {error && (
-          <div className="rounded-lg bg-red-50 border border-red-200 px-3.5 py-2.5">
-            <p className="text-xs text-red-700">{error}</p>
+          <div className="p-3 rounded-lg bg-red-50 text-red-700 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="block text-xs font-medium text-slate-700">
-              Vendor Contact
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Vendor Contact Selection */}
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">
+              Vendor Contact <span className="text-red-500">*</span>
             </label>
-            {loadingVendors ? (
-              <div className="h-10 rounded-lg border border-slate-200 bg-slate-50 flex items-center px-3 text-xs text-slate-400">
-                Loading vendors…
-              </div>
+            {loadingData ? (
+              <div className="text-xs text-slate-400 py-2">Loading vendor contacts…</div>
             ) : vendors.length === 0 ? (
-              <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
-                No vendors found. Please create a vendor in Contacts first.
+              <div className="text-xs text-amber-700 bg-amber-50 p-2 rounded-md">
+                No vendor contacts found. Add a contact with type VENDOR or BOTH first.
               </div>
             ) : (
               <select
                 value={contactId}
                 onChange={(e) => handleVendorChange(e.target.value)}
-                className="w-full h-10 px-3 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-forest-900"
+                className="w-full text-xs rounded-lg border border-slate-200 px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900"
                 required
               >
                 {vendors.map((v) => (
@@ -1282,15 +1349,23 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
             )}
           </div>
 
+          {/* Vendor Reference / Tax Invoice # */}
           <Input
-            label="Vendor Reference / Invoice #"
+            label="Vendor Reference / Tax Invoice #"
+            placeholder="e.g. INV-98214"
             value={reference}
             onChange={(e) => setReference(e.target.value)}
-            placeholder="INV-98214"
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Input
+            label="Internal Bill Number (Optional)"
+            placeholder="e.g. BILL-1001 (auto if blank)"
+            value={billNumber}
+            onChange={(e) => setBillNumber(e.target.value)}
+            mono
+          />
           <Input
             label="Issue Date"
             type="date"
@@ -1307,83 +1382,222 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
           />
         </div>
 
-        {/* Dynamic Line Items Table */}
+        {/* Workflow Approval Mode Toggle */}
+        <div className="bg-slate-50 p-3 rounded-lg border border-slate-200/80 flex items-center justify-between">
+          <div className="space-y-0.5">
+            <span className="text-xs font-medium text-slate-800">
+              Approval & General Ledger Posting
+            </span>
+            <p className="text-[11px] text-slate-500">
+              {autoApprove
+                ? 'Approve immediately: Posts double-entry journal (DR Expense, DR GST, CR AP) with status Awaiting Payment.'
+                : 'Save as draft: Stored with status Pending Approval without posting to the General Ledger.'}
+            </p>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={autoApprove}
+              onChange={(e) => setAutoApprove(e.target.checked)}
+              className="rounded border-slate-300 text-forest-900 focus:ring-forest-900 h-4 w-4"
+            />
+            <span className="text-xs font-semibold text-forest-950">
+              {autoApprove ? 'Approve Immediately' : 'Save as Draft'}
+            </span>
+          </label>
+        </div>
+
+        {/* Dynamic Line Items Section */}
         <div className="space-y-2 pt-2 border-t border-slate-100">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-800">Line Items</span>
-            <button
+            <label className="text-xs font-medium text-slate-700">
+              Line Items (Catalog or Ad-Hoc Description & Multi-Qty)
+            </label>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={addLineItem}
-              className="text-xs font-medium text-forest-700 hover:text-forest-900 inline-flex items-center gap-1"
+              className="inline-flex items-center gap-1 text-xs py-1 h-7"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Line</span>
-            </button>
+              <span>Add Line Item</span>
+            </Button>
           </div>
 
-          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-            {lineItems.map((item, idx) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-2 bg-slate-50/75 p-2 rounded-lg border border-slate-200/60"
-              >
-                <div className="flex-1 min-w-0">
-                  <input
-                    type="text"
-                    value={item.description}
-                    onChange={(e) =>
-                      updateLineItem(item.id, 'description', e.target.value)
-                    }
-                    placeholder={`Description ${idx + 1}`}
-                    className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900"
-                    required
-                  />
-                </div>
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+            {lineItems.map((item, idx) => {
+              const lineTotalDollars =
+                ((parseFloat(item.unitPrice) || 0) * (item.quantity || 1)).toFixed(2);
 
-                <div className="w-28">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    value={item.amount}
-                    onChange={(e) =>
-                      updateLineItem(item.id, 'amount', e.target.value)
-                    }
-                    placeholder="0.00"
-                    className="w-full px-2.5 py-1.5 text-xs text-right font-mono rounded border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900"
-                    required
-                  />
-                </div>
-
-                <div className="w-36">
-                  <select
-                    value={item.taxTreatment}
-                    onChange={(e) =>
-                      updateLineItem(
-                        item.id,
-                        'taxTreatment',
-                        e.target.value as TaxTreatment,
-                      )
-                    }
-                    className="w-full py-1.5 px-2 text-xs rounded border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900"
-                  >
-                    <option value="TAX_EXCLUSIVE">Tax Exclusive (10%)</option>
-                    <option value="TAX_INCLUSIVE">Tax Inclusive (10%)</option>
-                    <option value="GST_FREE">GST Free (0%)</option>
-                  </select>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => removeLineItem(item.id)}
-                  disabled={lineItems.length === 1}
-                  className="p-1.5 text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:hover:text-slate-400"
-                  title="Remove item"
+              return (
+                <div
+                  key={item.id}
+                  className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/80 space-y-2"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
+                  <div className="grid grid-cols-12 gap-2 items-center">
+                    {/* Item / SKU Selector */}
+                    <div className="col-span-12 sm:col-span-3">
+                      <select
+                        value={item.itemId || ''}
+                        onChange={(e) => handleItemSelect(idx, e.target.value)}
+                        className="w-full text-xs rounded border border-slate-200 px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900"
+                      >
+                        <option value="">(Custom / Ad-Hoc Expense)</option>
+                        {items.map((it) => (
+                          <option key={it.id} value={it.id}>
+                            {it.code} — {it.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Description */}
+                    <div className="col-span-12 sm:col-span-4">
+                      <input
+                        type="text"
+                        placeholder="Description"
+                        value={item.description}
+                        onChange={(e) =>
+                          updateLineItem(item.id, 'description', e.target.value)
+                        }
+                        className="w-full text-xs rounded border border-slate-200 px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900"
+                        required
+                      />
+                    </div>
+
+                    {/* Quantity */}
+                    <div className="col-span-3 sm:col-span-1">
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        placeholder="Qty"
+                        value={item.quantity}
+                        onChange={(e) =>
+                          updateLineItem(
+                            item.id,
+                            'quantity',
+                            parseInt(e.target.value, 10) || 1,
+                          )
+                        }
+                        className="w-full text-xs rounded border border-slate-200 px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900 font-mono text-center"
+                        required
+                      />
+                    </div>
+
+                    {/* Unit Price */}
+                    <div className="col-span-4 sm:col-span-2">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="Unit ($)"
+                        value={item.unitPrice}
+                        onChange={(e) =>
+                          updateLineItem(item.id, 'unitPrice', e.target.value)
+                        }
+                        className="w-full text-xs rounded border border-slate-200 px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-forest-900 font-mono"
+                        required
+                      />
+                    </div>
+
+                    {/* Line Amount Preview */}
+                    <div className="col-span-4 sm:col-span-1 text-right font-mono text-xs font-semibold text-slate-800 pr-1">
+                      ${lineTotalDollars}
+                    </div>
+
+                    {/* Delete Line */}
+                    <div className="col-span-1 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => removeLineItem(item.id)}
+                        disabled={lineItems.length === 1}
+                        className="p-1.5 text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:hover:text-slate-400"
+                        title="Remove item"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Sub-row: Expense Account, Tax Treatment & Cost Center Tracking */}
+                  <div className="grid grid-cols-12 gap-2 items-center pt-1 border-t border-slate-200/50 text-[11px]">
+                    {/* Expense Account */}
+                    <div className="col-span-12 sm:col-span-4 flex items-center gap-1.5">
+                      <span className="text-slate-500 whitespace-nowrap">Account:</span>
+                      <select
+                        value={item.accountId || ''}
+                        onChange={(e) =>
+                          updateLineItem(
+                            item.id,
+                            'accountId',
+                            e.target.value || undefined,
+                          )
+                        }
+                        className="w-full rounded border border-slate-200 px-1.5 py-1 bg-white text-[11px] focus:outline-none focus:ring-1 focus:ring-forest-900"
+                      >
+                        <option value="">Default 6000 Operating Expenses</option>
+                        {expenseAccounts.map((acc) => (
+                          <option key={acc.id} value={acc.id}>
+                            {acc.code} - {acc.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Tax Treatment */}
+                    <div className="col-span-12 sm:col-span-4 flex items-center gap-1.5">
+                      <span className="text-slate-500 whitespace-nowrap">Tax:</span>
+                      <select
+                        value={item.taxTreatment}
+                        onChange={(e) =>
+                          updateLineItem(
+                            item.id,
+                            'taxTreatment',
+                            e.target.value as TaxTreatment,
+                          )
+                        }
+                        className="w-full rounded border border-slate-200 px-1.5 py-1 bg-white text-[11px] focus:outline-none focus:ring-1 focus:ring-forest-900"
+                      >
+                        <option value="TAX_EXCLUSIVE">Tax Exclusive (10% GST)</option>
+                        <option value="TAX_INCLUSIVE">Tax Inclusive (GST incl.)</option>
+                        <option value="GST_FREE">GST Free (0%)</option>
+                      </select>
+                    </div>
+
+                    {/* Cost Center / Tracking Category */}
+                    <div className="col-span-12 sm:col-span-4 flex items-center gap-1.5">
+                      <span className="text-slate-500 whitespace-nowrap">Dimension:</span>
+                      <select
+                        value={item.trackingOptionId || ''}
+                        onChange={(e) =>
+                          updateLineItem(
+                            item.id,
+                            'trackingOptionId',
+                            e.target.value || undefined,
+                          )
+                        }
+                        className="w-full rounded border border-slate-200 px-1.5 py-1 bg-white text-[11px] focus:outline-none focus:ring-1 focus:ring-forest-900"
+                      >
+                        <option value="">(No Tracking Dimension)</option>
+                        {trackingCategories.map((cat) => (
+                          <optgroup key={cat.id} label={cat.name}>
+                            {cat.options
+                              ?.filter((opt) => opt.isActive)
+                              .map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {cat.name}: {opt.name}
+                                </option>
+                              ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* Real-time Subtotal, GST, Total Breakdown */}
@@ -1425,7 +1639,11 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
             type="submit"
             disabled={submitting || vendors.length === 0}
           >
-            {submitting ? 'Recording…' : 'Record Bill & Post to Ledger'}
+            {submitting
+              ? 'Recording…'
+              : autoApprove
+              ? 'Record Bill & Post to Ledger'
+              : 'Save as Draft Bill'}
           </Button>
         </div>
       </form>
@@ -1446,18 +1664,27 @@ interface BillDetailModalProps {
 function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProps) {
   const [bill, setBill] = useState<Bill | null>(null);
   const [journalEntry, setJournalEntry] = useState<any | null>(null);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [trackingCategories, setTrackingCategories] = useState<TrackingCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       setError(null);
       try {
-        const res = await billApi.get(billId);
+        const [res, accRes, catRes] = await Promise.all([
+          billApi.get(billId),
+          accountApi.list().catch(() => ({ accounts: [] })),
+          accountApi.listTrackingCategories().catch(() => ({ categories: [] })),
+        ]);
         setBill(res.bill);
         setJournalEntry(res.journalEntry);
+        setAccounts(accRes.accounts || []);
+        setTrackingCategories(catRes.categories || []);
       } catch (err) {
         if (err instanceof ApiError) setError(err.message);
         else setError('Failed to load bill details.');
@@ -1483,8 +1710,8 @@ function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProp
         open={Boolean(billId)}
         onClose={onClose}
         title="Bill Details & General Ledger Posting"
-        description="View vendor bill information, payment history, and double-entry transaction record."
-        maxWidth="max-w-2xl"
+        description="View vendor bill information, payment history, coding dimensions, and double-entry transaction record."
+        size="5xl"
       >
         {loading ? (
           <div className="py-12 flex flex-col items-center justify-center gap-2">
@@ -1504,8 +1731,8 @@ function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProp
                 <p className="font-medium text-slate-900 mt-0.5">{bill.contact?.name}</p>
               </div>
               <div>
-                <p className="text-slate-400">Reference</p>
-                <p className="font-mono text-slate-900 mt-0.5">{bill.reference ?? '—'}</p>
+                <p className="text-slate-400">Reference / Bill #</p>
+                <p className="font-mono text-slate-900 mt-0.5">{bill.reference ?? bill.billNumber ?? '—'}</p>
               </div>
               <div>
                 <p className="text-slate-400">Issue Date</p>
@@ -1537,38 +1764,64 @@ function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProp
               </div>
             </div>
 
-            {/* Line items list */}
+            {/* Line items list with Account & Cost Center Coding */}
             <div className="space-y-2">
-              <p className="font-medium text-slate-900">Line Items</p>
+              <p className="font-medium text-slate-900">Line Items & Account Coding</p>
               <div className="border border-slate-200 rounded-xl overflow-hidden">
                 <table className="w-full text-left">
                   <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                     <tr>
                       <th className="py-2.5 px-3">Description</th>
+                      <th className="py-2.5 px-3">Account & Dimension</th>
                       <th className="py-2.5 px-3">Tax Treatment</th>
+                      <th className="py-2.5 px-3 text-center">Qty</th>
                       <th className="py-2.5 px-3 text-right">Subtotal</th>
                       <th className="py-2.5 px-3 text-right">GST</th>
                       <th className="py-2.5 px-3 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {bill.lineItems?.map((li) => (
-                      <tr key={li.id}>
-                        <td className="py-2 px-3 text-slate-800">{li.description}</td>
-                        <td className="py-2 px-3 text-slate-500">
-                          {li.taxTreatment.replace('_', ' ')}
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono text-slate-600">
-                          {formatCents(li.amountCents)}
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono text-slate-600">
-                          {formatCents(li.gstCents)}
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono text-slate-900 font-medium">
-                          {formatCents(li.totalCents)}
-                        </td>
-                      </tr>
-                    ))}
+                    {bill.lineItems?.map((li) => {
+                      const acc = accounts.find((a) => a.id === li.accountId);
+                      const opt = trackingCategories
+                        .flatMap((c) => c.options || [])
+                        .find((o) => o.id === li.trackingOptionId);
+
+                      return (
+                        <tr key={li.id}>
+                          <td className="py-2 px-3 text-slate-800">{li.description}</td>
+                          <td className="py-2 px-3 text-[11px] text-slate-600">
+                            {acc ? (
+                              <span className="font-mono text-slate-800">
+                                {acc.code} - {acc.name}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic">Default AP Expense</span>
+                            )}
+                            {opt && (
+                              <div className="text-[10px] text-forest-800 font-medium">
+                                Dim: {opt.name}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-slate-500">
+                            {li.taxTreatment.replace('_', ' ')}
+                          </td>
+                          <td className="py-2 px-3 text-center font-mono text-slate-600">
+                            {li.quantity ?? 1}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono text-slate-600">
+                            {formatCents(li.amountCents)}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono text-slate-600">
+                            {formatCents(li.gstCents)}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono text-slate-900 font-medium">
+                            {formatCents(li.totalCents)}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1651,15 +1904,25 @@ function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProp
               <Button variant="outline" onClick={onClose}>
                 Close
               </Button>
-              {canPay && (
+              <div className="flex items-center gap-2">
                 <Button
-                  onClick={() => setIsPayModalOpen(true)}
+                  variant="outline"
+                  onClick={() => setIsPreviewOpen(true)}
                   className="inline-flex items-center gap-1.5"
                 >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  <span>Record Payment</span>
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Preview (A4)</span>
                 </Button>
-              )}
+                {canPay && (
+                  <Button
+                    onClick={() => setIsPayModalOpen(true)}
+                    className="inline-flex items-center gap-1.5"
+                  >
+                    <CreditCard className="w-3.5 h-3.5" />
+                    <span>Record Payment</span>
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1672,6 +1935,17 @@ function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProp
           bill={bill}
           onClose={() => setIsPayModalOpen(false)}
           onPaymentRecorded={handlePaymentSuccess}
+        />
+      )}
+
+      {/* Landscape A4 Voucher Print Preview Modal */}
+      {bill && (
+        <BillPreviewModal
+          open={isPreviewOpen}
+          onClose={() => setIsPreviewOpen(false)}
+          bill={bill}
+          accounts={accounts}
+          trackingCategories={trackingCategories}
         />
       )}
     </>
@@ -1744,7 +2018,7 @@ function RecordPaymentModal({
       onClose={onClose}
       title="Record Payment Out"
       description={`Record an outgoing payment to ${bill.contact?.name} for bill ${bill.reference ?? bill.id.slice(0, 8)}.`}
-      maxWidth="max-w-md"
+      size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4 mt-3">
         {error && (
@@ -1957,7 +2231,7 @@ function CreatePOModal({ open, onClose, onCreated }: CreatePOModalProps) {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Create Purchase Order" maxWidth="max-w-3xl">
+    <Modal open={open} onClose={onClose} title="Create Purchase Order" size="5xl">
       <form onSubmit={handleSubmit} className="space-y-4 text-xs mt-3">
         {error && (
           <div className="p-3 bg-red-50 text-red-700 rounded flex items-center gap-2">
@@ -2184,7 +2458,7 @@ function PODetailModal({
   };
 
   return (
-    <Modal open={Boolean(poId)} onClose={onClose} title={`Purchase Order ${po?.poNumber ?? ''}`} maxWidth="max-w-2xl">
+    <Modal open={Boolean(poId)} onClose={onClose} title={`Purchase Order ${po?.poNumber ?? ''}`} size="4xl">
       {loading ? (
         <div className="py-12 flex justify-center">
           <div className="w-6 h-6 border-2 border-forest-900 border-t-transparent rounded-full animate-spin" />
@@ -2338,7 +2612,7 @@ function CreateVendorCreditModal({ open, onClose, onCreated }: CreateVendorCredi
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Record Vendor Credit Note" maxWidth="max-w-2xl">
+    <Modal open={open} onClose={onClose} title="Record Vendor Credit Note" size="5xl">
       <form onSubmit={handleSubmit} className="space-y-4 text-xs mt-3">
         {error && (
           <div className="p-3 bg-red-50 text-red-700 rounded flex items-center gap-2">
@@ -2489,7 +2763,7 @@ function VendorCreditDetailModal({
   };
 
   return (
-    <Modal open={Boolean(creditId)} onClose={onClose} title={`Vendor Credit ${credit?.creditNumber ?? ''}`} maxWidth="max-w-2xl">
+    <Modal open={Boolean(creditId)} onClose={onClose} title={`Vendor Credit ${credit?.creditNumber ?? ''}`} size="4xl">
       {loading ? (
         <div className="py-12 flex justify-center">
           <div className="w-6 h-6 border-2 border-forest-900 border-t-transparent rounded-full animate-spin" />
@@ -2628,7 +2902,7 @@ function AllocateVendorCreditModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Allocate Vendor Credit to Open Bill" maxWidth="max-w-md">
+    <Modal open={open} onClose={onClose} title="Allocate Vendor Credit to Open Bill" size="lg">
       <form onSubmit={handleSubmit} className="space-y-4 text-xs mt-3">
         {error && (
           <div className="p-3 bg-red-50 text-red-700 rounded flex items-center gap-2">
@@ -2777,7 +3051,7 @@ function CreateBatchPaymentModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Execute .ABA Batch Payment Run" maxWidth="max-w-2xl">
+    <Modal open={open} onClose={onClose} title="Execute .ABA Batch Payment Run" size="4xl">
       <form onSubmit={handleSubmit} className="space-y-4 text-xs mt-3">
         {error && (
           <div className="p-3 bg-red-50 text-red-700 rounded flex items-center gap-2">
@@ -2943,7 +3217,7 @@ function CreateRecurringBillModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Create Recurring Bill Schedule" maxWidth="max-w-md">
+    <Modal open={open} onClose={onClose} title="Create Recurring Bill Schedule" size="xl">
       <form onSubmit={handleSubmit} className="space-y-4 text-xs mt-3">
         {error && (
           <div className="p-3 bg-red-50 text-red-700 rounded flex items-center gap-2">
