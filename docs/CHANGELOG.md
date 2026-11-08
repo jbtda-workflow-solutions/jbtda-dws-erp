@@ -4,6 +4,22 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.17.4] — 2026-11-08 — Zero-Ambiguity Entrypoint & Configuration Protocol Documentation
+
+### Added
+- `AGENTS.md`:
+  - Added **Rule 14: Zero-Ambiguity Entrypoint & Configuration Documentation Protocol**. Mandates that all network entrypoints, access paths, API routes, infrastructure probes, and client routes are exhaustively documented with zero implied routes permitted, and all environment variables and secrets are documented with explicit permitted values, defaults, and failure behaviors.
+  - Expanded Cloud Run Runtime Configuration tables to document all 14 environment variables, parameters, and secrets (`INSTANCE_CONNECTION_NAME`, `GOOGLE_CLIENT_ID`, `DB_USER`, `DB_NAME`, `FRONTEND_ORIGIN`, `NODE_ENV`, `AUTO_SCHEMA_PUSH`, `DB_FORCE_RESET`, `PORT`, `HOST`, `FRONTEND_DIST_PATH`, `DB_PASSWORD`, `SESSION_SECRET`, `WEBHOOK_SECRET`) with source, required status, permitted values, failure behaviors, and exact purposes.
+- `docs/ARCHITECTURE.md`:
+  - Added **Master Monolith Entrypoint Directory** cataloging every infrastructure probe, HTTP API endpoint (across 13 domain modules and 60+ routes), and client-side route with exact paths, authentication requirements, RBAC scopes, request/response specifications, and side effects.
+  - Synchronized Cloud Run Container Configuration tables with explicit validation and failure handling rules.
+- `AGENT_SPECIFICATION.md`:
+  - Synchronized Cloud Run Runtime Configuration tables with explicit validation rules and failure behaviors.
+- `docs/SECURITY.md`:
+  - Added **Explicit Public vs Authenticated Entrypoint Boundaries** section classifying public unauthenticated endpoints (`/healthz`, `/api/v1/auth/config`, `/api/v1/auth/google`, and `/`) versus strictly authenticated and RBAC-gated endpoints.
+
+---
+
 ## [0.17.3] — 2026-11-08 — Automated Schema Push & Rebuild on Boot via Cloud Run Environment Flags
 
 ### Added

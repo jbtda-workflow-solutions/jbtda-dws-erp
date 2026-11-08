@@ -103,28 +103,34 @@ The application is deployed as a single, unified container on Google Cloud Run t
 
 ### Cloud Run Runtime Configuration (Variables & Secrets)
 
-The application relies strictly on Google Cloud Run container configuration (zero `.env` files in production):
+The application relies strictly on Google Cloud Run container configuration (zero `.env` files in production).
+Every variable and secret must be explicitly defined. **No configuration values may be left empty or omitted.**
 
 1. **Cloud SQL Connections (Cloud Run UI):**
    - Attached Instance: `PROJECT_ID:REGION:INSTANCE_NAME` (e.g. `digitalworkflowsolutions-erp:us-central1:erp`).
    - Cloud Run mounts the Unix socket at `/cloudsql/<INSTANCE_CONNECTION_NAME>`, which Fastify discovers automatically.
 
 2. **Environment Variables (Cloud Run UI):**
-   | Variable | Description / Purpose |
-   | :--- | :--- |
-   | `INSTANCE_CONNECTION_NAME` | Cloud SQL instance connection name (e.g. `PROJECT_ID:REGION:INSTANCE_NAME`). Explicitly targets the Unix socket `/cloudsql/<INSTANCE_CONNECTION_NAME>`. Essential for multi-tenant isolation and portable client forks. |
-   | `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Web Client ID (token verification & served to frontend via `/api/v1/auth/config`) |
-   | `DB_USER` | PostgreSQL user (e.g. `erp_admin`) |
-   | `DB_NAME` | PostgreSQL database name (e.g. `erp`) |
-   | `FRONTEND_ORIGIN` | Allowed origin for CORS (e.g. preview deployment URL or `http://localhost:5173`) |
-   | `NODE_ENV` | `production` |
+   | Variable | Source | Required / Default | Permitted Values | Failure Behavior | Description / Purpose |
+   | :--- | :--- | :--- | :--- | :--- | :--- |
+   | `INSTANCE_CONNECTION_NAME` | Cloud Run Env | Required in Cloud Run | Format: `PROJECT:REGION:INSTANCE` (non-empty string) | If missing or invalid, Unix socket `/cloudsql/<INSTANCE>` is not found; database connection fails | Cloud SQL instance connection name (`PROJECT_ID:REGION:INSTANCE_NAME`). Points database client explicitly to mounted socket at `/cloudsql/<INSTANCE_CONNECTION_NAME>`. Essential for multi-tenant isolation and portable client forks. |
+   | `GOOGLE_CLIENT_ID` | Cloud Run Env | Required | Non-empty Google OAuth Client ID string ending in `.apps.googleusercontent.com` | Google token verification rejects all tokens with `401 Unauthorized`; `/api/v1/auth/config` returns empty ID | Google OAuth 2.0 Web Client ID for authentication (used for token verification & served to frontend via `/api/v1/auth/config`). |
+   | `DB_USER` | Cloud Run Env | Required | Non-empty string (e.g. `erp_admin`) | Prisma connection throws PostgreSQL authentication error; `/healthz` returns `503 Service Unavailable` | Database username on the Cloud SQL PostgreSQL instance. |
+   | `DB_NAME` | Cloud Run Env | Required | Non-empty string (e.g. `erp`) | Prisma connection fails (database does not exist); `/healthz` returns `503 Service Unavailable` | Database name on the Cloud SQL instance. |
+   | `FRONTEND_ORIGIN` | Cloud Run Env | Required if cross-origin | Valid URL string (e.g. `http://localhost:5173`) | CORS preflight checks reject cross-origin requests in dev/preview | Allowed origin for CORS (e.g. preview deployment URL or `http://localhost:5173`). In unified production, frontend and API share the exact same origin. |
+   | `NODE_ENV` | Cloud Run Env | Required | `"production"` \| `"development"` | Defaults to development logging; cookie `Secure` flag may not be strictly enforced | Runtime environment mode. Must be set to `"production"` on Cloud Run. |
+   | `AUTO_SCHEMA_PUSH` | Cloud Run Env | Required | `"true"` \| `"false"` (must be explicit) | Server throws error and aborts startup if missing, empty, or not strictly `"true"` or `"false"` | Mandatory explicit flag: `"true"` in development/testing to run automatic `prisma db push --skip-generate --accept-data-loss` on container boot. Set to `"false"` in production. |
+   | `DB_FORCE_RESET` | Cloud Run Env | Required | `"true"` \| `"false"` (must be explicit) | Server throws error and aborts startup if missing, empty, or not strictly `"true"` or `"false"` | Mandatory explicit flag: `"true"` alongside `AUTO_SCHEMA_PUSH="true"` to completely drop and recreate all tables on boot. Set to `"false"` for standard operations. |
+   | `PORT` | Cloud Run Env | Optional (Default: `8080`) | Numeric integer string (e.g. `"8080"`) | Container fails Cloud Run health check if not listening on the port Cloud Run expects | Port Fastify binds to. Automatically injected by Cloud Run. |
+   | `HOST` | Cloud Run Env | Optional (Default: `"0.0.0.0"`) | IP string (e.g. `"0.0.0.0"`) | Binding to `127.0.0.1` causes container to be unreachable from outside | Host interface Fastify binds to. |
+   | `FRONTEND_DIST_PATH` | Cloud Run Env | Optional (Default: auto-discovery) | Valid directory path containing `index.html` (e.g. `"/app/frontend/dist"`) | Fastify logs warning and serves API-only fallback HTML page on root; SPA routes return 404 | Custom filesystem path for compiled frontend SPA assets. |
 
 3. **Secrets Exposed as Environment Variables (Secret Manager):**
-   | Secret in Secret Manager | Mounted Variable | Purpose |
-   | :--- | :--- | :--- |
-   | `user_erp_admin_pass...` | `DB_PASSWORD` | PostgreSQL user password |
-   | `erp_session_secret` | `SESSION_SECRET` | 32+ character random secret for signing and encrypting session cookies |
-   | `erp_webhook_secret` *(Stage 2)* | `WEBHOOK_SECRET` | 64-character secret for n8n asynchronous webhooks |
+   | Secret in Secret Manager | Mounted Variable | Required | Permitted Values | Failure Behavior | Purpose |
+   | :--- | :--- | :--- | :--- | :--- | :--- |
+   | Database user password (e.g. `user_erp_admin_pass...`) | `DB_PASSWORD` | Required | Non-empty string | Prisma connection throws PostgreSQL authentication error; `/healthz` returns `503` | PostgreSQL database user password. |
+   | Cookie session secret (e.g. `erp_session_secret`) | `SESSION_SECRET` | Required | Cryptographically random string $\ge 32$ characters | Unsigned session cookies cannot be parsed or verified; auth fails | Secret key used for signing and encrypting `erp_session` HttpOnly cookies. |
+   | Webhook secret (Stage 2) (e.g. `erp_webhook_secret`) | `WEBHOOK_SECRET` | Required for automations | Cryptographically random hex string of 64 characters | Outbound n8n webhook dispatches fail signature verification | 64-character webhook secret transmitted in `X-Webhook-Secret` header for n8n automations. |
 
 ---
 

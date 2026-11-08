@@ -64,6 +64,18 @@ Every authenticated route is decorated by a `preHandler` hook that:
 3. Returns `401 Unauthorized` if the cookie is missing or invalid.
 4. Returns `403 Forbidden` if the user lacks the required role for the route.
 
+### Explicit Public vs Authenticated Entrypoint Boundaries
+
+Per **AGENTS.md Rule 14**, all access paths must be explicitly classified. There are zero undocumented or implicitly open access paths:
+
+- **Strictly Unauthenticated / Public Endpoints:**
+  - `GET /healthz` — Cloud Run infrastructure health probe (returns 200 or 503).
+  - `GET /` & `GET /*` (non-API) — Static React SPA assets and client-side routing fallback.
+  - `GET /api/v1/auth/config` — Serves Google Client ID for client-side OAuth initialization.
+  - `POST /api/v1/auth/google` — OIDC token exchange and session cookie issuance.
+- **Strictly Authenticated Endpoints:**
+  - Every other endpoint under `/api/v1/*` requires a cryptographically valid `erp_session` cookie and is governed by the 7-Role RBAC Matrix below. Unauthenticated requests are rejected with `401 Unauthorized`. Unmatched `/api/*` routes are handled explicitly and return `404 Not Found` JSON.
+
 ---
 
 ## Onboarding Flow (Option B)
