@@ -175,13 +175,13 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 
 ---
 
-### Module 3: Master Data — Contacts Directory & Products/Services Catalog
+### Module 3: Master Data — Contacts Directory & Products/Services Catalog (✅ COMPLETED)
 **Objective:** Centralize customer/supplier master records (including Australian banking data for `.aba` payments) and establish a coded Products & Services catalog for rapid, error-free document entry.
 
-- [ ] **3.1 Enhanced Contacts Directory (`/contacts` & `/api/v1/contacts`)**:
+- [x] **3.1 Enhanced Contacts Directory (`/contacts` & `/api/v1/contacts`)**:
   - Fields: `type` (`CUSTOMER`, `VENDOR`, `BOTH`), `name`, `legalName`, `abn` (ATO checksum validated), `email`, `phone`, `billingAddress`, `paymentTermsDays`, `requiresInvoiceForPayment`, `defaultRevenueAccountId`, `defaultExpenseAccountId`, `bankBsb`, `bankAccountNumber`, `bankAccountName`, `isActive`.
   - Contact 360 Detail Drawer/View: Shows contact summary, total outstanding AR/AP, aging breakdown, and chronological history of quotes, invoices, bills, credit notes, and payments.
-- [ ] **3.2 Products & Services Catalog (`/items` & `/api/v1/items`)**:
+- [x] **3.2 Products & Services Catalog (`/items` & `/api/v1/items`)**:
   - Fields: `code` (SKU/Item code), `name`, `isSold`, `saleDescription`, `saleUnitPriceCents`, `saleTaxTreatment`, `incomeAccountId`, `isPurchased`, `purchaseDescription`, `purchaseUnitPriceCents`, `purchaseTaxTreatment`, `expenseAccountId`, `isTrackedInventory` (reserved flag for future Inventory module), `isActive`.
   - Dedicated **Items & Services Page (`/items`)** with search, filter (`All`, `Sales Items`, `Purchase Items`), and Create/Edit modal with filtered GL account pickers.
 

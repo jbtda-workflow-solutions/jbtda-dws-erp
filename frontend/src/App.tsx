@@ -5,6 +5,7 @@ import { OnboardingModal } from '@/pages/OnboardingModal';
 import { AppShell } from '@/components/AppShell';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { ContactsPage } from '@/pages/ContactsPage';
+import { ItemsPage } from '@/pages/ItemsPage';
 import { BillsPage } from '@/pages/BillsPage';
 import { InvoicesPage } from '@/pages/InvoicesPage';
 import { AccountsPage } from '@/pages/AccountsPage';
@@ -43,6 +44,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
+        <Route path="/items" element={<ItemsPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/bills" element={<BillsPage />} />
         <Route path="/accounts" element={<AccountsPage />} />

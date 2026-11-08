@@ -7,6 +7,7 @@ import {
   Receipt,
   BookOpen,
   Landmark,
+  Package,
   Settings,
   LogOut,
   Menu,
@@ -84,6 +85,19 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Contacts Directory',
         href: '/contacts',
         icon: Users,
+        allowedRoles: [
+          'ADMIN',
+          'ACCOUNTANT',
+          'MANAGER',
+          'AR_SPECIALIST',
+          'AP_SPECIALIST',
+          'AUDITOR',
+        ],
+      },
+      {
+        label: 'Items & Services',
+        href: '/items',
+        icon: Package,
         allowedRoles: [
           'ADMIN',
           'ACCOUNTANT',

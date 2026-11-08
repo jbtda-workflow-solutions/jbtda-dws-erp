@@ -354,6 +354,8 @@ export interface Contact {
   requiresInvoiceForPayment: boolean;
   defaultRevenueAccountId?: string | null;
   defaultExpenseAccountId?: string | null;
+  defaultRevenueAccount?: { id: string; code: string; name: string; type: string } | null;
+  defaultExpenseAccount?: { id: string; code: string; name: string; type: string } | null;
   bankBsb?: string | null;
   bankAccountNumber?: string | null;
   bankAccountName?: string | null;
@@ -365,20 +367,64 @@ export interface Contact {
 export interface CreateContactInput {
   type: ContactType;
   name: string;
+  legalName?: string | null;
   email?: string | null;
+  phone?: string | null;
+  billingAddress?: string | null;
   abn?: string | null;
   paymentTermsDays?: number;
   requiresInvoiceForPayment?: boolean;
+  defaultRevenueAccountId?: string | null;
+  defaultExpenseAccountId?: string | null;
+  bankBsb?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountName?: string | null;
 }
 
 export interface UpdateContactInput {
   type?: ContactType;
   name?: string;
+  legalName?: string | null;
   email?: string | null;
+  phone?: string | null;
+  billingAddress?: string | null;
   abn?: string | null;
   paymentTermsDays?: number;
   requiresInvoiceForPayment?: boolean;
+  defaultRevenueAccountId?: string | null;
+  defaultExpenseAccountId?: string | null;
+  bankBsb?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountName?: string | null;
   isActive?: boolean;
+}
+
+export interface ContactAgingBuckets {
+  currentCents: number;
+  days30Cents: number;
+  days60Cents: number;
+  days90PlusCents: number;
+}
+
+export interface ContactActivityItem {
+  id: string;
+  date: string;
+  docType: 'INVOICE' | 'BILL' | 'PAYMENT_IN' | 'PAYMENT_OUT' | 'QUOTE';
+  referenceNumber: string;
+  amountCents: number;
+  status?: string;
+  details?: string;
+}
+
+export interface Contact360Response {
+  contact: Contact;
+  summary: {
+    totalOutstandingArCents: number;
+    totalOutstandingApCents: number;
+    arAging: ContactAgingBuckets;
+    apAging: ContactAgingBuckets;
+  };
+  activity: ContactActivityItem[];
 }
 
 export const contactApi = {
@@ -401,11 +447,99 @@ export const contactApi = {
 
   get: (id: string) => request<{ contact: Contact }>('GET', `/contacts/${id}`),
 
+  get360: (id: string) => request<Contact360Response>('GET', `/contacts/${id}/360`),
+
   create: (data: CreateContactInput) =>
     request<{ contact: Contact }>('POST', '/contacts', data),
 
   update: (id: string, data: UpdateContactInput) =>
     request<{ contact: Contact }>('PATCH', `/contacts/${id}`, data),
+};
+
+// ---------------------------------------------------------------------------
+// Products & Services Catalog (Module 3)
+// ---------------------------------------------------------------------------
+
+export interface Item {
+  id: string;
+  organizationId: string;
+  code: string;
+  name: string;
+  isSold: boolean;
+  saleDescription: string | null;
+  saleUnitPriceCents: number;
+  saleTaxTreatment: TaxTreatment;
+  incomeAccountId: string | null;
+  incomeAccount?: { id: string; code: string; name: string; type: string } | null;
+  isPurchased: boolean;
+  purchaseDescription: string | null;
+  purchaseUnitPriceCents: number;
+  purchaseTaxTreatment: TaxTreatment;
+  expenseAccountId: string | null;
+  expenseAccount?: { id: string; code: string; name: string; type: string } | null;
+  isTrackedInventory: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateItemInput {
+  code: string;
+  name: string;
+  isSold?: boolean;
+  saleDescription?: string | null;
+  saleUnitPriceCents?: number;
+  saleTaxTreatment?: TaxTreatment;
+  incomeAccountId?: string | null;
+  isPurchased?: boolean;
+  purchaseDescription?: string | null;
+  purchaseUnitPriceCents?: number;
+  purchaseTaxTreatment?: TaxTreatment;
+  expenseAccountId?: string | null;
+  isTrackedInventory?: boolean;
+}
+
+export interface UpdateItemInput {
+  code?: string;
+  name?: string;
+  isSold?: boolean;
+  saleDescription?: string | null;
+  saleUnitPriceCents?: number;
+  saleTaxTreatment?: TaxTreatment;
+  incomeAccountId?: string | null;
+  isPurchased?: boolean;
+  purchaseDescription?: string | null;
+  purchaseUnitPriceCents?: number;
+  purchaseTaxTreatment?: TaxTreatment;
+  expenseAccountId?: string | null;
+  isTrackedInventory?: boolean;
+  isActive?: boolean;
+}
+
+export const itemApi = {
+  list: (params?: {
+    type?: 'ALL' | 'SALES' | 'PURCHASE';
+    search?: string;
+    includeInactive?: boolean;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.type && params.type !== 'ALL') query.set('type', params.type);
+    if (params?.search) query.set('search', params.search);
+    if (params?.includeInactive) query.set('includeInactive', 'true');
+    const qs = query.toString();
+    return request<{ items: Item[] }>('GET', `/items${qs ? `?${qs}` : ''}`);
+  },
+
+  get: (id: string) => request<{ item: Item }>('GET', `/items/${id}`),
+
+  create: (data: CreateItemInput) =>
+    request<{ item: Item }>('POST', '/items', data),
+
+  update: (id: string, data: UpdateItemInput) =>
+    request<{ item: Item }>('PATCH', `/items/${id}`, data),
+
+  delete: (id: string) =>
+    request<{ ok: boolean; message: string }>('DELETE', `/items/${id}`),
 };
 
 // ---------------------------------------------------------------------------

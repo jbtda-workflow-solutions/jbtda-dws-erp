@@ -4,6 +4,48 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.16.0] — 2026-11-08 — Module 3 Complete: Master Data — Contacts Directory & Products/Services Catalog
+
+### Added
+- `backend/src/routes/items.ts`:
+  - Dedicated Fastify routes plugin for Products & Services Catalog management (`GET /api/v1/items`, `POST /api/v1/items`, `GET /api/v1/items/:id`, `PATCH /api/v1/items/:id`, `DELETE /api/v1/items/:id`).
+  - Strict SKU item `code` uniqueness validation per tenant organization.
+  - GL account classification validation: ensures `incomeAccountId` points to `REVENUE` accounts and `expenseAccountId` points to `EXPENSE` accounts.
+  - Usage-aware safe deletion: checks historical usage across `InvoiceLineItem`, `BillLineItem`, `QuoteLineItem`, and `PurchaseOrderLineItem`. If historical references exist, the item is safely archived (`isActive: false`); if unreferenced, it is cleanly removed.
+  - Transactional audit logging for all creation, modification, archival, and deletion events.
+- `frontend/src/pages/ItemsPage.tsx`:
+  - Complete Corporate Precision Products & Services Catalog workbench interface.
+  - Header with KPI summary cards: Total Active Items, Sales Items, Purchase Items, and Tracked Inventory.
+  - Status/type filter pills (`All Active`, `Sales Items`, `Purchase Items`, `Archived`) and instant text search across SKU codes, item names, and descriptions.
+  - Tabular view with JetBrains Mono SKU badges, formatted AUD sales/purchase rates, tax treatment badges, and default GL account indicators.
+  - Right-hand slide-over `Drawer.tsx` item inspector with comprehensive sales, purchasing, inventory, and audit metadata.
+  - Architectural Create/Edit modal with "I Sell This Item" and "I Purchase This Item" sections, live AUD price formatting, and filtered GL account selectors.
+  - Safe Archive / Delete confirmation modal with usage alerts.
+
+### Changed
+- `backend/src/routes/contacts.ts`:
+  - Re-architected with full Master Data schema alignment: `legalName`, `phone`, `billingAddress`, `paymentTermsDays`, `requiresInvoiceForPayment`, default revenue/expense accounts, and Australian EFT banking (`bankBsb`, `bankAccountNumber`, `bankAccountName`).
+  - Enforced ATO ABN checksum algorithm (`isValidAbn`) and Australian BSB format standardization (`cleanBsb` to `XXX-XXX`).
+  - Added dedicated Contact 360 endpoint (`GET /api/v1/contacts/:id/360`) computing real-time outstanding AR/AP balances, aging buckets (Current, 1–30d, 31–60d, 61d+), and unified chronological transaction history across Quotes, Invoices, Bills, and Payments.
+- `backend/src/server.ts`:
+  - Imported and registered `itemRoutes` under `/api/v1/items`.
+- `frontend/src/api/client.ts`:
+  - Expanded `Contact`, `CreateContactInput`, and `UpdateContactInput` types.
+  - Added `Contact360Response`, `ContactAgingBuckets`, `ContactActivityItem`, and `contactApi.get360(id)` client method.
+  - Added `Item`, `CreateItemInput`, `UpdateItemInput`, and full `itemApi` client (`list`, `get`, `create`, `update`, `delete`).
+- `frontend/src/pages/ContactsPage.tsx`:
+  - Rebuilt with Corporate Precision Design System styling and KPI summary cards (Active Contacts, Customers, Suppliers, Total Receivables, Total Payables).
+  - Added slide-over `Drawer.tsx` for Contact 360 inspection showing aging breakdown, Australian EFT banking card, and chronological transaction activity feed.
+  - Upgraded Create/Edit Contact modal with ABN validation feedback, Australian EFT remittance fields, and filtered GL default account pickers.
+- `frontend/src/App.tsx`:
+  - Mounted `/items` route mapping to `<ItemsPage />`.
+- `frontend/src/components/AppShell.tsx`:
+  - Added `Items & Services` with `Package` icon to `Operations & Sub-Ledgers` navigation group.
+- `docs/STAGES_ROADMAP.md`:
+  - Marked Module 3 checklist items (3.1 & 3.2) as completed `[x]`.
+
+---
+
 ## [0.15.0] — 2026-11-08 — Module 2 Complete: Financial Spine, GL Engine, 1-Click Reversals & Recurring Schedules
 
 ### Added

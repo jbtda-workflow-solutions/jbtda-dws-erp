@@ -138,8 +138,9 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   ├── accounts.ts      # GET/POST/PATCH /api/v1/accounts, decommission sweep, tracking categories
 │       │   ├── auth.ts          # POST /api/v1/auth/google, GET /me, POST /switch-organization, DELETE /logout
 │       │   ├── bills.ts         # GET /api/v1/bills, POST, GET /:id, POST /:id/payments (AP & GL posting)
-│       │   ├── contacts.ts      # GET /api/v1/contacts, POST, GET /:id, PATCH /:id
+│       │   ├── contacts.ts      # GET/api/v1/contacts, POST, GET /:id, PATCH /:id, GET /:id/360
 │       │   ├── invoices.ts      # GET /api/v1/invoices, POST, GET /:id, POST /:id/issue, POST /:id/payments
+│       │   ├── items.ts         # GET/POST/PATCH/DELETE /api/v1/items (Products & Services catalog)
 │       │   ├── ledger.ts        # GET /api/v1/ledger, GET /api/v1/ledger/accounts, POST /api/v1/ledger/entries
 │       │   └── organizations.ts # Organization profile, multi-company list, members, invites, & audit logs
 │       └── server.ts          # Fastify server entry point, static serving, plugins
@@ -187,6 +188,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
             ├── ContactsPage.tsx      # Contacts directory (list, filter, create, edit modal)
             ├── DashboardPage.tsx     # Landing dashboard page
             ├── InvoicesPage.tsx      # Customer Invoices (list, draft, issue with GL posting, payments in)
+            ├── ItemsPage.tsx         # Products & Services catalog workbench (list, filter, create, edit, drawer)
             ├── LedgerPage.tsx        # General Ledger audit trail & Trial Balance account totals
             ├── LoginPage.tsx         # Google sign-in landing page
             ├── OnboardingModal.tsx   # First-time organization creation modal

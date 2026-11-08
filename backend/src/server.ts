@@ -31,6 +31,7 @@ import billRoutes from './routes/bills.js';
 import invoiceRoutes from './routes/invoices.js';
 import ledgerRoutes from './routes/ledger.js';
 import accountRoutes from './routes/accounts.js';
+import itemRoutes from './routes/items.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -138,6 +139,7 @@ async function buildServer() {
   await fastify.register(invoiceRoutes);
   await fastify.register(ledgerRoutes);
   await fastify.register(accountRoutes);
+  await fastify.register(itemRoutes);
 
   // -------------------------------------------------------------------------
   // Health check (unauthenticated — used by Cloud Run)
