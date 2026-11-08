@@ -24,6 +24,7 @@ import {
   quoteApi,
   creditNoteApi,
   recurringInvoiceApi,
+  paymentInApi,
   contactApi,
   accountApi,
   itemApi,
@@ -37,6 +38,7 @@ import {
   type PaymentIn,
   type Account,
   type Item,
+  type TaxTreatment,
   ApiError,
 } from '@/api/client';
 import { Button } from '@/components/ui/Button';
@@ -492,7 +494,7 @@ export function InvoicesPage() {
               />
             </div>
             <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
-              {(['ALL', 'DRAFT', 'SENT', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'INVOICED'] as const).map(
+              {(['ALL', 'DRAFT', 'SENT', 'ACCEPTED', 'DECLINED', 'INVOICED'] as const).map(
                 (st) => (
                   <button
                     key={st}
@@ -574,7 +576,7 @@ export function InvoicesPage() {
                                 ? 'emerald'
                                 : qItem.status === 'SENT'
                                 ? 'amber'
-                                : qItem.status === 'DECLINED' || qItem.status === 'EXPIRED'
+                                : qItem.status === 'DECLINED'
                                 ? 'rose'
                                 : 'slate'
                             }
@@ -809,7 +811,7 @@ export function InvoicesPage() {
         <CreateInvoiceModal
           open={isCreateInvoiceOpen}
           onClose={() => setIsCreateInvoiceOpen(false)}
-          onCreated={(newInv) => {
+          onCreated={(newInv: Invoice) => {
             setInvoices((prev) => [newInv, ...prev]);
             setIsCreateInvoiceOpen(false);
           }}
@@ -983,6 +985,19 @@ function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
     default:
       return null;
   }
+}
+
+interface LineItemDraft {
+  id: string;
+  description: string;
+  amount: string;
+  taxTreatment: TaxTreatment;
+}
+
+interface CreateInvoiceModalProps {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (newInv: Invoice) => void;
 }
 
 function CreateInvoiceModal({
@@ -2216,12 +2231,12 @@ function CreateQuoteModal({ open, onClose, onCreated }: CreateQuoteModalProps) {
           itemApi.list(),
           accountApi.list(),
         ]);
-        const custs = cRes.contacts.filter((c) => c.type === 'CUSTOMER' || c.type === 'BOTH');
+        const custs = cRes.contacts.filter((c: Contact) => c.type === 'CUSTOMER' || c.type === 'BOTH');
         setCustomers(custs);
-        if (custs.length > 0) setContactId(custs[0].id);
+        if (custs.length > 0) setContactId(custs[0]!.id);
 
-        setItems(iRes.items.filter((it) => it.isActive && it.isSold));
-        setRevenueAccounts(aRes.accounts.filter((a) => a.type === 'REVENUE' && a.isActive));
+        setItems(iRes.items.filter((it: Item) => it.isActive && it.isSold));
+        setRevenueAccounts(aRes.accounts.filter((a: Account) => a.type === 'REVENUE' && a.isActive));
       } catch {
         setError('Failed to load initial form data.');
       }
@@ -2237,9 +2252,9 @@ function CreateQuoteModal({ open, onClose, onCreated }: CreateQuoteModalProps) {
         return {
           ...l,
           itemId,
-          description: found ? (found.description || found.name) : l.description,
-          unitPrice: found ? (found.salesPriceCents / 100).toFixed(2) : l.unitPrice,
-          accountId: found?.salesAccountId || l.accountId,
+          description: found ? (found.saleDescription || found.name) : l.description,
+          unitPrice: found ? (found.saleUnitPriceCents / 100).toFixed(2) : l.unitPrice,
+          accountId: found?.incomeAccountId || l.accountId,
         };
       }),
     );
@@ -2685,10 +2700,10 @@ function CreateCreditNoteModal({ open, onClose, onCreated }: CreateCreditNoteMod
     async function loadData() {
       try {
         const [cRes, aRes] = await Promise.all([contactApi.list(), accountApi.list()]);
-        const custs = cRes.contacts.filter((c) => c.type === 'CUSTOMER' || c.type === 'BOTH');
+        const custs = cRes.contacts.filter((c: Contact) => c.type === 'CUSTOMER' || c.type === 'BOTH');
         setCustomers(custs);
-        if (custs.length > 0) setContactId(custs[0].id);
-        setRevenueAccounts(aRes.accounts.filter((a) => a.type === 'REVENUE' && a.isActive));
+        if (custs.length > 0) setContactId(custs[0]!.id);
+        setRevenueAccounts(aRes.accounts.filter((a: Account) => a.type === 'REVENUE' && a.isActive));
       } catch {
         setError('Failed to load customers.');
       }

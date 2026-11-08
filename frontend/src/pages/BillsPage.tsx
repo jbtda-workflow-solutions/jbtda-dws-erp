@@ -40,6 +40,7 @@ import {
   type Contact,
   type Account,
   type Item,
+  type TaxTreatment,
   ApiError,
 } from '@/api/client';
 import { Button } from '@/components/ui/Button';
@@ -889,7 +890,7 @@ export function BillsPage() {
         <CreateBillModal
           open={isCreateBillOpen}
           onClose={() => setIsCreateBillOpen(false)}
-          onCreated={(newBill) => {
+          onCreated={(newBill: Bill) => {
             setBills((prev) => [newBill, ...prev]);
             setIsCreateBillOpen(false);
           }}
@@ -1049,6 +1050,19 @@ function BillStatusBadge({ status }: { status: BillStatus }) {
     default:
       return null;
   }
+}
+
+interface LineItemDraft {
+  id: string;
+  description: string;
+  amount: string;
+  taxTreatment: TaxTreatment;
+}
+
+interface CreateBillModalProps {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (newBill: Bill) => void;
 }
 
 function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
@@ -1848,12 +1862,12 @@ function CreatePOModal({ open, onClose, onCreated }: CreatePOModalProps) {
           itemApi.list(),
           accountApi.list(),
         ]);
-        const vList = cRes.contacts.filter((c) => c.type === 'SUPPLIER' || c.type === 'BOTH');
+        const vList = cRes.contacts.filter((c: Contact) => c.type === 'VENDOR' || c.type === 'BOTH');
         setVendors(vList);
-        if (vList.length > 0) setContactId(vList[0].id);
+        if (vList.length > 0) setContactId(vList[0]!.id);
 
-        setItems(iRes.items.filter((it) => it.isActive && it.isPurchased));
-        setExpenseAccounts(aRes.accounts.filter((a) => (a.type === 'EXPENSE' || a.type === 'ASSET') && a.isActive));
+        setItems(iRes.items.filter((it: Item) => it.isActive && it.isPurchased));
+        setExpenseAccounts(aRes.accounts.filter((a: Account) => (a.type === 'EXPENSE' || a.type === 'ASSET') && a.isActive));
       } catch {
         setError('Failed to load initial data.');
       }
@@ -1869,9 +1883,9 @@ function CreatePOModal({ open, onClose, onCreated }: CreatePOModalProps) {
         return {
           ...l,
           itemId,
-          description: found ? (found.description || found.name) : l.description,
-          unitPrice: found ? (found.purchasePriceCents / 100).toFixed(2) : l.unitPrice,
-          accountId: found?.purchaseAccountId || l.accountId,
+          description: found ? (found.purchaseDescription || found.name) : l.description,
+          unitPrice: found ? (found.purchaseUnitPriceCents / 100).toFixed(2) : l.unitPrice,
+          accountId: found?.expenseAccountId || l.accountId,
         };
       }),
     );
@@ -2284,9 +2298,9 @@ function CreateVendorCreditModal({ open, onClose, onCreated }: CreateVendorCredi
     async function load() {
       try {
         const res = await contactApi.list();
-        const vList = res.contacts.filter((c) => c.type === 'SUPPLIER' || c.type === 'BOTH');
+        const vList = res.contacts.filter((c: Contact) => c.type === 'VENDOR' || c.type === 'BOTH');
         setVendors(vList);
-        if (vList.length > 0) setContactId(vList[0].id);
+        if (vList.length > 0) setContactId(vList[0]!.id);
       } catch {
         setError('Failed to load vendors.');
       }
@@ -2708,9 +2722,9 @@ function CreateBatchPaymentModal({
           accountApi.list(),
         ]);
         setUnpaidBills(bRes.bills);
-        const banks = aRes.accounts.filter((a) => a.type === 'ASSET' && a.code.startsWith('10'));
+        const banks = aRes.accounts.filter((a: Account) => a.type === 'ASSET' && a.code.startsWith('10'));
         setBankAccounts(banks);
-        if (banks.length > 0) setSelectedBankId(banks[0].id);
+        if (banks.length > 0) setSelectedBankId(banks[0]!.id);
 
         const initialSel: Record<string, boolean> = {};
         for (const b of bRes.bills) {
@@ -2885,9 +2899,9 @@ function CreateRecurringBillModal({
     async function load() {
       try {
         const res = await contactApi.list();
-        const vList = res.contacts.filter((c) => c.type === 'SUPPLIER' || c.type === 'BOTH');
+        const vList = res.contacts.filter((c: Contact) => c.type === 'VENDOR' || c.type === 'BOTH');
         setVendors(vList);
-        if (vList.length > 0) setContactId(vList[0].id);
+        if (vList.length > 0) setContactId(vList[0]!.id);
       } catch {
         setError('Failed to load suppliers.');
       }

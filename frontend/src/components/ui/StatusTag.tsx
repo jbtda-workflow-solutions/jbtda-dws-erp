@@ -12,14 +12,16 @@ export type StatusTagTone =
   | 'info'
   | 'locked'
   | 'neutral'
-  | 'danger';
+  | 'danger'
+  | 'cyan';
 
 export interface StatusTagProps {
-  label: string;
+  label?: string;
   tone?: StatusTagTone;
   variant?: StatusTagTone;
   mono?: boolean;
   className?: string;
+  children?: React.ReactNode;
 }
 
 const toneClasses: Record<
@@ -64,6 +66,7 @@ function normalizeTone(
       return 'amber';
     case 'slate':
     case 'info':
+    case 'cyan':
       return 'slate';
     case 'rose':
     case 'danger':
@@ -153,11 +156,14 @@ export function StatusTag({
   variant,
   mono = false,
   className,
+  children,
 }: StatusTagProps) {
+  const displayLabel =
+    label ?? (typeof children === 'string' ? children : String(children ?? ''));
   const explicitTone = tone ?? variant;
   const resolved = explicitTone
     ? normalizeTone(explicitTone)
-    : resolveStatusTone(label);
+    : resolveStatusTone(displayLabel);
   const styles = toneClasses[resolved];
 
   return (
@@ -170,7 +176,7 @@ export function StatusTag({
       )}
     >
       <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', styles.dot)} />
-      {label}
+      {children ?? label}
     </span>
   );
 }

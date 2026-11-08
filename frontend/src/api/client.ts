@@ -1391,6 +1391,8 @@ export interface AccountWithBalance {
   lineCount: number;
 }
 
+export type Account = AccountWithBalance;
+
 export interface CreateManualJournalLineInput {
   accountId: string;
   trackingOptionId?: string | null;
@@ -1608,3 +1610,5 @@ export const accountsApi = {
       `/tracking-categories/${categoryId}`,
     ),
 };
+
+export const accountApi = accountsApi;

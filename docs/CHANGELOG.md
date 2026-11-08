@@ -47,6 +47,10 @@ Chronological log of all changes, schema diffs, and new dependencies.
   - Registered route plugins for `quoteRoutes`, `creditNoteRoutes`, `purchaseOrderRoutes`, `vendorCreditRoutes`, and `batchPaymentRoutes`.
 - `frontend/src/api/client.ts`:
   - Exported complete TypeScript models and API client objects: `quoteApi`, `creditNoteApi`, `purchaseOrderApi`, `vendorCreditApi`, `batchPaymentApi`, `recurringInvoiceApi`, `recurringBillApi`, and updated `invoiceApi`/`billApi`.
+  - Exported `Account` type alias and `accountApi` alias for backward-compatible frontend consumers.
+- `frontend/src/components/ui/StatusTag.tsx`:
+  - Added support for `children` prop and optional `label`, allowing flexible badge syntax `<StatusTag>{status}</StatusTag>`.
+  - Added `'cyan'` tone variant mapping to `slate`.
 - `frontend/src/components/AppShell.tsx`:
   - Modernized primary navigation frame by converting the vertical left sidebar into a static Obsidian Carbon (`#0B1311`) top header (`h-12`) with dropdown menus for domain-grouped navigation (`General Ledger`, `Operations`, `Governance`), direct Overview link, multi-company workspace switcher popover, period lock and 2-person approval status badges, and user session controls.
   - Added lean, thinner static footer (`h-7`) displaying active corporate entity name and formatted ABN, Cloud SQL Unix socket connectivity status, zero-LLM deterministic engine indicator, version `0.17.0`, and quick link to the workspace audit trail.
