@@ -89,7 +89,7 @@ The application reads its runtime configuration directly from the Google Cloud R
 |----------|---------------------|
 | `INSTANCE_CONNECTION_NAME` | Cloud SQL instance connection name (`PROJECT_ID:REGION:INSTANCE_NAME`). Points the database client explicitly to the mounted socket at `/cloudsql/<INSTANCE_CONNECTION_NAME>`. Essential for multi-tenant isolation and portable client forks. |
 | `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Web Client ID for authentication (used for token verification & served to frontend via `/api/v1/auth/config`) |
-| `DB_USER` | Database username (e.g. `erp-workflows`) |
+| `DB_USER` | Database username (e.g. `erp_admin`) |
 | `DB_NAME` | Database name on the Cloud SQL instance (e.g. `erp`) |
 | `FRONTEND_ORIGIN` | Allowed origin for CORS (e.g. preview deployment URL or `http://localhost:5173`) |
 | `NODE_ENV` | `production` |
@@ -97,6 +97,6 @@ The application reads its runtime configuration directly from the Google Cloud R
 ### 3. Secrets Section (Cloud Run UI $\leftarrow$ Secret Manager)
 | Secret in Secret Manager | Mounted as Environment Variable | Description |
 |--------------------------|---------------------------------|-------------|
-| Database user password secret (e.g. `user_erp-workflows_pass...`) | `DB_PASSWORD` | PostgreSQL database user password |
+| Database user password secret (e.g. `user_erp_admin_pass...`) | `DB_PASSWORD` | PostgreSQL database user password |
 | Cookie session secret (e.g. `erp_session_secret`) | `SESSION_SECRET` | Random 32+ character string for signing session cookies |
 | Webhook secret (Stage 2) (e.g. `erp_webhook_secret`) | `WEBHOOK_SECRET` | 64-character webhook secret for n8n automations |

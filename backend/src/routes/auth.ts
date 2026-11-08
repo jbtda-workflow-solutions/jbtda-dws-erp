@@ -255,7 +255,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       if (!user) {
-        return reply.code(401).send({ error: 'User not found' });
+        void reply.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
+        return reply.code(401).send({ error: 'User not found or database was reset. Please sign in again.' });
       }
 
       const memberships = await fastify.prisma.organizationMember.findMany({
@@ -291,6 +292,18 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       if (memberships.length === 0) {
+        // Clear any stale organizationId from prior database sessions
+        if (session.organizationId !== null || session.role !== null) {
+          setSession(
+            reply,
+            {
+              userId: user.id,
+              organizationId: null,
+              role: null,
+            },
+            secret,
+          );
+        }
         return reply.code(200).send({
           status: 'onboarding',
           user,

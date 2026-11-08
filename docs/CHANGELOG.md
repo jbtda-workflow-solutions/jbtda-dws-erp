@@ -4,6 +4,32 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.14.0] — 2026-11-08 — Database Wipe Resilience, Auto-Healing System Accounts, Dedicated Chart of Accounts Workbench & Definitive Rebuild DDL
+
+### Added
+- `backend/prisma/migrations/rebuild_all_schema.sql`:
+  - Complete, standalone PostgreSQL DDL script for clean database rebuilds and major revision deployments. Drops and recreates `public` schema, creates all 16 enums, creates all 34 tables with matching constraints, foreign keys, and indexes 100% aligned with `schema.prisma`.
+  - Configures full permissions (`GRANT ALL PRIVILEGES` and `ALTER DEFAULT PRIVILEGES`) for `erp_admin`.
+- `frontend/src/pages/AccountsPage.tsx`:
+  - Dedicated Module 2 Chart of Accounts workbench interface, completely decoupled from General Ledger (`LedgerPage.tsx`).
+  - Includes KPI summary cards (Total Accounts, Assets, Liabilities, Equity, Revenue, Expense balances), account classification badges, tax treatment tags, normal balance tags, bank indicator badges, protected system badges, search and type filter pills, "New Account" dialog modal, and an instant "Seed System Accounts" trigger.
+- `backend/src/routes/accounts.ts`:
+  - Added `POST /api/v1/accounts/seed` endpoint guarded by `requireRole(Role.ADMIN, Role.ACCOUNTANT)` for explicit manual/on-demand seeding of the 10 Protected System Accounts.
+- `frontend/src/api/client.ts`:
+  - Added typed `accountsApi` client covering `list`, `create`, `update`, `decommission`, and `seed`.
+
+### Changed
+- `backend/src/routes/auth.ts`:
+  - Hardened `GET /api/v1/auth/me` against stale session cookies following database wipes: clears the cookie immediately if the user no longer exists in PostgreSQL, and resets session `organizationId` and `role` to `null` if the user has 0 organization memberships.
+- `backend/src/routes/accounts.ts` & `backend/src/routes/ledger.ts`:
+  - Added self-healing verification to `GET /api/v1/accounts` and `GET /api/v1/ledger/accounts`: if an organization has 0 accounts (e.g. newly created entity or post-wipe state), `ensureOrganizationSystemAccounts` is automatically triggered on the fly to guarantee system accounts are always present.
+- `frontend/src/App.tsx`:
+  - Decoupled routing: `/accounts` now mounts `AccountsPage.tsx`, while `/ledger` mounts `LedgerPage.tsx`.
+- `AGENTS.md`:
+  - Updated Directory Layout with `frontend/src/pages/AccountsPage.tsx`.
+
+---
+
 ## [0.13.0] — 2026-11-08 — Module 1 Complete: Enterprise Workspace, 7-Role RBAC, Governance, Audit Log & Corporate Precision UI Shell
 
 ### Added

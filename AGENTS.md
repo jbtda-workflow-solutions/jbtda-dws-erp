@@ -90,7 +90,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 | :--- | :--- |
 | `INSTANCE_CONNECTION_NAME` | Cloud SQL instance connection name (e.g. `PROJECT_ID:REGION:INSTANCE_NAME`). Explicitly defines the Cloud SQL Unix socket target (`/cloudsql/<INSTANCE_CONNECTION_NAME>`). Required for multi-tenant isolation and portable tenant/client forks. |
 | `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Web Client ID (used for token verification & served to frontend via `/api/v1/auth/config`) |
-| `DB_USER` | PostgreSQL database user (e.g. `erp-workflows`) |
+| `DB_USER` | PostgreSQL database user (e.g. `erp_admin`) |
 | `DB_NAME` | PostgreSQL database name (e.g. `erp`) |
 | `FRONTEND_ORIGIN` | Allowed origin for CORS (e.g. preview deployment URL or `http://localhost:5173`) |
 | `NODE_ENV` | Set to `production` |
@@ -98,7 +98,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 ### 3. Secrets Exposed as Environment Variables (Secret Manager)
 | Secret in Secret Manager | Mounted Variable | Purpose |
 | :--- | :--- | :--- |
-| `user_erp-workflows_pass...` | `DB_PASSWORD` | PostgreSQL user password |
+| `user_erp_admin_pass...` | `DB_PASSWORD` | PostgreSQL user password |
 | `erp_session_secret` | `SESSION_SECRET` | 32+ character random secret for signing and encrypting session cookies |
 | `erp_webhook_secret` *(Stage 2)* | `WEBHOOK_SECRET` | 64-character secret for n8n asynchronous webhooks |
 
@@ -181,6 +181,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
         ├── lib/
         │   └── utils.ts       # Utility helper functions
         └── pages/
+            ├── AccountsPage.tsx      # Module 2 Chart of Accounts workbench (list, create, seed system accounts)
             ├── BillsPage.tsx         # Accounts Payable bills (list, line items, payments out, GL modal)
             ├── ContactsPage.tsx      # Contacts directory (list, filter, create, edit modal)
             ├── DashboardPage.tsx     # Landing dashboard page

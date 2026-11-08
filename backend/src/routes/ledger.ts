@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { requireOrgAuth, requireRole } from '../plugins/auth.js';
 import { recordAuditLog } from '../lib/audit.js';
+import { ensureOrganizationSystemAccounts } from '../lib/system-accounts.js';
 import { EntryType, NormalBalance, Role } from '@prisma/client';
 
 const ListLedgerQuery = z.object({
@@ -169,6 +170,12 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
     { preHandler: [requireOrgAuth] },
     async (request, reply) => {
       const organizationId = request.user.organizationId!;
+
+      // Auto-heal / self-seed: If the organization has 0 accounts, seed the 10 protected accounts immediately
+      const accountCount = await fastify.prisma.account.count({ where: { organizationId } });
+      if (accountCount === 0) {
+        await ensureOrganizationSystemAccounts(fastify.prisma, organizationId);
+      }
 
       const accounts = await fastify.prisma.account.findMany({
         where: { organizationId },

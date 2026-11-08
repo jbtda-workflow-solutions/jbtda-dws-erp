@@ -754,6 +754,62 @@ export const ledgerApi = {
     request<{ entry: JournalEntry }>('POST', '/ledger/entries', data),
 };
 
+// ---------------------------------------------------------------------------
+// Chart of Accounts Workbench (Module 2)
+// ---------------------------------------------------------------------------
+
+export interface CreateAccountInput {
+  code: string;
+  name: string;
+  type: AccountType;
+  description?: string | null;
+  parentId?: string | null;
+  defaultTaxTreatment?: TaxTreatment;
+  isBankAccount?: boolean;
+  bankBsb?: string | null;
+  bankAccountNumber?: string | null;
+}
+
+export interface UpdateAccountInput {
+  code?: string;
+  name?: string;
+  description?: string | null;
+  parentId?: string | null;
+  defaultTaxTreatment?: TaxTreatment;
+  isBankAccount?: boolean;
+  bankBsb?: string | null;
+  bankAccountNumber?: string | null;
+  isActive?: boolean;
+}
+
+export interface DecommissionAccountInput {
+  targetAccountId: string;
+  memo?: string;
+}
+
+export const accountsApi = {
+  list: (params?: { type?: string; includeInactive?: boolean; search?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.type && params.type !== 'ALL') query.set('type', params.type);
+    if (params?.includeInactive) query.set('includeInactive', 'true');
+    if (params?.search) query.set('search', params.search);
+    const qs = query.toString();
+    return request<{ accounts: AccountWithBalance[] }>('GET', `/accounts${qs ? `?${qs}` : ''}`);
+  },
+  create: (data: CreateAccountInput) =>
+    request<{ account: AccountWithBalance }>('POST', '/accounts', data),
+  update: (id: string, data: UpdateAccountInput) =>
+    request<{ account: AccountWithBalance }>('PATCH', `/accounts/${id}`, data),
+  decommission: (id: string, data: DecommissionAccountInput) =>
+    request<{ sweepJournalEntryId?: string; balanceSweptCents: number; account: AccountWithBalance }>(
+      'POST',
+      `/accounts/${id}/decommission`,
+      data,
+    ),
+  seed: () =>
+    request<{ ok: boolean; message: string }>('POST', '/accounts/seed'),
+};
+
 export interface CreateManualJournalLineInput {
   accountId: string;
   entryType: EntryType;

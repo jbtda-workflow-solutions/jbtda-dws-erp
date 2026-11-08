@@ -7,6 +7,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { ContactsPage } from '@/pages/ContactsPage';
 import { BillsPage } from '@/pages/BillsPage';
 import { InvoicesPage } from '@/pages/InvoicesPage';
+import { AccountsPage } from '@/pages/AccountsPage';
 import { LedgerPage } from '@/pages/LedgerPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 
@@ -44,7 +45,7 @@ function AppRoutes() {
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/bills" element={<BillsPage />} />
-        <Route path="/accounts" element={<LedgerPage />} />
+        <Route path="/accounts" element={<AccountsPage />} />
         <Route path="/ledger" element={<LedgerPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -24,6 +24,7 @@ import {
 import { requireOrgAuth, requireRole } from '../plugins/auth.js';
 import { recordAuditLog } from '../lib/audit.js';
 import { checkOrganizationLockDate } from '../lib/ledger-posting.js';
+import { ensureOrganizationSystemAccounts } from '../lib/system-accounts.js';
 
 const VALID_ACCOUNT_TYPES = new Set<string>([
   'ASSET',
@@ -63,6 +64,12 @@ const accountRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const organizationId = request.user.organizationId!;
       const { type, includeInactive, search } = request.query;
+
+      // Auto-heal / self-seed: If the organization has 0 accounts, seed the 10 protected accounts immediately
+      const accountCount = await fastify.prisma.account.count({ where: { organizationId } });
+      if (accountCount === 0) {
+        await ensureOrganizationSystemAccounts(fastify.prisma, organizationId);
+      }
 
       const where: Record<string, unknown> = { organizationId };
 
@@ -160,6 +167,24 @@ const accountRoutes: FastifyPluginAsync = async (fastify) => {
             lineCount: stats.lineCount,
           };
         }),
+      });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // POST /api/v1/accounts/seed — Explicitly verify & seed 10 Protected Accounts
+  // -------------------------------------------------------------------------
+  fastify.post(
+    '/api/v1/accounts/seed',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+    },
+    async (request, reply) => {
+      const organizationId = request.user.organizationId!;
+      await ensureOrganizationSystemAccounts(fastify.prisma, organizationId);
+      return reply.code(200).send({
+        ok: true,
+        message: '10 Protected System Accounts verified and initialized successfully.',
       });
     },
   );
