@@ -4,6 +4,20 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.17.3] — 2026-11-08 — Automated Schema Push & Rebuild on Boot via Cloud Run Environment Flags
+
+### Added
+- `backend/src/plugins/prisma.ts`:
+  - Added mandatory startup validation for `AUTO_SCHEMA_PUSH` (`"true"` | `"false"`) and `DB_FORCE_RESET` (`"true"` | `"false"`).
+  - Implemented automated `prisma db push --skip-generate --accept-data-loss` on container boot when `AUTO_SCHEMA_PUSH="true"`.
+  - Implemented automated `prisma db push --skip-generate --force-reset` on container boot when `DB_FORCE_RESET="true"`.
+- `backend/package.json`:
+  - Moved `prisma` package from `devDependencies` to production `dependencies` to ensure the Prisma CLI binary remains available in the production runtime container.
+- Documentation:
+  - Documented mandatory `AUTO_SCHEMA_PUSH` and `DB_FORCE_RESET` Cloud Run environment variables in `AGENTS.md` and `docs/ARCHITECTURE.md`.
+
+---
+
 ## [0.17.2] — 2026-11-08 — Local Typecheck Verification & AP Bills Route Invariants
 
 ### Changed

@@ -93,6 +93,8 @@ The application reads its runtime configuration directly from the Google Cloud R
 | `DB_NAME` | Database name on the Cloud SQL instance (e.g. `erp`) |
 | `FRONTEND_ORIGIN` | Allowed origin for CORS (e.g. preview deployment URL or `http://localhost:5173`) |
 | `NODE_ENV` | `production` |
+| `AUTO_SCHEMA_PUSH` | Mandatory explicit flag (`true` or `false`). Set to `true` during development/testing to run automatic `prisma db push --accept-data-loss` on container boot. Set to `false` in production. |
+| `DB_FORCE_RESET` | Mandatory explicit flag (`true` or `false`). Set to `true` to drop all tables and recreate the entire schema from scratch on boot. Set to `false` for standard operations. |
 
 ### 3. Secrets Section (Cloud Run UI $\leftarrow$ Secret Manager)
 | Secret in Secret Manager | Mounted as Environment Variable | Description |

@@ -2,6 +2,7 @@ import fp from 'fastify-plugin';
 import { PrismaClient } from '@prisma/client';
 import type { FastifyPluginAsync } from 'fastify';
 import fs from 'node:fs';
+import { execSync } from 'node:child_process';
 import { runStartupSchemaSync } from '../lib/schema-sync.js';
 
 declare module 'fastify' {
@@ -113,7 +114,46 @@ const prismaPlugin: FastifyPluginAsync = fp(async (fastify) => {
     );
   }
 
+  // Mandatory explicit schema synchronization flags (prevent unverified defaults)
+  const autoPush = process.env['AUTO_SCHEMA_PUSH'];
+  if (autoPush !== 'true' && autoPush !== 'false') {
+    throw new Error(
+      'Configuration error: AUTO_SCHEMA_PUSH must be explicitly set to "true" or "false" in Cloud Run environment variables.',
+    );
+  }
+
+  const forceReset = process.env['DB_FORCE_RESET'];
+  if (forceReset !== 'true' && forceReset !== 'false') {
+    throw new Error(
+      'Configuration error: DB_FORCE_RESET must be explicitly set to "true" or "false" in Cloud Run environment variables.',
+    );
+  }
+
   process.env['DATABASE_URL'] = dbUrl;
+
+  if (autoPush === 'true') {
+    const isReset = forceReset === 'true';
+    fastify.log.warn(
+      { isReset },
+      isReset
+        ? 'AUTO_SCHEMA_PUSH and DB_FORCE_RESET are active: Dropping all tables and rebuilding PostgreSQL schema from scratch...'
+        : 'AUTO_SCHEMA_PUSH is active: Pushing schema changes to PostgreSQL database (--accept-data-loss)...',
+    );
+
+    try {
+      const resetFlag = isReset ? '--force-reset' : '--accept-data-loss';
+      execSync(`npx prisma db push --skip-generate ${resetFlag}`, {
+        env: { ...process.env, DATABASE_URL: dbUrl },
+        stdio: 'inherit',
+      });
+      fastify.log.info('Prisma schema push completed successfully.');
+    } catch (pushErr: any) {
+      fastify.log.error({ err: pushErr }, 'Prisma db push encountered an error');
+      throw pushErr;
+    }
+  } else {
+    fastify.log.info('AUTO_SCHEMA_PUSH is "false". Database schema push bypassed (strict mode).');
+  }
 
   const prisma = new PrismaClient({
     datasources: {

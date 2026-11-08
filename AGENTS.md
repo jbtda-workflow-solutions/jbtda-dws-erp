@@ -98,6 +98,8 @@ The application relies strictly on Google Cloud Run container configuration (zer
 | `DB_NAME` | PostgreSQL database name (e.g. `erp`) |
 | `FRONTEND_ORIGIN` | Allowed origin for CORS (e.g. preview deployment URL or `http://localhost:5173`) |
 | `NODE_ENV` | Set to `production` |
+| `AUTO_SCHEMA_PUSH` | Mandatory explicit flag: `"true"` in development/test to run `prisma db push --accept-data-loss` on boot; `"false"` in production. |
+| `DB_FORCE_RESET` | Mandatory explicit flag: `"true"` to completely drop and recreate all tables on boot; `"false"` for standard operations. |
 
 ### 3. Secrets Exposed as Environment Variables (Secret Manager)
 | Secret in Secret Manager | Mounted Variable | Purpose |
