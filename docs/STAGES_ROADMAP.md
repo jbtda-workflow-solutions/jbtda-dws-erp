@@ -299,12 +299,12 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 ### Module 7: Multi-Account Banking, Inter-Account Transfers & Statement Reconciliation
 **Objective:** Manage all cash and credit card accounts, transfer money cleanly between accounts, and reconcile imported bank statements against the General Ledger.
 
-- [ ] **7.1 Bank & Credit Card Accounts Hub (`/banking`)**:
+- [x] **7.1 Bank & Credit Card Accounts Hub (`/banking`)**:
   - Overview of all GL accounts flagged as banking/card accounts (`1000 Operating Bank`, savings accounts, petty cash, corporate credit cards) showing Ledger Balance vs. Last Reconciled Balance.
-- [ ] **7.2 Inter-Account Money Transfers (`/api/v1/banking/transfers`)**:
+- [x] **7.2 Inter-Account Money Transfers (`/api/v1/banking/transfers`)**:
   - Dedicated transfer workflow between any two Bank/Card accounts (e.g., Operating Bank $\rightarrow$ Savings Reserve, or Operating Bank $\rightarrow$ Paying off Corporate Credit Card).
   - Posts a clean 2-line journal entry (`DEBIT Destination Account`, `CREDIT Source Account`) with zero GST or P&L distortion.
-- [ ] **7.3 Bank Statement Import & Reconciliation Workspace (`/api/v1/banking/reconciliation`)**:
+- [x] **7.3 Bank Statement Import & Reconciliation Workspace (`/api/v1/banking/reconciliation`)**:
   - Upload CSV bank statement files (`Date`, `Description`, `Reference`, `Amount Cents`).
   - Smart Reconciliation Engine:
     - Auto-suggests matches against existing unreconciled Payments In, Payments Out, Batch Payments, Direct Spend/Receive Money, and Inter-Account Transfers by amount and date proximity.

@@ -1862,3 +1862,199 @@ export const expenseClaimApi = {
     }>('POST', `/expense-claims/${id}/pay`, data || {}),
 };
 
+// ---------------------------------------------------------------------------
+// Module 7 Banking, Transfers & Reconciliation Types & APIs
+// ---------------------------------------------------------------------------
+
+export interface BankAccountSummary {
+  id: string;
+  code: string;
+  name: string;
+  type: 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE';
+  normalBalance: 'DEBIT' | 'CREDIT';
+  description?: string | null;
+  isBankAccount: boolean;
+  bankBsb?: string | null;
+  bankAccountNumber?: string | null;
+  apcaUserId?: string | null;
+  ledgerBalanceCents: number;
+  reconciledBalanceCents: number;
+  unreconciledDifferenceCents: number;
+  statementLineCount: number;
+  unreconciledLineCount: number;
+  lastReconciledAt?: string | null;
+}
+
+export interface BankTransfer {
+  id: string;
+  organizationId: string;
+  fromAccountId: string;
+  toAccountId: string;
+  transferDate: string;
+  amountCents: number;
+  reference?: string | null;
+  description?: string | null;
+  createdByUserId?: string | null;
+  createdAt: string;
+  fromAccount?: { id: string; code: string; name: string; type: string } | null;
+  toAccount?: { id: string; code: string; name: string; type: string } | null;
+  journalEntry?: { id: string; entryNumber?: string | null; status: string; isReconciled: boolean } | null;
+}
+
+export interface BankStatementLine {
+  id: string;
+  organizationId: string;
+  bankAccountId: string;
+  statementDate: string;
+  description: string;
+  reference?: string | null;
+  amountCents: number;
+  isReconciled: boolean;
+  matchedJournalId?: string | null;
+  reconciledAt?: string | null;
+  reconciledByUserId?: string | null;
+  createdAt: string;
+  matchedJournal?: {
+    id: string;
+    entryNumber?: string | null;
+    description: string;
+    referenceType: string;
+  } | null;
+}
+
+export interface ReconciliationCandidate {
+  score: number;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  reasons: string[];
+  journalLineId: string;
+  journalEntry: {
+    id: string;
+    entryNumber?: string | null;
+    description: string;
+    referenceType: string;
+    referenceId: string;
+    postedAt: string;
+    status: string;
+  };
+  amountCents: number;
+  entryType: 'DEBIT' | 'CREDIT';
+}
+
+export interface ReconciliationSuggestionItem {
+  statementLine: BankStatementLine;
+  suggestedMatch: ReconciliationCandidate | null;
+  otherCandidates: ReconciliationCandidate[];
+}
+
+export interface CreateBankTransferInput {
+  fromAccountId: string;
+  toAccountId: string;
+  transferDate: string;
+  amountCents: number;
+  reference?: string | null;
+  description?: string | null;
+}
+
+export interface ImportStatementInput {
+  bankAccountId: string;
+  csvContent?: string;
+  lines?: Array<{
+    statementDate: string;
+    description: string;
+    reference?: string | null;
+    amountCents: number;
+  }>;
+}
+
+export interface CreateAndReconcileInput {
+  statementLineId: string;
+  targetAccountId: string;
+  description?: string;
+  taxTreatment?: TaxTreatment;
+  trackingOptionId?: string | null;
+}
+
+export const bankingApi = {
+  listAccounts: () =>
+    request<{
+      accounts: BankAccountSummary[];
+      totals: { totalLedgerCents: number; totalReconciledCents: number };
+    }>('GET', '/banking/accounts'),
+
+  updateAccount: (
+    id: string,
+    data: {
+      isBankAccount?: boolean;
+      bankBsb?: string | null;
+      bankAccountNumber?: string | null;
+      apcaUserId?: string | null;
+    },
+  ) => request<{ account: any }>('PATCH', `/banking/accounts/${id}`, data),
+
+  listTransfers: () =>
+    request<{ transfers: BankTransfer[] }>('GET', '/banking/transfers'),
+
+  createTransfer: (data: CreateBankTransferInput) =>
+    request<{ message: string; transfer: BankTransfer }>('POST', '/banking/transfers', data),
+
+  importStatements: (data: ImportStatementInput) =>
+    request<{ message: string; importedCount: number }>('POST', '/banking/statements/import', data),
+
+  listStatements: (params?: {
+    bankAccountId?: string;
+    isReconciled?: boolean;
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.bankAccountId) query.set('bankAccountId', params.bankAccountId);
+    if (params?.isReconciled !== undefined) query.set('isReconciled', String(params.isReconciled));
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+    const qs = query.toString();
+    return request<{ totalCount: number; lines: BankStatementLine[] }>(
+      'GET',
+      `/banking/statements${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  deleteStatementLine: (id: string) =>
+    request<{ ok: boolean; message: string }>('DELETE', `/banking/statements/${id}`),
+
+  getSuggestions: (params: { bankAccountId: string; statementLineId?: string }) => {
+    const query = new URLSearchParams();
+    query.set('bankAccountId', params.bankAccountId);
+    if (params.statementLineId) query.set('statementLineId', params.statementLineId);
+    return request<{
+      suggestions: ReconciliationSuggestionItem[];
+      unreconciledJournalEntries: Array<{
+        id: string;
+        entryNumber?: string | null;
+        description: string;
+        referenceType: string;
+        postedAt: string;
+        amountCents: number;
+        entryType: 'DEBIT' | 'CREDIT';
+      }>;
+    }>('GET', `/banking/reconciliation/suggestions?${query.toString()}`);
+  },
+
+  match: (data: { statementLineId: string; journalEntryId: string }) =>
+    request<{ ok: boolean; message: string }>('POST', '/banking/reconciliation/match', data),
+
+  unmatch: (data: { statementLineId: string }) =>
+    request<{ ok: boolean; message: string }>('POST', '/banking/reconciliation/unmatch', data),
+
+  createAndReconcile: (data: CreateAndReconcileInput) =>
+    request<{
+      message: string;
+      journalEntry: any;
+      statementLine: BankStatementLine;
+    }>('POST', '/banking/reconciliation/create-and-reconcile', data),
+};
+
+

@@ -4,6 +4,44 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.19.0] — 2026-11-08 — Module 7: Multi-Account Banking, Inter-Account Transfers & Statement Reconciliation
+
+### Added
+- `backend/src/routes/banking.ts`:
+  - Implemented `GET /api/v1/banking/accounts` computing live ledger balance from posted journal lines, count of imported statement lines, unreconciled lines count, and latest statement date.
+  - Implemented `PATCH /api/v1/banking/accounts/:id` for updating account banking metadata (`isBankAccount`, `bankBsb`, `bankAccountNumber`, `apcaUserId`).
+  - Implemented `GET /api/v1/banking/transfers` listing historical inter-account transfers.
+  - Implemented `POST /api/v1/banking/transfers` validating source and destination bank accounts, checking lock dates, atomically creating `bank_transfers` record, posting a clean 2-line double-entry GL journal (`DEBIT Destination Account`, `CREDIT Source Account`), and logging immutable audit event (`BANK_TRANSFER_CREATED`).
+  - Implemented `POST /api/v1/banking/statements/import` with robust CSV statement parser supporting major Australian financial institutions (Commonwealth Bank, Westpac, ANZ, NAB, Macquarie, and generic CSV formats), parsing dates, descriptions, references, and amounts into integer cents.
+  - Implemented `GET /api/v1/banking/statements` listing imported statement lines with account and status filters (`ALL`, `UNRECONCILED`, `RECONCILED`).
+  - Implemented `DELETE /api/v1/banking/statements/:id` allowing safe deletion of unreconciled statement lines while strictly protecting reconciled lines.
+  - Implemented `GET /api/v1/banking/reconciliation/suggestions` running smart reconciliation algorithm that scores unreconciled statement lines against unreconciled GL entries (exact/opposite amount matching, date proximity, reference heuristics).
+  - Implemented `POST /api/v1/banking/reconciliation/match` atomically linking statement line to GL journal entry and stamping `isReconciled: true` with `reconciledAt`.
+  - Implemented `POST /api/v1/banking/reconciliation/unmatch` reversing an existing match and restoring unreconciled state on both records.
+  - Implemented `POST /api/v1/banking/reconciliation/create-and-reconcile` providing on-the-fly recording of direct spend/receive transactions or inter-account transfers directly from a statement line and immediately linking them as reconciled.
+- `backend/src/server.ts`:
+  - Registered `bankingRoutes` under `/api/v1/banking`.
+- `frontend/src/api/client.ts`:
+  - Added `BankAccountSummary`, `BankTransfer`, `BankStatementLine`, `ReconciliationCandidate`, `ReconciliationSuggestionItem` types and `bankingApi` client methods.
+- `frontend/src/pages/BankingPage.tsx`:
+  - Created tabbed Corporate Precision banking workbench:
+    - **Accounts Overview Hub**: Grid cards displaying live ledger balances, unreconciled badge counters, statement counts, quick reconcile action, and bank metadata editor.
+    - **Reconciliation Workspace**: Interactive split-pane reconciliation interface. Left pane displays unreconciled bank statement lines with amount and date badges; right pane displays high-confidence GL match candidates with 1-click "Match" button, manual match selection, and an on-the-fly "Create & Reconcile" coding drawer.
+    - **Inter-Account Transfers**: Tabular history of completed transfers between accounts with "New Transfer" modal posting atomic GL journals.
+    - **Statement Import & History**: Drag-and-drop / file picker CSV statement import modal supporting Commonwealth Bank, Westpac, ANZ, NAB, and Macquarie formats, with paginated history and safe deletion of unreconciled lines.
+- `frontend/src/App.tsx`:
+  - Added `/banking` route rendering `<BankingPage />`.
+- `frontend/src/components/AppShell.tsx`:
+  - Added "Banking & Accounts" navigation link to General Ledger navigation group.
+- `docs/STAGES_ROADMAP.md`:
+  - Marked Module 7 checklist items (7.1, 7.2, 7.3) as completed `[x]`.
+- `docs/ARCHITECTURE.md` & `docs/SECURITY.md`:
+  - Documented `/api/v1/banking/*` routes, client route `/banking`, and updated 7-role RBAC matrix.
+- `AGENTS.md`:
+  - Updated Directory Layout with `backend/src/routes/banking.ts` and `frontend/src/pages/BankingPage.tsx`.
+
+---
+
 ## [0.18.2] — 2026-11-08 — Stage 4.7: Horizontal (Landscape A4) Tax Invoice Preview & Print Engine
 
 ### Added

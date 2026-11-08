@@ -282,7 +282,22 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `GET` | `/api/v1/ledger/profit-loss` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Generates Profit & Loss financial statement. |
 | `GET` | `/api/v1/ledger/balance-sheet` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Generates Balance Sheet financial statement. |
 
-### 15. Frontend Client Routes (`frontend/src/App.tsx`)
+### 17. Multi-Account Banking & Statement Reconciliation API (`/api/v1/banking/*`)
+| Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/banking/accounts` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR`, `AP_SPECIALIST`, `AR_SPECIALIST` | Lists all GL accounts flagged as bank/card accounts with live computed ledger balance, unreconciled lines count, statement count, and last statement date. |
+| `PATCH` | `/api/v1/banking/accounts/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Updates bank account status (`isBankAccount`) and banking details (`bankBsb`, `bankAccountNumber`, `apcaUserId`). |
+| `GET` | `/api/v1/banking/transfers` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR` | Lists inter-account transfers with source/destination account names and transaction amounts. |
+| `POST` | `/api/v1/banking/transfers` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER` | Records inter-account transfer and atomically posts clean 2-line double-entry GL journal (`DEBIT Destination Account`, `CREDIT Source Account`). |
+| `POST` | `/api/v1/banking/statements/import` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Parses CSV bank statements (supports Commonwealth Bank, Westpac, ANZ, NAB, Macquarie, and generic formats) and imports `bank_statement_lines`. |
+| `GET` | `/api/v1/banking/statements` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Lists imported bank statement lines with account and status filters (`ALL`, `UNRECONCILED`, `RECONCILED`). |
+| `DELETE` | `/api/v1/banking/statements/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Deletes an unreconciled statement line (reconciled lines protected against deletion). |
+| `GET` | `/api/v1/banking/reconciliation/suggestions` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Computes smart match candidates between unreconciled statement lines and General Ledger transactions based on exact/opposite amount matching and date proximity scoring. |
+| `POST` | `/api/v1/banking/reconciliation/match` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Matches a bank statement line with a GL journal entry, updating `isReconciled: true` and `reconciledAt` timestamp. |
+| `POST` | `/api/v1/banking/reconciliation/unmatch` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Reverses an existing match, restoring both statement line and GL journal entry to unreconciled status. |
+| `POST` | `/api/v1/banking/reconciliation/create-and-reconcile` | Cookie Session | `ADMIN`, `ACCOUNTANT` | On-the-fly creates a direct spend/receive transaction or inter-account transfer directly from a statement line and immediately reconciles it. |
+
+### 18. Frontend Client Routes (`frontend/src/App.tsx`)
 | Client Route | Guard Status | Rendered Component | Purpose / Description |
 | :--- | :--- | :--- | :--- |
 | `/` | Authenticated | `<DashboardPage />` | Executive dashboard overview, KPI summaries, and quick actions. |
@@ -293,6 +308,7 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `/invoices` | Authenticated | `<InvoicesPage />` | Customer Invoices, Quotes, and Credit Notes workbench. |
 | `/bills` | Authenticated | `<BillsPage />` | Accounts Payable Bills, Purchase Orders, Vendor Credits, and Batch Payments workbench. |
 | `/expenses` | Authenticated | `<ExpensesPage />` | Direct Spend Money, Out-of-Pocket Expense Claims, Approvals Queue, and Reimbursement Payouts workbench. |
+| `/banking` | Authenticated | `<BankingPage />` | Bank & Credit Card Accounts, Inter-Account Transfers, Statement CSV Import, and Smart Split-Pane Reconciliation workbench. |
 | `/accounts` | Authenticated | `<AccountsPage />` | Chart of Accounts and Tracking Dimensions workbench. |
 | `/ledger` | Authenticated | `<LedgerPage />` | General Ledger audit trail and financial reports (Trial Balance, P&L, Balance Sheet). |
 | `/settings` | Authenticated | `<SettingsPage />` | Organization profile, lock dates, EFT banking, team members, invites, and system audit logs. |

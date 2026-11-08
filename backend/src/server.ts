@@ -39,6 +39,7 @@ import { vendorCreditRoutes } from './routes/vendor-credits.js';
 import { batchPaymentRoutes } from './routes/batch-payments.js';
 import { directTransactionRoutes } from './routes/direct-transactions.js';
 import { expenseClaimRoutes } from './routes/expense-claims.js';
+import { bankingRoutes } from './routes/banking.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -154,6 +155,7 @@ async function buildServer() {
   await fastify.register(batchPaymentRoutes);
   await fastify.register(directTransactionRoutes);
   await fastify.register(expenseClaimRoutes);
+  await fastify.register(bankingRoutes);
 
   // -------------------------------------------------------------------------
   // Health check (unauthenticated — used by Cloud Run)

@@ -51,6 +51,19 @@ const NAV_GROUPS: NavGroup[] = [
     groupLabel: 'General Ledger',
     items: [
       {
+        label: 'Banking & Accounts',
+        href: '/banking',
+        icon: Building2,
+        allowedRoles: [
+          'ADMIN',
+          'ACCOUNTANT',
+          'MANAGER',
+          'AR_SPECIALIST',
+          'AP_SPECIALIST',
+          'AUDITOR',
+        ],
+      },
+      {
         label: 'Chart of Accounts',
         href: '/accounts',
         icon: Landmark,

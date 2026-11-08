@@ -132,6 +132,8 @@ Access is compartmentalized by functional domain so regular employees (`EMPLOYEE
 | Purchase Orders, Vendor Bills & AP Credit Notes | ✅ | ✅ | ✅ (POs) | ❌ | ✅ | ❌ | 🔍 Read |
 | Execute Payments Out & Export `.ABA` Bank Files | ✅ | ✅ | ❌ | ❌ | Draft/Prep | ❌ | ❌ |
 | Record Direct "Spend Money" Bank/Card Expenses | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | 🔍 Read |
+| Inter-Account Money Transfers | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | 🔍 Read |
+| Bank Statement Import & GL Reconciliation | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | 🔍 Read |
 | Submit & View **Own** Employee Expense Claims | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (Own) | 🔍 Read |
 | View Immutable System Audit Log | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Delete organization | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |

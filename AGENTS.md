@@ -165,6 +165,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │       ├── routes/
 │       │   ├── accounts.ts        # GET/POST/PATCH /api/v1/accounts, decommission sweep, tracking categories
 │       │   ├── auth.ts            # POST /api/v1/auth/google, GET /me, POST /switch-organization, DELETE /logout
+│       │   ├── banking.ts         # Multi-account banking, inter-account transfers, statement import & smart reconciliation
 │       │   ├── batch-payments.ts  # GET/POST /api/v1/batch-payments, GET /:id/aba (APCA CEMTEX file download)
 │       │   ├── bills.ts           # GET/POST /api/v1/bills, recurring schedules, approval GL & payments out
 │       │   ├── contacts.ts        # GET/api/v1/contacts, POST, GET /:id, PATCH /:id, GET /:id/360
@@ -220,6 +221,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
         │   └── utils.ts       # Utility helper functions
         └── pages/
             ├── AccountsPage.tsx      # Module 2 Chart of Accounts workbench (list, create, seed system accounts)
+            ├── BankingPage.tsx       # Module 7 Multi-Account Banking, Inter-Account Transfers & Split-Pane Reconciliation
             ├── BillsPage.tsx         # Accounts Payable bills (list, line items, payments out, GL modal)
             ├── ContactsPage.tsx      # Contacts directory (list, filter, create, edit modal)
             ├── DashboardPage.tsx     # Landing dashboard page
