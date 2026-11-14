@@ -102,6 +102,12 @@ const AVAILABLE_MODULES = [
     description: 'PDF tax invoice and receipt attachment storage via Google Cloud Storage.',
     locked: false,
   },
+  {
+    key: 'DEVELOPER_PORTAL',
+    label: 'Developer & Agent Context Console',
+    description: 'In-app read-only governance console for agent specifications, roadmaps, changelogs, and runtime diagnostics.',
+    locked: false,
+  },
 ];
 
 const MONTHS = [

@@ -22,6 +22,7 @@ import {
   User,
   Wallet,
   BarChart3,
+  Terminal,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { orgApi, ApiError, type Role } from '@/api/client';
@@ -171,6 +172,12 @@ const NAV_GROUPS: NavGroup[] = [
           'EMPLOYEE',
           'AUDITOR',
         ],
+      },
+      {
+        label: 'Developer & Context',
+        href: '/developer',
+        icon: Terminal,
+        allowedRoles: ['ADMIN'],
       },
     ],
   },

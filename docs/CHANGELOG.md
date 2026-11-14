@@ -4,6 +4,43 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.21.0] — 2026-11-14 — Module 9: Developer & Agent Context Interface (`/developer`)
+
+### Added
+- **Backend Developer & Diagnostics API (`backend/src/routes/developer.ts`, `backend/src/server.ts`)**:
+  - `GET /api/v1/developer/docs` (`ADMIN` only): Returns the canonical allowlisted index of repository governance and technical documentation (`AGENTS.md`, `AGENT_SPECIFICATION.md`, `docs/*.md`) with extracted titles, categories, line counts, byte sizes, and modification timestamps. Enforces map-based key lookup with zero arbitrary path traversal.
+  - `GET /api/v1/developer/docs/content?path=...` (`ADMIN` only): Serves raw Markdown content and file metadata for allowlisted documentation keys.
+  - `GET /api/v1/developer/roadmap-summary` (`ADMIN` only): Deterministically parses `docs/STAGES_ROADMAP.md` into per-module completion percentages, objectives, and `[x]` / `[ ]` checklist items.
+  - `GET /api/v1/developer/diagnostics` (`ADMIN` only): Returns non-secret container runtime telemetry, live `SELECT 1` PostgreSQL latency, multi-tenant entity counts (`where: { organizationId }`), active workspace governance settings, and boolean-only secret presence flags (`DB_PASSWORD`, `SESSION_SECRET`, `WEBHOOK_SECRET` values strictly redacted).
+- **Frontend Developer & Agent Context Console (`frontend/src/pages/DeveloperPage.tsx`, `frontend/src/api/client.ts`, `frontend/src/App.tsx`, `frontend/src/components/AppShell.tsx`, `frontend/src/pages/SettingsPage.tsx`)**:
+  - Built `/developer` following Corporate Precision (`docs/DESIGN_SYSTEM.md`) with four tabs:
+    1. **Context & Docs Viewer**: Categorized file sidebar, full-text search with inline match highlighting, deterministic Markdown table/code/checklist renderer, Raw Source toggle, and clipboard copy.
+    2. **Roadmap Tracker**: Module completion KPIs, status filtering, and expandable checklist gates parsed from `docs/STAGES_ROADMAP.md`.
+    3. **Changelog & Audit Feed**: Chronological release parser (`docs/CHANGELOG.md`) paired side-by-side with live immutable workspace `audit_logs` events.
+    4. **Runtime & Diagnostics**: Read-only container runtime telemetry, PostgreSQL health & tenant record footprint, sanitized flag/secret-redaction matrix, and active `enabledModules`.
+  - Added `Developer & Context` navigation link under **Governance** in `AppShell.tsx` (`ADMIN` only) and `DEVELOPER_PORTAL` module option in `SettingsPage.tsx`.
+
+### Changed
+- `Dockerfile`: Copied `AGENTS.md`, `AGENT_SPECIFICATION.md`, and `docs/` (`--chown=node:node`) into `/app` in the Stage 3 production runner image so `/api/v1/developer/*` works identically in Cloud Run.
+- `AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/STAGES_ROADMAP.md`: Synchronized directory tree, Section 20/21 API & client route tables, 7-Role RBAC Matrix, and marked Module 9 (`9.1`, `9.2`) completed.
+
+---
+
+## [0.20.3] — 2026-11-14 — Module 10 Roadmap Addition (UI/UX Alignment, Expenses Remediation & Reports A4 Print Engine)
+
+### Changed
+- `docs/STAGES_ROADMAP.md`: Added **Module 10: Corporate Precision UI/UX Alignment, Overlay Architecture, Expenses Remediation & A4 Report Print Engine** (`10.1`–`10.8`) covering:
+  - `10.1`: Universal `createPortal(..., document.body)` overlay architecture for `Modal.tsx`, `Drawer.tsx`, `InvoicePreviewModal.tsx`, `BillPreviewModal.tsx`, and `OnboardingModal.tsx` to eliminate the `24px` top backdrop gap from `.space-y-6`.
+  - `10.2`: Expenses data contract alignment (`subtotalCents`, `gstCents`, `totalCents`, `claim.employee`, `bankAccountCode`) to fix `$NaN` GST/Total amounts, GST-inclusive edit shrinkage, and employee banking status display.
+  - `10.3`: Single-record detail fetching (`getClaim` / `getDirectTransaction`) in `InspectClaimDrawer` and `InspectDirectTxnDrawer` to display full Double-Entry GL journal lines.
+  - `10.4`: Financial Reports (`/reports`) A4 print isolation (`@media print` & `@page { size: A4; margin: 10mm; }`), suppressing `AppShell.tsx` webpage headers/footers and unlocking scroll containers for multi-page A4 report pagination.
+  - `10.5`: Removal of non-user-facing internal tags (`MODULE 06`, `Master Data`, `Double-Entry Certified`) and `AppShell.tsx` footer infrastructure jargon.
+  - `10.6`: Corporate Precision surface geometry standardization (`rounded-md`, hairline borders, removal of `shadow-sm` and decorative pastel icon boxes on `DashboardPage.tsx`, and squared `rounded` tab counters).
+  - `10.7`: Deduplication of outer page padding wrappers in `DashboardPage.tsx` and `ReportsPage.tsx`.
+  - `10.8`: Standardization of page header typography (`Inter` `text-xl font-medium`) and sub-navigation tab bar active indicators across all pages.
+
+---
+
 ## [0.20.2] — 2026-11-14 — Agent Studio Context & Verification Alignment
 
 ### Changed

@@ -42,6 +42,7 @@ import { expenseClaimRoutes } from './routes/expense-claims.js';
 import { bankingRoutes } from './routes/banking.js';
 import { reportRoutes } from './routes/reports.js';
 import { dashboardRoutes } from './routes/dashboard.js';
+import { developerRoutes } from './routes/developer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -169,6 +170,7 @@ async function buildServer() {
   await fastify.register(bankingRoutes);
   await fastify.register(reportRoutes);
   await fastify.register(dashboardRoutes);
+  await fastify.register(developerRoutes);
 
   // -------------------------------------------------------------------------
   // Health check (unauthenticated — used by Cloud Run)

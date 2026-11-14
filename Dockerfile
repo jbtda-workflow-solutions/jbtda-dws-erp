@@ -65,6 +65,11 @@ COPY --chown=node:node --from=backend-builder /app/backend/package.json ./backen
 # Copy frontend static build for Fastify @fastify/static serving
 COPY --chown=node:node --from=frontend-builder /app/frontend/dist ./frontend/dist
 
+# Copy allowlisted governance & technical documentation for Module 9 (/api/v1/developer/*)
+COPY --chown=node:node AGENTS.md ./AGENTS.md
+COPY --chown=node:node AGENT_SPECIFICATION.md ./AGENT_SPECIFICATION.md
+COPY --chown=node:node docs ./docs
+
 WORKDIR /app/backend
 EXPOSE 8080
 

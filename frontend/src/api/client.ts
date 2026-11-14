@@ -2375,5 +2375,131 @@ export const dashboardApi = {
   getSummary: () => request<DashboardSummary>('GET', '/dashboard/summary'),
 };
 
+// ---------------------------------------------------------------------------
+// Module 9: Developer & Agent Context Interface (/api/v1/developer/*)
+// ---------------------------------------------------------------------------
 
+export type DocCategory =
+  | 'ROOT_GOVERNANCE'
+  | 'ROADMAP_AND_HISTORY'
+  | 'TECHNICAL_SPECIFICATION';
+
+export interface DeveloperDocMeta {
+  path: string;
+  fileName: string;
+  title: string;
+  category: DocCategory;
+  sizeBytes: number;
+  lineCount: number;
+  lastModified: string;
+}
+
+export interface DeveloperDocContentResponse {
+  doc: DeveloperDocMeta;
+  content: string;
+}
+
+export interface RoadmapChecklistItem {
+  id: string;
+  title: string;
+  completed: boolean;
+  details: string[];
+}
+
+export interface RoadmapModuleSummary {
+  moduleNumber: number;
+  heading: string;
+  title: string;
+  completedBadge: boolean;
+  objective: string;
+  completedCount: number;
+  pendingCount: number;
+  totalCount: number;
+  completionPercent: number;
+  items: RoadmapChecklistItem[];
+}
+
+export interface RoadmapSummaryResponse {
+  sourcePath: string;
+  lastModified: string;
+  totalModules: number;
+  completedModules: number;
+  totalChecklistItems: number;
+  completedChecklistItems: number;
+  pendingChecklistItems: number;
+  overallCompletionPercent: number;
+  modules: RoadmapModuleSummary[];
+}
+
+export interface DeveloperDiagnosticsResponse {
+  runtime: {
+    nodeVersion: string;
+    platform: string;
+    nodeEnv: string;
+    port: number;
+    host: string;
+    uptimeSeconds: number;
+    memoryRssBytes: number;
+    memoryHeapUsedBytes: number;
+    serverTimestamp: string;
+  };
+  configuration: {
+    autoSchemaPush: string;
+    dbForceReset: string;
+    frontendDistBundled: boolean;
+    docsAllowlistCount: number;
+    cloudSqlSocketConfigured: boolean;
+    googleClientIdConfigured: boolean;
+    frontendOriginConfigured: boolean;
+    secretsPresenceRedacted: {
+      dbPasswordConfigured: boolean;
+      sessionSecretConfigured: boolean;
+      webhookSecretConfigured: boolean;
+    };
+  };
+  database: {
+    status: 'CONNECTED' | 'DEGRADED';
+    latencyMs: number;
+    tenantMetrics: {
+      accountsCount: number;
+      contactsCount: number;
+      invoicesCount: number;
+      billsCount: number;
+      journalEntriesCount: number;
+      auditLogsCount: number;
+      membersCount: number;
+    };
+  };
+  organization: {
+    id: string;
+    name: string;
+    legalName: string | null;
+    abn: string;
+    baseCurrency: string;
+    defaultPaymentTermsDays: number;
+    fiscalYearStartMonth: number;
+    lockDate: string | null;
+    enforceTwoPersonApproval: boolean;
+    enabledModules: string[];
+    developerPortalFlagEnabled: boolean;
+    createdAt: string;
+  };
+}
+
+export const developerApi = {
+  listDocs: () =>
+    request<{ files: DeveloperDocMeta[] }>('GET', '/developer/docs'),
+
+  getDocContent: (docPath: string) =>
+    request<DeveloperDocContentResponse>(
+      'GET',
+      `/developer/docs/content?path=${encodeURIComponent(docPath)}`,
+    ),
+
+  getRoadmapSummary: () =>
+    request<RoadmapSummaryResponse>('GET', '/developer/roadmap-summary'),
+
+  getDiagnostics: () =>
+    request<DeveloperDiagnosticsResponse>('GET', '/developer/diagnostics'),
+};
 

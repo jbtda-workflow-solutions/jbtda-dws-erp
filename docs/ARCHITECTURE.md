@@ -313,7 +313,15 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | :--- | :--- | :--- | :--- | :--- |
 | `GET` | `/api/v1/dashboard/summary` | Cookie Session | All Authenticated Roles | Computes 100% real-time financial intelligence: liquid cash position across bank accounts, AR & AP totals and aging brackets, actionable pending approvals queue (bills, POs, claims, journals), MTD and YTD P&L performance, and recent audit activity feed. |
 
-### 20. Frontend Client Routes (`frontend/src/App.tsx`)
+### 20. Developer & Agent Context Console API (`/api/v1/developer/*`)
+| Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/developer/docs` | Cookie Session | `ADMIN` | Returns the strictly allowlisted index of repository governance and technical Markdown documentation (`AGENTS.md`, `AGENT_SPECIFICATION.md`, `docs/*.md`) with file size, line count, category, and modification metadata. Zero arbitrary directory traversal. |
+| `GET` | `/api/v1/developer/docs/content` | Cookie Session | `ADMIN` | Returns raw Markdown content and metadata for a whitelisted documentation key (`?path=AGENTS.md` or `?path=docs/ARCHITECTURE.md`). Rejects any unindexed path with `404 Not Found`. |
+| `GET` | `/api/v1/developer/roadmap-summary` | Cookie Session | `ADMIN` | Deterministically parses `docs/STAGES_ROADMAP.md` into structured module progress metrics and completed/pending checklist gates. |
+| `GET` | `/api/v1/developer/diagnostics` | Cookie Session | `ADMIN` | Returns safe, non-secret container runtime telemetry, `SELECT 1` PostgreSQL latency, multi-tenant entity counts (`where: { organizationId }`), active workspace governance flags, and boolean-only secret presence checks (strictly redacting `DB_PASSWORD`, `SESSION_SECRET`, and `WEBHOOK_SECRET` values). |
+
+### 21. Frontend Client Routes (`frontend/src/App.tsx`)
 | Client Route | Guard Status | Rendered Component | Purpose / Description |
 | :--- | :--- | :--- | :--- |
 | `/` | Authenticated | `<DashboardPage />` | Executive dashboard overview, live working capital metrics, actionable approvals banner, and financial KPIs. |
@@ -329,4 +337,5 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `/ledger` | Authenticated | `<LedgerPage />` | General Ledger audit trail and manual journal entry management. |
 | `/reports` | Authenticated | `<ReportsPage />` | Financial Statements (Trial Balance, Dimensional P&L, Balance Sheet, Aged AR/AP) and Australian ATO BAS Engine workbench. |
 | `/settings` | Authenticated | `<SettingsPage />` | Organization profile, lock dates, EFT banking, team members, invites, and system audit logs. |
+| `/developer` | Authenticated (`ADMIN`) | `<DeveloperPage />` | Read-only Developer & Agent Context Console (allowlisted Markdown docs viewer, roadmap tracker, changelog & audit feed, and sanitized runtime diagnostics). |
 | `/*` | Authenticated | Navigate to `/` | Client-side catch-all redirect to `/`. |

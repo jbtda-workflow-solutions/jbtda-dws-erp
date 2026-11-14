@@ -14,6 +14,7 @@ import { ExpensesPage } from '@/pages/ExpensesPage';
 import { BankingPage } from '@/pages/BankingPage';
 import { ReportsPage } from '@/pages/ReportsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { DeveloperPage } from '@/pages/DeveloperPage';
 
 // ---------------------------------------------------------------------------
 // Root guard — renders the correct view based on auth status
@@ -56,6 +57,7 @@ function AppRoutes() {
         <Route path="/ledger" element={<LedgerPage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/developer" element={<DeveloperPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>

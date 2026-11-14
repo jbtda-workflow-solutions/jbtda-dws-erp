@@ -187,6 +187,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │       │   ├── contacts.ts        # GET/api/v1/contacts, POST, GET /:id, PATCH /:id, GET /:id/360
 │       │   ├── credit-notes.ts    # GET/POST /api/v1/credit-notes, /:id/issue (contra-AR GL), /:id/allocate
 │       │   ├── dashboard.ts       # GET /api/v1/dashboard/summary (100% live PostgreSQL KPI aggregations)
+│       │   ├── developer.ts       # GET /api/v1/developer/* (Allowlisted docs index/content, roadmap parser, safe diagnostics)
 │       │   ├── direct-transactions.ts # GET/POST /api/v1/direct-transactions (Spend/Receive Money, atomic GL)
 │       │   ├── expense-claims.ts  # GET/POST/PATCH/DELETE /api/v1/expense-claims, approve GL, pay
 │       │   ├── invoices.ts        # GET/POST /api/v1/invoices, recurring schedules, GL issuance & payments in
@@ -245,6 +246,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
             ├── BillsPage.tsx         # Accounts Payable bills (list, line items, payments out, GL modal)
             ├── ContactsPage.tsx      # Contacts directory (list, filter, create, edit modal)
             ├── DashboardPage.tsx     # Executive dashboard with live working capital KPIs & actionable approvals queue
+            ├── DeveloperPage.tsx     # Module 9 Developer & Agent Context Console (docs viewer, roadmap, changelog, diagnostics)
             ├── ExpensesPage.tsx      # Module 6 Direct spend money, expense claims & reimbursement payouts
             ├── InvoicesPage.tsx      # Customer Invoices (list, draft, issue with GL posting, payments in)
             ├── ItemsPage.tsx         # Products & Services catalog workbench (list, filter, create, edit, drawer)
