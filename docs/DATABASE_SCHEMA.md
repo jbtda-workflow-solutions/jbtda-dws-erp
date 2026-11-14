@@ -328,7 +328,7 @@ In Module 1.1, the baseline schema is expanded into the complete Unified Enterpr
    - `direct_transactions` & `direct_transaction_lines`: Direct "Spend Money" (and "Receive Money") bank/card transactions.
    - `expense_claims` & `expense_claim_items`: Employee out-of-pocket claims (`DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, `PAID`) posting to `2050 Employee Reimbursements Payable`.
 7. **Banking & Reconciliation (`bank_transfers`, `bank_statement_lines`):**
-   - `bank_statement_lines`: Imported CSV/OFX bank lines matched against GL transactions.
+   - `bank_statement_lines`: Imported CSV/OFX bank lines matched against GL transactions, including optional pre-validated CSV context references (`suggested_contact_id` FK $\rightarrow$ `contacts.id`, `suggested_account_id` FK $\rightarrow$ `accounts.id`, `suggested_tracking_option_id` FK $\rightarrow$ `tracking_options.id`, and `suggested_tax_treatment` `TaxTreatment?`).
 
 ---
 
@@ -337,4 +337,6 @@ In Module 1.1, the baseline schema is expanded into the complete Unified Enterpr
 | # | Date | Description |
 |---|------|-------------|
 | 001 | 2026-11-01 | Initial schema — users, organizations, organization_members, organization_invites, accounts, contacts, bills, bill_line_items, invoices, invoice_line_items, payments_out, payments_in, journal_entries, journal_lines |
+| 002 | 2026-11-11 | Unified Enterprise Foundation — quotes, credit_notes, purchase_orders, vendor_credits, batch_payments, direct_transactions, expense_claims, bank_transfers, bank_statement_lines, tracking_categories, tracking_options, recurring_schedules, audit_logs |
+| 003 | 2026-11-14 | Module 12 Context-Aware Statement Lines — Added `suggested_contact_id`, `suggested_account_id`, `suggested_tracking_option_id`, and `suggested_tax_treatment` to `bank_statement_lines` via `schema-sync.ts` and `rebuild_all_schema.sql` |
 

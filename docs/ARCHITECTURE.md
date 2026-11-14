@@ -309,13 +309,13 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `GET` | `/api/v1/banking/transfers` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR` | Lists inter-account transfers with source/destination account names and transaction amounts. |
 | `POST` | `/api/v1/banking/transfers` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER` | Records inter-account transfer and atomically posts clean 2-line double-entry GL journal (`DEBIT Destination Account`, `CREDIT Source Account`). |
 | `DELETE` | `/api/v1/banking/transfers/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Reverses and deletes an inter-account transfer and reverses its linked `BANK_TRANSFER` GL journal. |
-| `POST` | `/api/v1/banking/statements/import` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Parses CSV bank statements (supports Commonwealth Bank, Westpac, ANZ, NAB, Macquarie, and generic formats) and imports `bank_statement_lines`. |
-| `GET` | `/api/v1/banking/statements` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Lists imported bank statement lines with account and status filters (`ALL`, `UNRECONCILED`, `RECONCILED`). |
+| `POST` | `/api/v1/banking/statements/import` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Two-step CSV bank statement parser (`dryRun: true` Validate & Preview vs. Commit). Accepts optional `Contact/Supplier/Merchant`, `Account/GL Code`, `Cost Centre/Tracking Option`, and `Tax Treatment` columns strictly validated against existing organization records. |
+| `GET` | `/api/v1/banking/statements` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Lists imported bank statement lines enriched with pre-validated `suggestedContact`, `suggestedAccount`, and `suggestedTrackingOption` coding hints. |
 | `DELETE` | `/api/v1/banking/statements/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Deletes an unreconciled statement line (reconciled lines protected against deletion). |
 | `GET` | `/api/v1/banking/reconciliation/suggestions` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Computes smart match candidates between unreconciled statement lines and General Ledger transactions based on exact/opposite amount matching and date proximity scoring. |
 | `POST` | `/api/v1/banking/reconciliation/match` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Matches a bank statement line with a GL journal entry, updating `isReconciled: true` and `reconciledAt` timestamp. |
 | `POST` | `/api/v1/banking/reconciliation/unmatch` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Reverses an existing match, restoring both statement line and GL journal entry to unreconciled status. |
-| `POST` | `/api/v1/banking/reconciliation/create-and-reconcile` | Cookie Session | `ADMIN`, `ACCOUNTANT` | On-the-fly creates a direct spend/receive transaction or inter-account transfer directly from a statement line and immediately reconciles it. |
+| `POST` | `/api/v1/banking/reconciliation/create-and-reconcile` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Multi-mode contact-linked reconciliation (`DIRECT_EXPENSE`, `ALLOCATE_BILL`, `CREATE_AND_PAY_BILL`, `DIRECT_INCOME`, `ALLOCATE_INVOICE`, `CREATE_AND_PAY_INVOICE`): creates and links `DirectTransaction`, `Bill`/`PaymentOut`, or `Invoice`/`PaymentIn` records to `Contact`, posts the double-entry GL journal, and reconciles the statement line. |
 
 ### 18. Financial Statements & Australian BAS Engine API (`/api/v1/reports/*`)
 | Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
@@ -342,7 +342,14 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `GET` | `/api/v1/developer/api-catalog` | Cookie Session | `ADMIN` | Deterministically parses `docs/ARCHITECTURE.md` (`Master Monolith Entrypoint Directory`) into structured domain groups, HTTP verbs, paths, auth requirements, RBAC scopes, and endpoint descriptions. |
 | `GET` | `/api/v1/developer/diagnostics` | Cookie Session | `ADMIN` | Returns safe, non-secret container runtime telemetry, `SELECT 1` PostgreSQL latency, multi-tenant entity counts (`where: { organizationId }`), active workspace governance flags, and boolean-only secret presence checks (strictly redacting `DB_PASSWORD`, `SESSION_SECRET`, and `WEBHOOK_SECRET` values). |
 
-### 21. Frontend Client Routes (`frontend/src/App.tsx`)
+### 21. Centralized Admin Bulk CSV Import API (`/api/v1/bulk-import/*`)
+| Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/bulk-import/templates` | Cookie Session | `ADMIN` | Returns schema definitions, required vs. optional column rules, multi-line grouping keys, and downloadable sample `.CSV` templates for all 13 supported ERP record types (`CONTACTS`, `ITEMS`, `ACCOUNTS`, `TRACKING_OPTIONS`, `INVOICES`, `QUOTES`, `CREDIT_NOTES`, `BILLS`, `PURCHASE_ORDERS`, `VENDOR_CREDITS`, `DIRECT_TRANSACTIONS`, `EXPENSE_CLAIMS`, `JOURNAL_ENTRIES`). |
+| `POST` | `/api/v1/bulk-import/validate` | Cookie Session | `ADMIN` | Step 1 Validate & Preview: Parses CSV rows for the selected `entityType`, groups multi-line documents by reference number, strictly validates foreign keys against existing organization Contacts, Accounts, Items, Tracking Options, and Lock Dates, and returns row/document validation previews without mutating the database. |
+| `POST` | `/api/v1/bulk-import/commit` | Cookie Session | `ADMIN` | Step 2 Commit: Atomically persists all validated records/documents inside a Prisma transaction, executing full `LedgerPostingService` double-entry GL postings for any documents flagged as `ISSUED`, `AWAITING_PAYMENT`, `APPROVED`, or `POSTED`, and appends an immutable `AuditLog` summary. |
+
+### 22. Frontend Client Routes (`frontend/src/App.tsx`)
 | Client Route | Guard Status | Rendered Component | Purpose / Description |
 | :--- | :--- | :--- | :--- |
 | `/` | Authenticated | `<DashboardPage />` | Executive dashboard overview, live working capital metrics, actionable approvals banner, and financial KPIs. |
@@ -357,6 +364,6 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `/accounts` | Authenticated | `<AccountsPage />` | Chart of Accounts and Tracking Dimensions workbench. |
 | `/ledger` | Authenticated | `<LedgerPage />` | General Ledger audit trail and manual journal entry management. |
 | `/reports` | Authenticated | `<ReportsPage />` | Financial Statements (Trial Balance, Dimensional P&L, Balance Sheet, Aged AR/AP) and Australian ATO BAS Engine workbench. |
-| `/settings` | Authenticated | `<SettingsPage />` | Organization profile, lock dates, EFT banking, team members, invites, and system audit logs. |
+| `/settings` | Authenticated | `<SettingsPage />` | Organization profile, lock dates, EFT banking, team members, invites, system audit logs, and Centralized Admin Bulk CSV Import Hub (`ADMIN`). |
 | `/developer` | Authenticated (`ADMIN`) | `<DeveloperPage />` | Read-only Developer & Agent Context Console (allowlisted Markdown docs viewer, roadmap tracker, changelog & audit feed, and sanitized runtime diagnostics). |
 | `/*` | Authenticated | Navigate to `/` | Client-side catch-all redirect to `/`. |

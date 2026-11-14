@@ -755,9 +755,13 @@ export function ContactsPage() {
                         <StatusTag
                           label={item.docType.replace('_', ' ')}
                           tone={
-                            item.docType === 'INVOICE' || item.docType === 'PAYMENT_IN'
+                            item.docType === 'INVOICE' ||
+                            item.docType === 'PAYMENT_IN' ||
+                            item.docType === 'RECEIVE_MONEY'
                               ? 'forest'
-                              : item.docType === 'BILL' || item.docType === 'PAYMENT_OUT'
+                              : item.docType === 'BILL' ||
+                                item.docType === 'PAYMENT_OUT' ||
+                                item.docType === 'SPEND_MONEY'
                               ? 'amber'
                               : 'slate'
                           }

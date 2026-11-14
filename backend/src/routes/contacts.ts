@@ -601,80 +601,106 @@ const contactRoutes: FastifyPluginAsync = async (fastify) => {
         }
       }
 
-      // Fetch unified chronological recent activity (Invoices, Bills, PaymentsIn, PaymentsOut, Quotes)
-      const [recentInvoices, recentBills, recentPaymentsIn, recentPaymentsOut, recentQuotes] =
-        await Promise.all([
-          fastify.prisma.invoice.findMany({
-            where: { contactId: id, organizationId },
-            take: 15,
-            orderBy: { issueDate: 'desc' },
-            select: {
-              id: true,
-              invoiceNumber: true,
-              issueDate: true,
-              dueDate: true,
-              totalCents: true,
-              amountPaidCents: true,
-              status: true,
-            },
-          }),
-          fastify.prisma.bill.findMany({
-            where: { contactId: id, organizationId },
-            take: 15,
-            orderBy: { issueDate: 'desc' },
-            select: {
-              id: true,
-              reference: true,
-              issueDate: true,
-              dueDate: true,
-              totalCents: true,
-              amountPaidCents: true,
-              status: true,
-            },
-          }),
-          fastify.prisma.paymentIn.findMany({
-            where: { contactId: id, organizationId },
-            take: 15,
-            orderBy: { paymentDate: 'desc' },
-            select: {
-              id: true,
-              paymentDate: true,
-              amountCents: true,
-              reference: true,
-            },
-          }),
-          fastify.prisma.paymentOut.findMany({
-            where: { bill: { contactId: id }, organizationId },
-            take: 15,
-            orderBy: { paymentDate: 'desc' },
-            select: {
-              id: true,
-              paymentDate: true,
-              amountCents: true,
-              reference: true,
-              bill: { select: { reference: true } },
-            },
-          }),
-          fastify.prisma.quote.findMany({
-            where: { contactId: id, organizationId },
-            take: 10,
-            orderBy: { issueDate: 'desc' },
-            select: {
-              id: true,
-              quoteNumber: true,
-              issueDate: true,
-              expiryDate: true,
-              totalCents: true,
-              status: true,
-            },
-          }),
-        ]);
+      // Fetch unified chronological recent activity (Invoices, Bills, PaymentsIn, PaymentsOut, Quotes, DirectTransactions)
+      const [
+        recentInvoices,
+        recentBills,
+        recentPaymentsIn,
+        recentPaymentsOut,
+        recentQuotes,
+        recentDirectTransactions,
+      ] = await Promise.all([
+        fastify.prisma.invoice.findMany({
+          where: { contactId: id, organizationId },
+          take: 15,
+          orderBy: { issueDate: 'desc' },
+          select: {
+            id: true,
+            invoiceNumber: true,
+            issueDate: true,
+            dueDate: true,
+            totalCents: true,
+            amountPaidCents: true,
+            status: true,
+          },
+        }),
+        fastify.prisma.bill.findMany({
+          where: { contactId: id, organizationId },
+          take: 15,
+          orderBy: { issueDate: 'desc' },
+          select: {
+            id: true,
+            reference: true,
+            issueDate: true,
+            dueDate: true,
+            totalCents: true,
+            amountPaidCents: true,
+            status: true,
+          },
+        }),
+        fastify.prisma.paymentIn.findMany({
+          where: { contactId: id, organizationId },
+          take: 15,
+          orderBy: { paymentDate: 'desc' },
+          select: {
+            id: true,
+            paymentDate: true,
+            amountCents: true,
+            reference: true,
+          },
+        }),
+        fastify.prisma.paymentOut.findMany({
+          where: { bill: { contactId: id }, organizationId },
+          take: 15,
+          orderBy: { paymentDate: 'desc' },
+          select: {
+            id: true,
+            paymentDate: true,
+            amountCents: true,
+            reference: true,
+            bill: { select: { reference: true } },
+          },
+        }),
+        fastify.prisma.quote.findMany({
+          where: { contactId: id, organizationId },
+          take: 10,
+          orderBy: { issueDate: 'desc' },
+          select: {
+            id: true,
+            quoteNumber: true,
+            issueDate: true,
+            expiryDate: true,
+            totalCents: true,
+            status: true,
+          },
+        }),
+        fastify.prisma.directTransaction.findMany({
+          where: { contactId: id, organizationId },
+          take: 20,
+          orderBy: { transactionDate: 'desc' },
+          select: {
+            id: true,
+            type: true,
+            transactionDate: true,
+            reference: true,
+            totalCents: true,
+            notes: true,
+          },
+        }),
+      ]);
 
       // Map to unified chronological activity feed
       const activity: Array<{
         id: string;
         date: Date;
-        docType: 'INVOICE' | 'BILL' | 'PAYMENT_IN' | 'PAYMENT_OUT' | 'QUOTE';
+        docType:
+          | 'INVOICE'
+          | 'BILL'
+          | 'PAYMENT_IN'
+          | 'PAYMENT_OUT'
+          | 'QUOTE'
+          | 'SPEND_MONEY'
+          | 'RECEIVE_MONEY';
         referenceNumber: string;
         amountCents: bigint;
         status?: string;
@@ -738,6 +764,18 @@ const contactRoutes: FastifyPluginAsync = async (fastify) => {
           amountCents: q.totalCents,
           status: q.status,
           details: `Expires ${q.expiryDate.toISOString().slice(0, 10)}`,
+        });
+      }
+
+      for (const dtx of recentDirectTransactions) {
+        activity.push({
+          id: dtx.id,
+          date: dtx.transactionDate,
+          docType: dtx.type === 'RECEIVE_MONEY' ? 'RECEIVE_MONEY' : 'SPEND_MONEY',
+          referenceNumber: dtx.reference || (dtx.type === 'RECEIVE_MONEY' ? 'Direct Income' : 'Direct Spend'),
+          amountCents: dtx.totalCents,
+          status: 'POSTED',
+          details: dtx.notes || (dtx.type === 'RECEIVE_MONEY' ? 'Direct bank receipt' : 'Direct bank/card spend'),
         });
       }
 

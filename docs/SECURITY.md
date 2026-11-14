@@ -140,6 +140,7 @@ Access is compartmentalized by functional domain so regular employees (`EMPLOYEE
 | View Immutable System Audit Log | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Edit & Re-Post / Revert to Draft / Void / Reverse Payments on Posted Records | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Force-Delete Unpaid/Unreconciled Records & Unused Contacts | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Centralized Bulk CSV Import Hub (`/settings` & `/api/v1/bulk-import/*`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Developer & Agent Context Console (`/developer` & `/api/v1/developer/*`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Delete organization | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 

@@ -17,12 +17,20 @@ import {
 import {
   bankingApi,
   accountsApi,
+  contactApi,
+  billApi,
+  invoiceApi,
   type BankAccountSummary,
   type BankTransfer,
   type BankStatementLine,
+  type StatementImportValidatedRow,
+  type ReconciliationMode,
   type ReconciliationSuggestionItem,
   type AccountWithBalance,
   type TrackingCategory,
+  type Contact,
+  type Bill,
+  type Invoice,
 } from '@/api/client';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -72,9 +80,12 @@ export function BankingPage() {
   const [statementFilterStatus, setStatementFilterStatus] = useState<'ALL' | 'UNRECONCILED' | 'RECONCILED'>('ALL');
   const [statementsLoading, setStatementsLoading] = useState(false);
 
-  // All COA Accounts & Tracking (for on-the-fly reconciliation and transfer picker)
+  // All COA Accounts, Tracking, Contacts, Open Bills & Invoices (for multi-mode reconciliation)
   const [allAccounts, setAllAccounts] = useState<AccountWithBalance[]>([]);
   const [trackingCategories, setTrackingCategories] = useState<TrackingCategory[]>([]);
+  const [allContacts, setAllContacts] = useState<Contact[]>([]);
+  const [openBills, setOpenBills] = useState<Bill[]>([]);
+  const [openInvoices, setOpenInvoices] = useState<Invoice[]>([]);
 
   // Modals state
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
@@ -159,12 +170,26 @@ export function BankingPage() {
 
   const loadAuxiliaryData = async () => {
     try {
-      const [accRes, trackRes] = await Promise.all([
+      const [accRes, trackRes, conRes, billRes, invRes] = await Promise.all([
         accountsApi.list({ includeInactive: false }),
         accountsApi.listTrackingCategories(),
+        contactApi.list(),
+        billApi.list(),
+        invoiceApi.list(),
       ]);
       setAllAccounts(accRes.accounts);
       setTrackingCategories(trackRes.categories);
+      setAllContacts(conRes.contacts);
+      setOpenBills(
+        billRes.bills.filter(
+          (b) => b.status === 'AWAITING_PAYMENT' || b.status === 'PARTIALLY_PAID',
+        ),
+      );
+      setOpenInvoices(
+        invRes.invoices.filter(
+          (inv) => inv.status === 'ISSUED' || inv.status === 'PARTIALLY_PAID',
+        ),
+      );
     } catch {
       // non-fatal
     }
@@ -804,10 +829,10 @@ export function BankingPage() {
                     <div className="border border-slate-200 rounded-[4px] p-4 space-y-3">
                       <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                         <span className="text-xs font-semibold text-slate-800 uppercase tracking-wider">
-                          On-the-Fly Direct Coding (Create & Reconcile)
+                          Transaction Mode & Contact Reconciliation
                         </span>
-                        <span className="text-[11px] text-slate-500">
-                          {currentSuggestion.statementLine.amountCents < 0 ? 'Spend Money' : 'Receive Money'}
+                        <span className="text-[11px] font-mono text-slate-500">
+                          {currentSuggestion.statementLine.amountCents < 0 ? 'Outflow (Expense / Bill)' : 'Inflow (Income / Invoice)'}
                         </span>
                       </div>
 
@@ -815,10 +840,14 @@ export function BankingPage() {
                         statementLine={currentSuggestion.statementLine}
                         allAccounts={allAccounts}
                         trackingCategories={trackingCategories}
+                        allContacts={allContacts}
+                        openBills={openBills}
+                        openInvoices={openInvoices}
                         onSuccess={async () => {
-                          setBannerSuccess('Transaction created and reconciled.');
+                          setBannerSuccess('Transaction created, linked to Contact, and reconciled.');
                           await loadReconciliation(selectedAccountId);
                           await loadBankAccounts();
+                          await loadAuxiliaryData();
                         }}
                         onError={(msg) => setBannerError(msg)}
                       />
@@ -1197,49 +1226,150 @@ export function BankingPage() {
 }
 
 // ---------------------------------------------------------------------------
-// SUB-COMPONENT: QuickCodeForm (On-the-Fly Create & Reconcile)
+// SUB-COMPONENT: QuickCodeForm (Multi-Mode Contact-Linked Reconciliation)
 // ---------------------------------------------------------------------------
 
 function QuickCodeForm({
   statementLine,
   allAccounts,
   trackingCategories,
+  allContacts,
+  openBills,
+  openInvoices,
   onSuccess,
   onError,
 }: {
   statementLine: BankStatementLine;
   allAccounts: AccountWithBalance[];
   trackingCategories: TrackingCategory[];
+  allContacts: Contact[];
+  openBills: Bill[];
+  openInvoices: Invoice[];
   onSuccess: () => void;
   onError: (msg: string) => void;
 }) {
   const isDeposit = statementLine.amountCents > 0;
+  const [mode, setMode] = useState<ReconciliationMode>(
+    isDeposit ? 'DIRECT_INCOME' : 'DIRECT_EXPENSE',
+  );
+  const [contactId, setContactId] = useState<string>('');
   const [targetAccountId, setTargetAccountId] = useState('');
+  const [billId, setBillId] = useState<string>('');
+  const [invoiceId, setInvoiceId] = useState<string>('');
+  const [documentReference, setDocumentReference] = useState<string>('');
   const [description, setDescription] = useState(statementLine.description);
   const [taxTreatment, setTaxTreatment] = useState<'TAX_EXCLUSIVE' | 'TAX_INCLUSIVE' | 'GST_FREE'>('GST_FREE');
   const [trackingOptionId, setTrackingOptionId] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Auto-suggest default account (e.g. Bank Fees for negative lines, Interest for positive lines)
+  // Pre-fill from imported CSV coding hints or sensible defaults when statement line changes
   useEffect(() => {
+    const dep = statementLine.amountCents > 0;
+    setMode(dep ? 'DIRECT_INCOME' : 'DIRECT_EXPENSE');
     setDescription(statementLine.description);
-    if (!isDeposit) {
-      const feeAcc = allAccounts.find(
-        (a) => a.code === '6010' || a.name.toLowerCase().includes('bank fee') || a.name.toLowerCase().includes('charges'),
-      );
-      if (feeAcc) setTargetAccountId(feeAcc.id);
+    setDocumentReference(statementLine.reference || '');
+    setBillId('');
+    setInvoiceId('');
+
+    // 1. Pre-fill Contact if suggestedContactId exists on statement line
+    if (statementLine.suggestedContactId) {
+      setContactId(statementLine.suggestedContactId);
     } else {
-      const intAcc = allAccounts.find(
-        (a) => a.code === '8000' || a.name.toLowerCase().includes('interest'),
-      );
-      if (intAcc) setTargetAccountId(intAcc.id);
+      // Check if statement description matches an existing contact name
+      const descLower = statementLine.description.toLowerCase();
+      const matchedCon = allContacts.find((c) => descLower.includes(c.name.toLowerCase()));
+      setContactId(matchedCon?.id || '');
     }
-  }, [statementLine, allAccounts]);
+
+    // 2. Pre-fill GL Account from suggestedAccountId or Contact's default account
+    if (statementLine.suggestedAccountId) {
+      setTargetAccountId(statementLine.suggestedAccountId);
+    } else {
+      const resolvedConId =
+        statementLine.suggestedContactId ||
+        allContacts.find((c) =>
+          statementLine.description.toLowerCase().includes(c.name.toLowerCase()),
+        )?.id;
+      const conObj = allContacts.find((c) => c.id === resolvedConId);
+      const conDefaultAccId = dep
+        ? (conObj as any)?.defaultRevenueAccountId
+        : (conObj as any)?.defaultExpenseAccountId;
+
+      if (conDefaultAccId) {
+        setTargetAccountId(conDefaultAccId);
+      } else if (!dep) {
+        const expAcc =
+          allAccounts.find(
+            (a) =>
+              a.code === '6000' ||
+              a.code === '6010' ||
+              a.name.toLowerCase().includes('operating expense'),
+          ) || allAccounts.find((a) => a.type === 'EXPENSE');
+        setTargetAccountId(expAcc?.id || '');
+      } else {
+        const revAcc =
+          allAccounts.find((a) => a.code === '4000') ||
+          allAccounts.find((a) => a.type === 'REVENUE');
+        setTargetAccountId(revAcc?.id || '');
+      }
+    }
+
+    // 3. Pre-fill Cost Centre / Tracking Option
+    setTrackingOptionId(statementLine.suggestedTrackingOptionId || '');
+
+    // 4. Pre-fill Tax Treatment
+    if (statementLine.suggestedTaxTreatment) {
+      setTaxTreatment(statementLine.suggestedTaxTreatment);
+    } else {
+      setTaxTreatment('TAX_INCLUSIVE');
+    }
+  }, [statementLine, allAccounts, allContacts]);
+
+  // When user changes Contact manually, if no CSV account was forced, pre-fill Contact's default account
+  const handleContactChange = (newContactId: string) => {
+    setContactId(newContactId);
+    const con = allContacts.find((c) => c.id === newContactId);
+    if (con && !statementLine.suggestedAccountId) {
+      const defAcc = isDeposit
+        ? (con as any).defaultRevenueAccountId
+        : (con as any).defaultExpenseAccountId;
+      if (defAcc) setTargetAccountId(defAcc);
+    }
+  };
+
+  const filteredBills = useMemo(() => {
+    if (!contactId) return openBills;
+    return openBills.filter((b) => b.contactId === contactId);
+  }, [openBills, contactId]);
+
+  const filteredInvoices = useMemo(() => {
+    if (!contactId) return openInvoices;
+    return openInvoices.filter((inv) => inv.contactId === contactId);
+  }, [openInvoices, contactId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetAccountId) {
-      onError('Please select a target GL account for coding.');
+
+    if (mode === 'ALLOCATE_BILL' && !billId) {
+      onError('Please select an open Vendor Bill to allocate this payment against.');
+      return;
+    }
+    if (mode === 'ALLOCATE_INVOICE' && !invoiceId) {
+      onError('Please select an open Customer Invoice to allocate this receipt against.');
+      return;
+    }
+    if ((mode === 'CREATE_AND_PAY_BILL' || mode === 'CREATE_AND_PAY_INVOICE') && !contactId) {
+      onError('Please select a Contact (Supplier/Customer) to create a new Bill or Invoice.');
+      return;
+    }
+    if (
+      (mode === 'DIRECT_EXPENSE' ||
+        mode === 'DIRECT_INCOME' ||
+        mode === 'CREATE_AND_PAY_BILL' ||
+        mode === 'CREATE_AND_PAY_INVOICE') &&
+      !targetAccountId
+    ) {
+      onError('Please select a target GL Account.');
       return;
     }
 
@@ -1247,7 +1377,12 @@ function QuickCodeForm({
       setIsSubmitting(true);
       await bankingApi.createAndReconcile({
         statementLineId: statementLine.id,
-        targetAccountId,
+        mode,
+        contactId: contactId || null,
+        targetAccountId: targetAccountId || null,
+        billId: billId || null,
+        invoiceId: invoiceId || null,
+        documentReference: documentReference.trim() || null,
         description,
         taxTreatment,
         trackingOptionId: trackingOptionId || null,
@@ -1261,44 +1396,256 @@ function QuickCodeForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 text-xs">
+    <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+      {/* CSV Pre-Validated Context Banner (if hints were uploaded) */}
+      {(statementLine.suggestedContactId ||
+        statementLine.suggestedAccountId ||
+        statementLine.suggestedTrackingOptionId) && (
+        <div className="bg-emerald-50/70 border border-emerald-200 rounded-[4px] px-3 py-2 flex items-center justify-between gap-2 text-[11px] text-emerald-900">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+            <span className="font-semibold">Pre-populated from CSV upload:</span>
+            {statementLine.suggestedContact && (
+              <span className="bg-white border border-emerald-200 px-1.5 py-0.5 rounded font-mono">
+                Contact: {statementLine.suggestedContact.name}
+              </span>
+            )}
+            {statementLine.suggestedAccount && (
+              <span className="bg-white border border-emerald-200 px-1.5 py-0.5 rounded font-mono">
+                GL: {statementLine.suggestedAccount.code}
+              </span>
+            )}
+            {statementLine.suggestedTrackingOption && (
+              <span className="bg-white border border-emerald-200 px-1.5 py-0.5 rounded font-mono">
+                CC: {statementLine.suggestedTrackingOption.name}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Step 1: Transaction Mode Selector */}
+      <div>
+        <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1.5">
+          1. Select Transaction Type *
+        </label>
+        {isDeposit ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setMode('DIRECT_INCOME')}
+              className={`px-3 py-2 rounded-[4px] border text-left transition-colors ${
+                mode === 'DIRECT_INCOME'
+                  ? 'border-forest-800 bg-forest-50/70 text-forest-950 font-semibold'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <div className="text-xs">Direct Income Receipt</div>
+              <div className="text-[10px] text-slate-400 font-normal">Receive Money + Contact link</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('ALLOCATE_INVOICE')}
+              className={`px-3 py-2 rounded-[4px] border text-left transition-colors ${
+                mode === 'ALLOCATE_INVOICE'
+                  ? 'border-forest-800 bg-forest-50/70 text-forest-950 font-semibold'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <div className="text-xs">Assign to Existing Invoice</div>
+              <div className="text-[10px] text-slate-400 font-normal">Settle open AR Invoice</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('CREATE_AND_PAY_INVOICE')}
+              className={`px-3 py-2 rounded-[4px] border text-left transition-colors ${
+                mode === 'CREATE_AND_PAY_INVOICE'
+                  ? 'border-forest-800 bg-forest-50/70 text-forest-950 font-semibold'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <div className="text-xs">Create & Settle Invoice</div>
+              <div className="text-[10px] text-slate-400 font-normal">New paid AR Tax Invoice</div>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setMode('DIRECT_EXPENSE')}
+              className={`px-3 py-2 rounded-[4px] border text-left transition-colors ${
+                mode === 'DIRECT_EXPENSE'
+                  ? 'border-forest-800 bg-forest-50/70 text-forest-950 font-semibold'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <div className="text-xs">Direct Expense (Spend)</div>
+              <div className="text-[10px] text-slate-400 font-normal">Spend Money + Contact link</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('ALLOCATE_BILL')}
+              className={`px-3 py-2 rounded-[4px] border text-left transition-colors ${
+                mode === 'ALLOCATE_BILL'
+                  ? 'border-forest-800 bg-forest-50/70 text-forest-950 font-semibold'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <div className="text-xs">Assign to Existing Bill</div>
+              <div className="text-[10px] text-slate-400 font-normal">Pay open AP Vendor Bill</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('CREATE_AND_PAY_BILL')}
+              className={`px-3 py-2 rounded-[4px] border text-left transition-colors ${
+                mode === 'CREATE_AND_PAY_BILL'
+                  ? 'border-forest-800 bg-forest-50/70 text-forest-950 font-semibold'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <div className="text-xs">Create & Pay New Bill</div>
+              <div className="text-[10px] text-slate-400 font-normal">New paid AP Vendor Bill</div>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Step 2: Contact / Merchant Selector */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">
-            Target Account (GL Code) *
+            {isDeposit ? 'Customer / Payer Contact' : 'Supplier / Merchant Contact'}{' '}
+            {mode === 'CREATE_AND_PAY_BILL' || mode === 'CREATE_AND_PAY_INVOICE' ? '*' : '(Recommended)'}
           </label>
           <select
-            value={targetAccountId}
-            onChange={(e) => setTargetAccountId(e.target.value)}
+            value={contactId}
+            onChange={(e) => handleContactChange(e.target.value)}
             className="w-full bg-white border border-slate-300 rounded-[4px] px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-forest-800"
-            required
+            required={mode === 'CREATE_AND_PAY_BILL' || mode === 'CREATE_AND_PAY_INVOICE'}
           >
-            <option value="">Select Account…</option>
-            {allAccounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.code} - {a.name} ({a.type})
+            <option value="">Select Contact / Merchant…</option>
+            {allContacts.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.type})
               </option>
             ))}
           </select>
         </div>
 
-        <div>
-          <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Tax Treatment</label>
-          <select
-            value={taxTreatment}
-            onChange={(e) => setTaxTreatment(e.target.value as any)}
-            className="w-full bg-white border border-slate-300 rounded-[4px] px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-forest-800"
-          >
-            <option value="GST_FREE">GST Free (0%)</option>
-            <option value="TAX_EXCLUSIVE">Tax Exclusive (10% GST Added)</option>
-            <option value="TAX_INCLUSIVE">Tax Inclusive (10% GST Included)</option>
-          </select>
-        </div>
+        {/* Mode-specific secondary selector: Open Bill, Open Invoice, or Document Reference */}
+        {mode === 'ALLOCATE_BILL' ? (
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">
+              Select Open Vendor Bill *
+            </label>
+            <select
+              value={billId}
+              onChange={(e) => setBillId(e.target.value)}
+              className="w-full bg-white border border-slate-300 rounded-[4px] px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-forest-800"
+              required
+            >
+              <option value="">Select Bill to Pay…</option>
+              {filteredBills.map((b) => {
+                const rem = b.totalCents - b.amountPaidCents;
+                return (
+                  <option key={b.id} value={b.id}>
+                    {b.reference || 'Bill'} — {b.contact?.name || ''} (Due: {formatCents(rem)})
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        ) : mode === 'ALLOCATE_INVOICE' ? (
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">
+              Select Open Customer Invoice *
+            </label>
+            <select
+              value={invoiceId}
+              onChange={(e) => setInvoiceId(e.target.value)}
+              className="w-full bg-white border border-slate-300 rounded-[4px] px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-forest-800"
+              required
+            >
+              <option value="">Select Invoice to Settle…</option>
+              {filteredInvoices.map((inv) => {
+                const rem = inv.totalCents - inv.amountPaidCents;
+                return (
+                  <option key={inv.id} value={inv.id}>
+                    {inv.invoiceNumber} — {inv.contact?.name || ''} (Due: {formatCents(rem)})
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        ) : (
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">
+              {mode === 'CREATE_AND_PAY_BILL'
+                ? 'Vendor Bill Reference'
+                : mode === 'CREATE_AND_PAY_INVOICE'
+                ? 'Invoice Number (Blank = Auto)'
+                : 'Reference (Optional)'}
+            </label>
+            <Input
+              value={documentReference}
+              onChange={(e) => setDocumentReference(e.target.value)}
+              className="text-xs py-1 font-mono"
+              placeholder={
+                mode === 'CREATE_AND_PAY_INVOICE' ? 'Auto-generated if blank' : 'Reference...'
+              }
+            />
+          </div>
+        )}
       </div>
 
+      {/* Step 3: GL Account & Tax Treatment (for Direct Expense/Income & Create-and-Pay Bill/Invoice) */}
+      {(mode === 'DIRECT_EXPENSE' ||
+        mode === 'DIRECT_INCOME' ||
+        mode === 'CREATE_AND_PAY_BILL' ||
+        mode === 'CREATE_AND_PAY_INVOICE') && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">
+              Target GL Account *
+            </label>
+            <select
+              value={targetAccountId}
+              onChange={(e) => setTargetAccountId(e.target.value)}
+              className="w-full bg-white border border-slate-300 rounded-[4px] px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-forest-800"
+              required
+            >
+              <option value="">Select Account…</option>
+              {allAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.code} - {a.name} ({a.type})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">
+              Tax Treatment
+            </label>
+            <select
+              value={taxTreatment}
+              onChange={(e) => setTaxTreatment(e.target.value as any)}
+              className="w-full bg-white border border-slate-300 rounded-[4px] px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-forest-800"
+            >
+              <option value="TAX_INCLUSIVE">GST Inclusive (10% GST Included in Statement Amount)</option>
+              <option value="GST_FREE">GST Free / BAS Excluded (0%)</option>
+              <option value="TAX_EXCLUSIVE">Tax Exclusive (10% GST)</option>
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Step 4: Narrative & Cost Centre */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Transaction Narrative</label>
+          <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">
+            Transaction Narrative *
+          </label>
           <Input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -1308,34 +1655,46 @@ function QuickCodeForm({
           />
         </div>
 
-        {trackingCategories.length > 0 && (
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">
-              Cost Center / Tracking
-            </label>
-            <select
-              value={trackingOptionId}
-              onChange={(e) => setTrackingOptionId(e.target.value)}
-              className="w-full bg-white border border-slate-300 rounded-[4px] px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-forest-800"
-            >
-              <option value="">None</option>
-              {trackingCategories.map((cat) => (
-                <optgroup key={cat.id} label={cat.name}>
-                  {cat.options.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-        )}
+        {trackingCategories.length > 0 &&
+          mode !== 'ALLOCATE_BILL' &&
+          mode !== 'ALLOCATE_INVOICE' && (
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">
+                Cost Centre / Tracking Option
+              </label>
+              <select
+                value={trackingOptionId}
+                onChange={(e) => setTrackingOptionId(e.target.value)}
+                className="w-full bg-white border border-slate-300 rounded-[4px] px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-forest-800"
+              >
+                <option value="">None</option>
+                {trackingCategories.map((cat) => (
+                  <optgroup key={cat.id} label={cat.name}>
+                    {cat.options.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          )}
       </div>
 
       <div className="pt-2 flex justify-end">
         <Button size="xs" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Posting…' : 'Record & Reconcile Now'}
+          {isSubmitting
+            ? 'Posting & Reconciling…'
+            : mode === 'ALLOCATE_BILL'
+            ? 'Pay Bill & Reconcile'
+            : mode === 'CREATE_AND_PAY_BILL'
+            ? 'Create Bill, Pay & Reconcile'
+            : mode === 'ALLOCATE_INVOICE'
+            ? 'Allocate Receipt & Reconcile'
+            : mode === 'CREATE_AND_PAY_INVOICE'
+            ? 'Create Invoice, Settle & Reconcile'
+            : 'Record Direct Transaction & Reconcile'}
         </Button>
       </div>
     </form>
@@ -1529,7 +1888,7 @@ function TransferModal({
 }
 
 // ---------------------------------------------------------------------------
-// SUB-COMPONENT: ImportStatementModal (Module 7.3)
+// SUB-COMPONENT: ImportStatementModal (Module 7.3 + Module 12.2 Validate & Preview)
 // ---------------------------------------------------------------------------
 
 function ImportStatementModal({
@@ -1549,12 +1908,23 @@ function ImportStatementModal({
 }) {
   const [bankAccountId, setBankAccountId] = useState(defaultAccountId || '');
   const [csvContent, setCsvContent] = useState('');
+  const [isValidating, setIsValidating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewRows, setPreviewRows] = useState<StatementImportValidatedRow[] | null>(null);
+  const [previewStats, setPreviewStats] = useState<{
+    totalCount: number;
+    validCount: number;
+    invalidCount: number;
+  } | null>(null);
 
   useEffect(() => {
     if (defaultAccountId) setBankAccountId(defaultAccountId);
     else if (bankAccounts.length > 0) setBankAccountId(bankAccounts[0]!.id);
-  }, [defaultAccountId, bankAccounts]);
+    if (!isOpen) {
+      setPreviewRows(null);
+      setPreviewStats(null);
+    }
+  }, [defaultAccountId, bankAccounts, isOpen]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1563,12 +1933,32 @@ function ImportStatementModal({
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
-      if (content) setCsvContent(content);
+      if (content) {
+        setCsvContent(content);
+        setPreviewRows(null);
+        setPreviewStats(null);
+      }
     };
     reader.readAsText(file);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleDownloadSampleCsv = () => {
+    const sample = [
+      'Date,Description,Reference,Amount,Merchant,Account,Cost Centre,Tax',
+      '2026-07-01,"Warehouse Hardware Supplies",REF-101,-165.00,,,',
+      '2026-07-02,"Client Retainer Receipt",INV-0012,2420.00,,,',
+    ].join('\n');
+    const blob = new Blob([sample], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bank-statement-import-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Step 1: Validate & Preview
+  const handleValidatePreview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!bankAccountId) {
       onError('Please select a bank account.');
@@ -1580,79 +1970,305 @@ function ImportStatementModal({
     }
 
     try {
+      setIsValidating(true);
+      const res = await bankingApi.validateStatementsImport({
+        bankAccountId,
+        csvContent,
+      });
+      setPreviewRows(res.rows);
+      setPreviewStats({
+        totalCount: res.totalCount,
+        validCount: res.validCount,
+        invalidCount: res.invalidCount,
+      });
+    } catch (err: any) {
+      onError(err.message || 'Failed to validate CSV statement.');
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  // Step 2: Commit Validated Rows
+  const handleCommitValidRows = async () => {
+    if (!previewRows) return;
+    const validOnly = previewRows.filter((r) => r.valid);
+    if (validOnly.length === 0) {
+      onError('No valid rows to import. Please fix the highlighted errors and re-validate.');
+      return;
+    }
+
+    try {
       setIsSubmitting(true);
       const res = await bankingApi.importStatements({
         bankAccountId,
-        csvContent,
+        lines: validOnly.map((r) => ({
+          statementDate: r.statementDate,
+          description: r.description,
+          reference: r.reference,
+          amountCents: r.amountCents,
+          suggestedContactId: r.suggestedContactId,
+          suggestedAccountId: r.suggestedAccountId,
+          suggestedTrackingOptionId: r.suggestedTrackingOptionId,
+          suggestedTaxTreatment: r.suggestedTaxTreatment,
+        })),
       });
       onSuccess(res.importedCount);
       onClose();
       setCsvContent('');
+      setPreviewRows(null);
+      setPreviewStats(null);
     } catch (err: any) {
-      onError(err.message || 'Failed to import CSV statement.');
+      onError(err.message || 'Failed to commit statement lines.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <Modal open={isOpen} onClose={onClose} title="Import Bank Statement CSV" size="xl">
-      <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-            Target Bank Account *
-          </label>
-          <select
-            value={bankAccountId}
-            onChange={(e) => setBankAccountId(e.target.value)}
-            className="w-full bg-white border border-slate-300 rounded-[4px] px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-forest-800"
-            required
+    <Modal open={isOpen} onClose={onClose} title="Import Bank Statement CSV (Context-Aware)" size="xl">
+      <div className="space-y-4 text-xs">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+              Target Bank Account *
+            </label>
+            <select
+              value={bankAccountId}
+              onChange={(e) => {
+                setBankAccountId(e.target.value);
+                setPreviewRows(null);
+              }}
+              className="w-full bg-white border border-slate-300 rounded-[4px] px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-forest-800"
+              required
+            >
+              {bankAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.code} - {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <Button
+            variant="outline"
+            size="xs"
+            type="button"
+            onClick={handleDownloadSampleCsv}
+            className="shrink-0"
           >
-            {bankAccounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.code} - {a.name}
-              </option>
-            ))}
-          </select>
+            Download CSV Template
+          </Button>
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-            Upload CSV File from Bank Portal
-          </label>
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            onChange={handleFileUpload}
-            className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-[4px] file:border-0 file:text-xs file:font-semibold file:bg-forest-50 file:text-forest-800 hover:file:bg-forest-100"
-          />
-          <p className="text-[11px] text-slate-400 mt-1">
-            Supports standard Australian bank exports (CBA, Westpac, ANZ, NAB, Macquarie) with Date, Description, Reference, and Amount or Debit/Credit columns.
+        {/* Supported Columns Info */}
+        <div className="bg-slate-50 border border-slate-200 rounded-[4px] p-3 text-[11px] text-slate-600 space-y-1">
+          <div className="font-semibold text-slate-800">
+            Required & Optional Context Columns (Strict Validation on Optional Fields):
+          </div>
+          <p>
+            <span className="font-semibold text-slate-700">Required:</span>{' '}
+            <code className="font-mono bg-white px-1 py-0.5 border rounded">Date</code>,{' '}
+            <code className="font-mono bg-white px-1 py-0.5 border rounded">Description</code>, and{' '}
+            <code className="font-mono bg-white px-1 py-0.5 border rounded">Amount</code> (or{' '}
+            <code className="font-mono bg-white px-1 py-0.5 border rounded">Debit</code> /{' '}
+            <code className="font-mono bg-white px-1 py-0.5 border rounded">Credit</code>).
+          </p>
+          <p>
+            <span className="font-semibold text-slate-700">Optional Context Columns:</span>{' '}
+            <code className="font-mono bg-white px-1 py-0.5 border rounded">Reference</code>,{' '}
+            <code className="font-mono bg-white px-1 py-0.5 border rounded">Merchant / Supplier / Contact</code>,{' '}
+            <code className="font-mono bg-white px-1 py-0.5 border rounded">Account / GL Code</code>,{' '}
+            <code className="font-mono bg-white px-1 py-0.5 border rounded">Cost Centre / Tracking</code>, and{' '}
+            <code className="font-mono bg-white px-1 py-0.5 border rounded">Tax</code>. Any optional column left blank is ignored; if provided, it is strictly validated against your Contacts, Chart of Accounts, and Cost Centres.
           </p>
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-            Or Paste Raw CSV Data Directly
-          </label>
-          <textarea
-            value={csvContent}
-            onChange={(e) => setCsvContent(e.target.value)}
-            rows={8}
-            placeholder={`Date,Description,Reference,Amount\n01/02/2026,"Office Supplies Pty Ltd",REF-101,-145.20\n02/02/2026,"Client Payment Acme Corp",INV-0012,2420.00`}
-            className="w-full font-mono text-[11px] bg-slate-50 border border-slate-300 rounded-[4px] p-3 text-slate-800 focus:outline-none focus:ring-1 focus:ring-forest-800"
-          />
-        </div>
+        {!previewRows ? (
+          <form onSubmit={handleValidatePreview} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                Upload CSV File from Bank Portal
+              </label>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleFileUpload}
+                className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-[4px] file:border-0 file:text-xs file:font-semibold file:bg-forest-50 file:text-forest-800 hover:file:bg-forest-100"
+              />
+            </div>
 
-        <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
-          <Button variant="outline" size="sm" type="button" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button size="sm" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Importing…' : 'Parse & Import Statement Lines'}
-          </Button>
-        </div>
-      </form>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                Or Paste Raw CSV Data Directly
+              </label>
+              <textarea
+                value={csvContent}
+                onChange={(e) => setCsvContent(e.target.value)}
+                rows={7}
+                placeholder={`Date,Description,Reference,Amount,Merchant,Account,Cost Centre,Tax\n01/07/2026,"Office Supplies Purchase",REF-101,-145.20,"Apex Industrial Supplies",6000,Operations,TAX_INCLUSIVE`}
+                className="w-full font-mono text-[11px] bg-slate-50 border border-slate-300 rounded-[4px] p-3 text-slate-800 focus:outline-none focus:ring-1 focus:ring-forest-800"
+              />
+            </div>
+
+            <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+              <Button variant="outline" size="sm" type="button" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button size="sm" type="submit" disabled={isValidating}>
+                {isValidating ? 'Validating CSV…' : 'Step 1: Validate & Preview CSV'}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className="space-y-4">
+            {/* Validation Summary Strip */}
+            {previewStats && (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-slate-50 border border-slate-200 rounded-[4px] p-3">
+                  <div className="text-[10px] uppercase font-bold text-slate-500">Total Parsed Rows</div>
+                  <div className="text-base font-mono font-bold text-slate-900 mt-0.5">
+                    {previewStats.totalCount}
+                  </div>
+                </div>
+                <div className="bg-emerald-50/70 border border-emerald-200 rounded-[4px] p-3">
+                  <div className="text-[10px] uppercase font-bold text-emerald-800">Valid & Ready</div>
+                  <div className="text-base font-mono font-bold text-emerald-800 mt-0.5">
+                    {previewStats.validCount}
+                  </div>
+                </div>
+                <div
+                  className={`rounded-[4px] p-3 border ${
+                    previewStats.invalidCount > 0
+                      ? 'bg-rose-50 border-rose-200 text-rose-800'
+                      : 'bg-slate-50 border-slate-200 text-slate-500'
+                  }`}
+                >
+                  <div className="text-[10px] uppercase font-bold">Strict Match Errors</div>
+                  <div className="text-base font-mono font-bold mt-0.5">
+                    {previewStats.invalidCount}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Preview Table */}
+            <div className="border border-slate-200 rounded-[4px] max-h-72 overflow-y-auto">
+              <table className="w-full text-left text-[11px] border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-semibold sticky top-0">
+                    <th className="py-2 px-3">Row</th>
+                    <th className="py-2 px-3">Date</th>
+                    <th className="py-2 px-3">Description / Ref</th>
+                    <th className="py-2 px-3 text-right">Amount</th>
+                    <th className="py-2 px-3">Resolved Context (Contact / GL / CC)</th>
+                    <th className="py-2 px-3">Validation</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {previewRows.map((r) => (
+                    <tr
+                      key={r.rowNumber}
+                      className={r.valid ? 'bg-white' : 'bg-rose-50/60'}
+                    >
+                      <td className="py-2 px-3 font-mono text-slate-500">#{r.rowNumber}</td>
+                      <td className="py-2 px-3 font-mono text-slate-700">{r.statementDate}</td>
+                      <td className="py-2 px-3">
+                        <div className="font-medium text-slate-900">{r.description}</div>
+                        {r.reference && (
+                          <div className="font-mono text-[10px] text-slate-400">Ref: {r.reference}</div>
+                        )}
+                      </td>
+                      <td
+                        className={`py-2 px-3 text-right font-mono font-bold ${
+                          r.amountCents > 0 ? 'text-emerald-700' : 'text-slate-900'
+                        }`}
+                      >
+                        {r.amountCents > 0 ? '+' : ''}
+                        {formatCents(r.amountCents)}
+                      </td>
+                      <td className="py-2 px-3">
+                        <div className="flex flex-wrap gap-1">
+                          {r.suggestedContactName && (
+                            <span className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-mono text-[10px]">
+                              Contact: {r.suggestedContactName}
+                            </span>
+                          )}
+                          {r.suggestedAccountCode && (
+                            <span className="bg-forest-50 border border-forest-200 text-forest-800 px-1.5 py-0.5 rounded font-mono text-[10px]">
+                              GL: {r.suggestedAccountCode}
+                            </span>
+                          )}
+                          {r.suggestedTrackingOptionName && (
+                            <span className="bg-slate-100 border border-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-mono text-[10px]">
+                              {r.suggestedTrackingOptionName}
+                            </span>
+                          )}
+                          {r.suggestedTaxTreatment && (
+                            <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono text-[10px]">
+                              {r.suggestedTaxTreatment}
+                            </span>
+                          )}
+                          {!r.suggestedContactName &&
+                            !r.suggestedAccountCode &&
+                            !r.suggestedTrackingOptionName && (
+                              <span className="text-slate-400 italic">Standard row</span>
+                            )}
+                        </div>
+                      </td>
+                      <td className="py-2 px-3">
+                        {r.valid ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold text-[10px]">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>VALID</span>
+                          </span>
+                        ) : (
+                          <div className="space-y-0.5">
+                            {r.errors.map((errMsg, idx) => (
+                              <div key={idx} className="text-rose-700 font-medium text-[10px]">
+                                • {errMsg}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="pt-3 border-t border-slate-200 flex items-center justify-between gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => {
+                  setPreviewRows(null);
+                  setPreviewStats(null);
+                }}
+              >
+                ← Edit / Re-Upload CSV
+              </Button>
+
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" type="button" onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  type="button"
+                  disabled={isSubmitting || (previewStats?.validCount ?? 0) === 0}
+                  onClick={handleCommitValidRows}
+                >
+                  {isSubmitting
+                    ? 'Committing…'
+                    : `Step 2: Commit Valid Rows (${previewStats?.validCount ?? 0})`}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </Modal>
   );
 }

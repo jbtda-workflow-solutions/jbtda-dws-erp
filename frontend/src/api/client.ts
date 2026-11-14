@@ -409,7 +409,14 @@ export interface ContactAgingBuckets {
 export interface ContactActivityItem {
   id: string;
   date: string;
-  docType: 'INVOICE' | 'BILL' | 'PAYMENT_IN' | 'PAYMENT_OUT' | 'QUOTE';
+  docType:
+    | 'INVOICE'
+    | 'BILL'
+    | 'PAYMENT_IN'
+    | 'PAYMENT_OUT'
+    | 'QUOTE'
+    | 'SPEND_MONEY'
+    | 'RECEIVE_MONEY';
   referenceNumber: string;
   amountCents: number;
   status?: string;
@@ -2022,6 +2029,13 @@ export interface BankStatementLine {
   description: string;
   reference?: string | null;
   amountCents: number;
+  suggestedContactId?: string | null;
+  suggestedAccountId?: string | null;
+  suggestedTrackingOptionId?: string | null;
+  suggestedTaxTreatment?: TaxTreatment | null;
+  suggestedContact?: { id: string; name: string; type: string } | null;
+  suggestedAccount?: { id: string; code: string; name: string } | null;
+  suggestedTrackingOption?: { id: string; name: string; category?: { name: string } } | null;
   isReconciled: boolean;
   matchedJournalId?: string | null;
   reconciledAt?: string | null;
@@ -2033,6 +2047,36 @@ export interface BankStatementLine {
     description: string;
     referenceType: string;
   } | null;
+}
+
+export interface StatementImportValidatedRow {
+  rowNumber: number;
+  statementDate: string;
+  description: string;
+  reference: string | null;
+  amountCents: number;
+  rawContactName: string | null;
+  rawAccountCodeOrName: string | null;
+  rawTrackingOptionName: string | null;
+  rawTaxTreatment: string | null;
+  suggestedContactId: string | null;
+  suggestedContactName: string | null;
+  suggestedAccountId: string | null;
+  suggestedAccountCode: string | null;
+  suggestedAccountName: string | null;
+  suggestedTrackingOptionId: string | null;
+  suggestedTrackingOptionName: string | null;
+  suggestedTaxTreatment: TaxTreatment | null;
+  valid: boolean;
+  errors: string[];
+}
+
+export interface StatementImportPreviewResponse {
+  dryRun: boolean;
+  totalCount: number;
+  validCount: number;
+  invalidCount: number;
+  rows: StatementImportValidatedRow[];
 }
 
 export interface ReconciliationCandidate {
@@ -2071,17 +2115,36 @@ export interface CreateBankTransferInput {
 export interface ImportStatementInput {
   bankAccountId: string;
   csvContent?: string;
+  dryRun?: boolean;
   lines?: Array<{
     statementDate: string;
     description: string;
     reference?: string | null;
     amountCents: number;
+    suggestedContactId?: string | null;
+    suggestedAccountId?: string | null;
+    suggestedTrackingOptionId?: string | null;
+    suggestedTaxTreatment?: TaxTreatment | null;
   }>;
 }
 
+export type ReconciliationMode =
+  | 'DIRECT_EXPENSE'
+  | 'DIRECT_INCOME'
+  | 'ALLOCATE_BILL'
+  | 'CREATE_AND_PAY_BILL'
+  | 'ALLOCATE_INVOICE'
+  | 'CREATE_AND_PAY_INVOICE';
+
 export interface CreateAndReconcileInput {
   statementLineId: string;
-  targetAccountId: string;
+  mode?: ReconciliationMode;
+  contactId?: string | null;
+  payeeName?: string | null;
+  targetAccountId?: string | null;
+  billId?: string | null;
+  invoiceId?: string | null;
+  documentReference?: string | null;
   description?: string;
   taxTreatment?: TaxTreatment;
   trackingOptionId?: string | null;
@@ -2115,6 +2178,12 @@ export const bankingApi = {
 
   importStatements: (data: ImportStatementInput) =>
     request<{ message: string; importedCount: number }>('POST', '/banking/statements/import', data),
+
+  validateStatementsImport: (data: { bankAccountId: string; csvContent: string }) =>
+    request<StatementImportPreviewResponse>('POST', '/banking/statements/import', {
+      ...data,
+      dryRun: true,
+    }),
 
   listStatements: (params?: {
     bankAccountId?: string;
@@ -2645,4 +2714,72 @@ export const developerApi = {
   getDiagnostics: () =>
     request<DeveloperDiagnosticsResponse>('GET', '/developer/diagnostics'),
 };
+
+// ---------------------------------------------------------------------------
+// Module 12: Centralized Admin Bulk CSV Import Engine (/api/v1/bulk-import/*)
+// ---------------------------------------------------------------------------
+
+export type BulkImportEntityType =
+  | 'CONTACTS'
+  | 'ITEMS'
+  | 'ACCOUNTS'
+  | 'TRACKING_OPTIONS'
+  | 'INVOICES'
+  | 'QUOTES'
+  | 'CREDIT_NOTES'
+  | 'BILLS'
+  | 'PURCHASE_ORDERS'
+  | 'VENDOR_CREDITS'
+  | 'DIRECT_TRANSACTIONS'
+  | 'EXPENSE_CLAIMS'
+  | 'JOURNAL_ENTRIES';
+
+export interface BulkImportTemplate {
+  entityType: BulkImportEntityType;
+  label: string;
+  category: 'MASTER_DATA' | 'ACCOUNTS_RECEIVABLE' | 'ACCOUNTS_PAYABLE' | 'EXPENSES_AND_GL';
+  description: string;
+  groupingKey: string | null;
+  requiredColumns: string[];
+  optionalColumns: string[];
+  sampleCsv: string;
+}
+
+export interface BulkImportPreviewRecord {
+  rowNumbers: string;
+  identifier: string;
+  primaryLabel: string;
+  secondaryLabel: string;
+  statusBadge: string;
+  amountCents: number | null;
+  resolvedBadges: string[];
+  valid: boolean;
+  errors: string[];
+}
+
+export interface BulkImportValidateResponse {
+  entityType: BulkImportEntityType;
+  totalRecords: number;
+  validCount: number;
+  invalidCount: number;
+  records: BulkImportPreviewRecord[];
+}
+
+export interface BulkImportCommitResponse {
+  entityType: BulkImportEntityType;
+  committedCount: number;
+  message: string;
+}
+
+export const bulkImportApi = {
+  listTemplates: () =>
+    request<{ templates: BulkImportTemplate[] }>('GET', '/bulk-import/templates'),
+
+  validate: (data: { entityType: BulkImportEntityType; csvContent: string }) =>
+    request<BulkImportValidateResponse>('POST', '/bulk-import/validate', data),
+
+  commit: (data: { entityType: BulkImportEntityType; csvContent: string }) =>
+    request<BulkImportCommitResponse>('POST', '/bulk-import/commit', data),
+};
+
 

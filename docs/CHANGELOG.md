@@ -4,6 +4,26 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.24.0] — 2026-11-14 — Module 12: Centralized Admin Bulk CSV Import Engine, Context-Aware Bank Statement Upload & Multi-Mode Contact-Linked Reconciliation
+
+### Added
+- **Context-Aware `BankStatementLine` Schema & Idempotent Synchronizer (`12.1` — `backend/prisma/schema.prisma`, `backend/src/lib/schema-sync.ts`, `backend/prisma/migrations/rebuild_all_schema.sql`)**:
+  - Extended `BankStatementLine` (`bank_statement_lines`) with `suggested_contact_id` (`UUID?` FK $\rightarrow$ `contacts.id`), `suggested_account_id` (`UUID?` FK $\rightarrow$ `accounts.id`), `suggested_tracking_option_id` (`UUID?` FK $\rightarrow$ `tracking_options.id`), and `suggested_tax_treatment` (`TaxTreatment?`).
+- **Two-Step Validate & Preview Bank Statement CSV Import (`12.2` — `backend/src/routes/banking.ts`, `frontend/src/api/client.ts`, `frontend/src/pages/BankingPage.tsx`)**:
+  - Upgraded `parseStatementCsv` and `POST /api/v1/banking/statements/import` (`dryRun: true` vs. Commit) to recognize optional CSV columns (`Contact/Supplier/Merchant`, `Account/GL Code`, `Cost Centre/Tracking Option`, and `Tax Treatment`).
+  - Blank optional values are ignored; non-empty values for Contact, Account, or Cost Centre are strictly validated against existing organization records (falling back to the matched Contact's `defaultExpenseAccountId` / `defaultRevenueAccountId` when Account is left blank).
+  - Upgraded `ImportStatementModal` in `BankingPage.tsx` with a downloadable CSV template and a Two-Step **Validate & Preview $\rightarrow$ Commit** workflow highlighting resolved entity badges in green and strict-match errors in red.
+- **6-Mode Contact-Linked Bank Reconciliation & Contact 360° Direct Transactions (`12.3` — `backend/src/routes/banking.ts`, `backend/src/routes/contacts.ts`, `frontend/src/pages/BankingPage.tsx`, `frontend/src/pages/ContactsPage.tsx`)**:
+  - Upgraded `POST /api/v1/banking/reconciliation/create-and-reconcile` and `QuickCodeForm` in `BankingPage.tsx` to support 6 explicit reconciliation modes with automatic pre-filling from statement CSV hints:
+    - **Outflows (`amountCents < 0`):** `DIRECT_EXPENSE` (creates a `DirectTransaction` `SPEND_MONEY` linked to `Contact` + posts `DIRECT_TRANSACTION` GL journal), `ALLOCATE_BILL` (records `PaymentOut` against an open Vendor Bill + posts `PAYMENT_OUT` GL journal), and `CREATE_AND_PAY_BILL` (atomically creates an approved `Bill` for the selected Supplier, records `PaymentOut`, and reconciles).
+    - **Inflows (`amountCents > 0`):** `DIRECT_INCOME` (creates a `DirectTransaction` `RECEIVE_MONEY` linked to `Contact` + posts `DIRECT_TRANSACTION` GL journal), `ALLOCATE_INVOICE` (records `PaymentIn` against an open Customer Invoice + posts `PAYMENT_IN` GL journal), and `CREATE_AND_PAY_INVOICE` (atomically creates an issued `Invoice` for the selected Customer, records `PaymentIn`, and reconciles).
+  - Updated `GET /api/v1/contacts/:id/360` (`backend/src/routes/contacts.ts`) and `ContactsPage.tsx` to include `DirectTransaction` (`SPEND_MONEY` and `RECEIVE_MONEY`) records in the Contact 360° chronological activity feed.
+- **Centralized Admin Bulk CSV Import Engine & Settings Workbench (`12.4` & `12.5` — `backend/src/routes/bulk-import.ts`, `backend/src/server.ts`, `frontend/src/api/client.ts`, `frontend/src/pages/SettingsPage.tsx`)**:
+  - Added `GET /api/v1/bulk-import/templates`, `POST /api/v1/bulk-import/validate`, and `POST /api/v1/bulk-import/commit` (`ADMIN` only) supporting all 13 ERP record types (`CONTACTS`, `ITEMS`, `ACCOUNTS`, `TRACKING_OPTIONS`, `INVOICES`, `QUOTES`, `CREDIT_NOTES`, `BILLS`, `PURCHASE_ORDERS`, `VENDOR_CREDITS`, `DIRECT_TRANSACTIONS`, `EXPENSE_CLAIMS`, `JOURNAL_ENTRIES`) with multi-line document grouping by reference number, strict foreign-key verification, and optional automatic GL posting (`ISSUED`, `AWAITING_PAYMENT`, `APPROVED`, `POSTED`).
+  - Added the **Bulk CSV Import** tab in `/settings` (`SettingsPage.tsx`) for `ADMIN` users with categorized record selector, required vs. optional column specifications, 1-click `.CSV` template download, Step 1 Validation & Entity Resolution Preview table, and Step 2 atomic commit.
+
+---
+
 ## [0.23.0] — 2026-11-14 — Module 11: Transactional Integrity, Bidirectional Sub-Ledger/GL Synchronization & Full Record Lifecycle Control
 
 ### Fixed

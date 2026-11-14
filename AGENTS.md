@@ -181,10 +181,11 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │       ├── routes/
 │       │   ├── accounts.ts        # GET/POST/PATCH /api/v1/accounts, decommission sweep, tracking categories
 │       │   ├── auth.ts            # POST /api/v1/auth/google, GET /me, POST /switch-organization, DELETE /logout
-│       │   ├── banking.ts         # Multi-account banking, inter-account transfers (+ reversal), statement import & smart reconciliation
+│       │   ├── banking.ts         # Multi-account banking, transfers, context-aware statement CSV import & 6-mode contact-linked reconciliation
 │       │   ├── batch-payments.ts  # GET/POST /api/v1/batch-payments, GET /:id/aba (APCA CEMTEX file download)
 │       │   ├── bills.ts           # GET/POST/PATCH/DELETE /api/v1/bills, edit & re-post, revert-to-draft, void, payment reversal & recurring
-│       │   ├── contacts.ts        # GET/POST/PATCH/DELETE /api/v1/contacts, GET /:id/360
+│       │   ├── bulk-import.ts     # GET /api/v1/bulk-import/templates, POST /validate, POST /commit (Centralized 13-type Admin CSV Import Engine)
+│       │   ├── contacts.ts        # GET/POST/PATCH/DELETE /api/v1/contacts, GET /:id/360 (includes Direct Spend/Receive Money)
 │       │   ├── credit-notes.ts    # GET/POST/DELETE /api/v1/credit-notes, /:id/issue (contra-AR GL), /:id/allocate, /:id/void
 │       │   ├── dashboard.ts       # GET /api/v1/dashboard/summary (100% live PostgreSQL KPI aggregations)
 │       │   ├── developer.ts       # GET /api/v1/developer/* (Allowlisted docs index/content, API catalog, roadmap parser, safe diagnostics)
@@ -207,7 +208,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │   ├── INTEGRATIONS.md        # Async webhook payloads and n8n contracts
 │   ├── PLUGINS.md             # Enterprise Plug-In Module Contract (FLEET, INVENTORY, ATTACHMENTS, N8N)
 │   ├── SECURITY.md            # Auth mechanics, 7-role RBAC matrix, and crypto standards
-│   └── STAGES_ROADMAP.md      # 11-Module Deep-Build Execution Plan & completion checklist
+│   └── STAGES_ROADMAP.md      # 12-Module Deep-Build Execution Plan & completion checklist
 └── frontend/                  # React SPA (Vite + TypeScript + Tailwind)
     ├── index.html             # HTML entry point with Inter & JetBrains Mono font links
     ├── package.json           # Frontend dependencies and scripts
@@ -254,5 +255,5 @@ Every variable and secret must be explicitly defined. **No configuration values 
             ├── LoginPage.tsx         # Google sign-in landing page
             ├── OnboardingModal.tsx   # First-time organization creation modal
             ├── ReportsPage.tsx       # Module 8 Financial Statements, Dimensional P&L, Balance Sheet & ATO BAS Engine
-            └── SettingsPage.tsx      # Module 1 Workspace Governance, EFT Banking, RBAC Team & Audit Log UI
+            └── SettingsPage.tsx      # Module 1 & 12 Workspace Governance, EFT Banking, RBAC Team, Audit Log & Centralized Admin Bulk CSV Import Hub
 ```

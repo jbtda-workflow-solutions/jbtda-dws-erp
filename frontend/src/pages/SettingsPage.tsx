@@ -14,14 +14,21 @@ import {
   Landmark,
   CheckCircle2,
   AlertTriangle,
+  Upload,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import {
   orgApi,
+  bulkImportApi,
   ApiError,
   type Role,
   type MemberProfile,
   type OrganizationInvite,
   type AuditLogEntry,
+  type BulkImportEntityType,
+  type BulkImportTemplate,
+  type BulkImportValidateResponse,
 } from '@/api/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
@@ -29,9 +36,15 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Drawer } from '@/components/ui/Drawer';
 import { StatusTag } from '@/components/ui/StatusTag';
-import { cn } from '@/lib/utils';
+import { cn, formatAUD } from '@/lib/utils';
 
-type SettingsTab = 'profile' | 'governance' | 'team' | 'my-profile' | 'audit';
+type SettingsTab =
+  | 'profile'
+  | 'governance'
+  | 'team'
+  | 'my-profile'
+  | 'audit'
+  | 'bulk-import';
 
 const ALL_ROLES: { value: Role; label: string; description: string }[] = [
   {
@@ -637,6 +650,22 @@ export function SettingsPage() {
           >
             <History className="w-3.5 h-3.5" />
             Immutable System Audit Log
+          </button>
+        )}
+
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('bulk-import')}
+            className={cn(
+              'inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
+              activeTab === 'bulk-import'
+                ? 'border-forest-900 text-forest-900'
+                : 'border-transparent text-slate-500 hover:text-slate-800',
+            )}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            Bulk CSV Import
           </button>
         )}
       </div>
@@ -1433,6 +1462,16 @@ export function SettingsPage() {
       )}
 
       {/* =================================================================== */}
+      {/* TAB 6: CENTRALIZED ADMIN BULK CSV IMPORT HUB */}
+      {/* =================================================================== */}
+      {activeTab === 'bulk-import' && isAdmin && (
+        <BulkCsvImportHub
+          onSuccess={(msg) => setBanner({ type: 'success', message: msg })}
+          onError={(msg) => setBanner({ type: 'error', message: msg })}
+        />
+      )}
+
+      {/* =================================================================== */}
       {/* INVITE OR ASSIGN USER MODAL */}
       {/* =================================================================== */}
       <InviteUserModal
@@ -1882,6 +1921,519 @@ function MemberInspectorDrawer({
         )}
       </form>
     </Drawer>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sub-component: Centralized Admin Bulk CSV Import Hub (Module 12)
+// ---------------------------------------------------------------------------
+
+const BULK_CATEGORY_LABELS: Record<
+  BulkImportTemplate['category'],
+  string
+> = {
+  MASTER_DATA: '1. Master Data & Chart of Accounts',
+  ACCOUNTS_RECEIVABLE: '2. Sales & Accounts Receivable (AR)',
+  ACCOUNTS_PAYABLE: '3. Purchasing & Accounts Payable (AP)',
+  EXPENSES_AND_GL: '4. Direct Cash, Expense Claims & Manual Journals',
+};
+
+function BulkCsvImportHub({
+  onSuccess,
+  onError,
+}: {
+  onSuccess: (msg: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const [templates, setTemplates] = useState<BulkImportTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
+  const [selectedEntity, setSelectedEntity] =
+    useState<BulkImportEntityType>('CONTACTS');
+  const [csvContent, setCsvContent] = useState('');
+  const [validating, setValidating] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [preview, setPreview] = useState<BulkImportValidateResponse | null>(
+    null,
+  );
+  const [commitSuccessMessage, setCommitSuccessMessage] = useState<
+    string | null
+  >(null);
+
+  useEffect(() => {
+    setLoadingTemplates(true);
+    bulkImportApi
+      .listTemplates()
+      .then((res) => {
+        setTemplates(res.templates);
+        if (res.templates.length > 0) {
+          setSelectedEntity(res.templates[0].entityType);
+        }
+      })
+      .catch((err) => {
+        onError(
+          err instanceof ApiError
+            ? err.message
+            : 'Failed to load bulk import templates.',
+        );
+      })
+      .finally(() => setLoadingTemplates(false));
+  }, [onError]);
+
+  const activeTemplate = templates.find(
+    (t) => t.entityType === selectedEntity,
+  );
+
+  const handleSelectEntity = (entityType: BulkImportEntityType) => {
+    setSelectedEntity(entityType);
+    setPreview(null);
+    setCommitSuccessMessage(null);
+  };
+
+  const handleDownloadTemplate = () => {
+    if (!activeTemplate) return;
+    const blob = new Blob([activeTemplate.sampleCsv], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `dws_erp_bulk_${activeTemplate.entityType.toLowerCase()}_template.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleLoadSampleIntoEditor = () => {
+    if (!activeTemplate) return;
+    setCsvContent(activeTemplate.sampleCsv);
+    setPreview(null);
+    setCommitSuccessMessage(null);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setCsvContent(reader.result);
+        setPreview(null);
+        setCommitSuccessMessage(null);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleValidate = async () => {
+    if (!csvContent.trim()) {
+      onError('Please upload a .CSV file or paste CSV rows before validating.');
+      return;
+    }
+    setValidating(true);
+    setCommitSuccessMessage(null);
+    try {
+      const res = await bulkImportApi.validate({
+        entityType: selectedEntity,
+        csvContent,
+      });
+      setPreview(res);
+    } catch (err) {
+      onError(
+        err instanceof ApiError
+          ? err.message
+          : 'Failed to validate CSV payload.',
+      );
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const handleCommit = async () => {
+    if (!preview || preview.validCount === 0) return;
+    setCommitting(true);
+    try {
+      const res = await bulkImportApi.commit({
+        entityType: selectedEntity,
+        csvContent,
+      });
+      setCommitSuccessMessage(res.message);
+      onSuccess(res.message);
+      setPreview(null);
+    } catch (err) {
+      onError(
+        err instanceof ApiError
+          ? err.message
+          : 'Failed to commit bulk import records.',
+      );
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  const categories: BulkImportTemplate['category'][] = [
+    'MASTER_DATA',
+    'ACCOUNTS_RECEIVABLE',
+    'ACCOUNTS_PAYABLE',
+    'EXPENSES_AND_GL',
+  ];
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      {/* Left Sidebar: 13 Record Type Selector */}
+      <div className="lg:col-span-4 bg-white rounded-md border border-slate-200 overflow-hidden flex flex-col">
+        <div className="p-3.5 border-b border-slate-200 bg-slate-50">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-800">
+            Select ERP Record Type (13 Supported)
+          </h2>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            Centralized ADMIN migration and batch data onboarding workbench.
+          </p>
+        </div>
+
+        {loadingTemplates ? (
+          <div className="p-8 text-center text-xs text-slate-400">
+            Loading schema templates…
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-200">
+            {categories.map((cat) => {
+              const catItems = templates.filter((t) => t.category === cat);
+              if (catItems.length === 0) return null;
+              return (
+                <div key={cat} className="p-3 space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-1">
+                    {BULK_CATEGORY_LABELS[cat]}
+                  </p>
+                  <div className="space-y-1">
+                    {catItems.map((t) => {
+                      const active = t.entityType === selectedEntity;
+                      return (
+                        <button
+                          key={t.entityType}
+                          type="button"
+                          onClick={() => handleSelectEntity(t.entityType)}
+                          className={cn(
+                            'w-full text-left px-2.5 py-2 rounded border transition-colors flex items-center justify-between gap-2',
+                            active
+                              ? 'border-forest-800 bg-forest-50/70 text-forest-950'
+                              : 'border-transparent hover:bg-slate-50 text-slate-700',
+                          )}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold truncate">
+                              {t.label}
+                            </p>
+                            <p className="font-mono text-[10px] text-slate-500">
+                              {t.entityType}
+                            </p>
+                          </div>
+                          {t.groupingKey && (
+                            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-600 shrink-0">
+                              Grouped by {t.groupingKey}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Right Main Area: Schema Guide, Upload/Editor, Step 1 Preview & Step 2 Commit */}
+      <div className="lg:col-span-8 space-y-4">
+        {activeTemplate && (
+          <div className="bg-white rounded-md border border-slate-200 divide-y divide-slate-200">
+            {/* Header & Template Download */}
+            <div className="p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    {activeTemplate.label}
+                  </h3>
+                  <StatusTag
+                    tone="forest"
+                    label={activeTemplate.entityType}
+                    mono
+                  />
+                </div>
+                <p className="text-xs text-slate-600 mt-1">
+                  {activeTemplate.description}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLoadSampleIntoEditor}
+                >
+                  Load Sample CSV
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={handleDownloadTemplate}
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download .CSV Template
+                </Button>
+              </div>
+            </div>
+
+            {/* Required vs Optional Column Specification */}
+            <div className="p-4 bg-slate-50/70 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Required CSV Columns ({activeTemplate.requiredColumns.length})
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {activeTemplate.requiredColumns.map((col) => (
+                    <span
+                      key={col}
+                      className="font-mono text-[11px] px-2 py-0.5 rounded bg-forest-50 border border-forest-200 text-forest-900 font-medium"
+                    >
+                      {col} *
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Optional Context Columns ({activeTemplate.optionalColumns.length})
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {activeTemplate.optionalColumns.length === 0 ? (
+                    <span className="text-slate-400 italic">None</span>
+                  ) : (
+                    activeTemplate.optionalColumns.map((col) => (
+                      <span
+                        key={col}
+                        className="font-mono text-[11px] px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-600"
+                      >
+                        {col}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Step 1 Input: File Upload + Raw CSV Editor */}
+            <div className="p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <label className="text-xs font-semibold text-slate-800">
+                  Step 1: Upload CSV File or Paste Rows
+                </label>
+                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 cursor-pointer">
+                  <Upload className="w-3.5 h-3.5 text-forest-800" />
+                  <span>Choose .CSV File from Computer</span>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              <textarea
+                rows={7}
+                value={csvContent}
+                onChange={(e) => {
+                  setCsvContent(e.target.value);
+                  setPreview(null);
+                  setCommitSuccessMessage(null);
+                }}
+                placeholder={activeTemplate.sampleCsv}
+                className="w-full rounded border border-slate-300 bg-slate-950 text-emerald-300 p-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-forest-600"
+              />
+
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <p className="text-[11px] text-slate-500">
+                  All non-empty Contact, GL Account, Item SKU, and Cost Centre references are strictly verified against live records before commit.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  loading={validating}
+                  disabled={!csvContent.trim()}
+                  onClick={() => void handleValidate()}
+                >
+                  Validate & Preview CSV
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Commit Completion Receipt Banner */}
+        {commitSuccessMessage && (
+          <div className="p-4 rounded-md border border-emerald-300 bg-emerald-50 flex items-center justify-between gap-3 text-xs text-emerald-950">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+              <div>
+                <p className="font-semibold">Bulk CSV Import Committed</p>
+                <p className="text-emerald-800 mt-0.5">{commitSuccessMessage}</p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setCsvContent('');
+                setCommitSuccessMessage(null);
+              }}
+            >
+              Clear Editor
+            </Button>
+          </div>
+        )}
+
+        {/* Step 2 Preview Table & Commit Action */}
+        {preview && (
+          <div className="bg-white rounded-md border border-slate-200 overflow-hidden divide-y divide-slate-200">
+            <div className="p-4 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div>
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-800">
+                    Step 2: Validation & Entity Resolution Preview
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Review resolved database associations and fix any red strict-match errors before committing.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 font-mono text-xs">
+                  <span className="px-2 py-0.5 rounded bg-slate-200/80 text-slate-800">
+                    Total: {preview.totalRecords}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-semibold">
+                    Valid: {preview.validCount}
+                  </span>
+                  {preview.invalidCount > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-900 font-semibold">
+                      Errors: {preview.invalidCount}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                size="sm"
+                loading={committing}
+                disabled={preview.validCount === 0}
+                onClick={() => void handleCommit()}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Commit {preview.validCount} Valid Record
+                {preview.validCount === 1 ? '' : 's'}
+              </Button>
+            </div>
+
+            <div className="overflow-x-auto max-h-96">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 border-b border-slate-200 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-2">CSV Row(s)</th>
+                    <th className="px-3 py-2">Identifier / Ref</th>
+                    <th className="px-3 py-2">Primary Entity / Summary</th>
+                    <th className="px-3 py-2">Resolved Database Links</th>
+                    <th className="px-3 py-2 text-right">Total Amount</th>
+                    <th className="px-3 py-2">Target Status</th>
+                    <th className="px-3 py-2">Validation Result</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {preview.records.map((rec, idx) => (
+                    <tr
+                      key={`${rec.identifier}-${idx}`}
+                      className={cn(
+                        'transition-colors',
+                        rec.valid ? 'hover:bg-slate-50' : 'bg-rose-50/50',
+                      )}
+                    >
+                      <td className="px-3 py-2 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                        #{rec.rowNumbers}
+                      </td>
+                      <td className="px-3 py-2 font-mono font-semibold text-slate-900 whitespace-nowrap">
+                        {rec.identifier}
+                      </td>
+                      <td className="px-3 py-2">
+                        <p className="font-medium text-slate-900">
+                          {rec.primaryLabel}
+                        </p>
+                        {rec.secondaryLabel && (
+                          <p className="text-[11px] text-slate-500">
+                            {rec.secondaryLabel}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-1">
+                          {rec.resolvedBadges.length === 0 ? (
+                            <span className="text-slate-400">—</span>
+                          ) : (
+                            rec.resolvedBadges.map((b, bIdx) => (
+                              <span
+                                key={bIdx}
+                                className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-900"
+                              >
+                                {b}
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono font-medium text-slate-900 whitespace-nowrap">
+                        {rec.amountCents !== null
+                          ? formatAUD(rec.amountCents)
+                          : '—'}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <StatusTag
+                          tone={
+                            rec.statusBadge === 'DRAFT' ? 'draft' : 'forest'
+                          }
+                          label={rec.statusBadge}
+                          mono
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        {rec.valid ? (
+                          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-emerald-700 font-medium">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            READY
+                          </span>
+                        ) : (
+                          <div className="space-y-0.5">
+                            {rec.errors.map((err, eIdx) => (
+                              <p
+                                key={eIdx}
+                                className="text-[11px] text-rose-700 font-medium flex items-start gap-1"
+                              >
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                <span>{err}</span>
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

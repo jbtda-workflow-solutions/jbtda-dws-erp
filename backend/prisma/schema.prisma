@@ -934,19 +934,23 @@ model BankTransfer {
 }
 
 model BankStatementLine {
-  id                   String    @id @default(uuid())
-  organizationId       String    @map("organization_id")
-  bankAccountId        String    @map("bank_account_id")
-  statementDate        DateTime  @map("statement_date")
-  description          String
-  reference            String?
+  id                        String        @id @default(uuid())
+  organizationId            String        @map("organization_id")
+  bankAccountId             String        @map("bank_account_id")
+  statementDate             DateTime      @map("statement_date")
+  description               String
+  reference                 String?
   /// Positive for deposits/credits on bank statement, negative for withdrawals/debits
-  amountCents          BigInt    @map("amount_cents")
-  isReconciled         Boolean   @default(false) @map("is_reconciled")
-  matchedJournalId     String?   @map("matched_journal_id")
-  reconciledAt         DateTime? @map("reconciled_at")
-  reconciledByUserId   String?   @map("reconciled_by_user_id")
-  createdAt            DateTime  @default(now()) @map("created_at")
+  amountCents               BigInt        @map("amount_cents")
+  suggestedContactId        String?       @map("suggested_contact_id")
+  suggestedAccountId        String?       @map("suggested_account_id")
+  suggestedTrackingOptionId String?       @map("suggested_tracking_option_id")
+  suggestedTaxTreatment     TaxTreatment? @map("suggested_tax_treatment")
+  isReconciled              Boolean       @default(false) @map("is_reconciled")
+  matchedJournalId          String?       @map("matched_journal_id")
+  reconciledAt              DateTime?     @map("reconciled_at")
+  reconciledByUserId        String?       @map("reconciled_by_user_id")
+  createdAt                 DateTime      @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 

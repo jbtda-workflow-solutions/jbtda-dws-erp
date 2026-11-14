@@ -1,4 +1,4 @@
-# Master Architecture & 11-Module Deep-Build Roadmap
+# Master Architecture & 12-Module Deep-Build Roadmap
 
 This document is the authoritative architectural blueprint and execution plan for the **JBTDA-DWS Enterprise Ledger & Business Services Platform**.
 
@@ -108,7 +108,7 @@ Access is strictly compartmentalized by domain so regular staff and specialists 
 
 ---
 
-## 5. The 8-Module Deep-Build Execution Plan
+## 5. The 12-Module Deep-Build Execution Plan
 
 Development proceeds strictly **one module at a time**. We complete the backend routes, validations, ledger integrations, audit logging, and frontend interfaces for a module before moving to the next.
 
@@ -424,7 +424,7 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 
 ---
 
-### Module 11: Transactional Integrity, Bidirectional Sub-Ledger/GL Synchronization & Full Record Lifecycle Control (Edit / Void / Delete)
+### Module 11: Transactional Integrity, Bidirectional Sub-Ledger/GL Synchronization & Full Record Lifecycle Control (Edit / Void / Delete) (✅ COMPLETED)
 **Objective:** Ensure 100% bidirectional consistency between the General Ledger (`/ledger`) and all sub-ledger modules (`/bills`, `/invoices`, `/expenses`, `/banking`), prevent double-reversal ledger corruption, and empower `ADMIN` / `ACCOUNTANT` users with complete Edit & Re-Post, Revert-to-Draft, Void, Payment Reversal, and Force-Delete lifecycle controls gated by the Accounting Period Lock Date.
 
 - [x] **11.1 General Ledger Reversal Math, Anti-Double-Reversal Guard & Admin Force-Delete (`ledger-posting.ts`, `ledger.ts`, `LedgerPage.tsx`)**:
@@ -467,3 +467,67 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 - [x] **11.6 Banking Transfers & Master Data Lifecycle Controls (`banking.ts`, `contacts.ts`, `BankingPage.tsx`, `ContactsPage.tsx`)**:
   - `DELETE /api/v1/banking/transfers/:id`: Allow `ADMIN`/`ACCOUNTANT` to reverse/delete an inter-account `BankTransfer` and its linked `BANK_TRANSFER` GL journal.
   - `DELETE /api/v1/contacts/:id`: Allow `ADMIN` to delete contacts with no linked transactions (or deactivate contacts with historical activity).
+
+---
+
+### Module 12: Centralized Admin Bulk CSV Import Engine, Context-Aware Bank Statement Upload & Multi-Mode Contact-Linked Reconciliation (✅ COMPLETED)
+**Objective:** Provide `ADMIN` users with a centralized, two-step **Validate & Preview $\rightarrow$ Commit** Bulk CSV Import Hub supporting all 13 core master and transactional record types; upgrade Bank Statement CSV imports to accept optional context columns (`Supplier/Merchant/Contact`, `Account Code/Name`, `Cost Centre/Tracking Option`, `Tax Treatment`) validated strictly against existing records; and upgrade Bank Reconciliation so every reconciled line explicitly specifies its transaction mode (`DIRECT_EXPENSE` / `DIRECT_INCOME`, `ALLOCATE_BILL` / `CREATE_AND_PAY_BILL`, or `ALLOCATE_INVOICE` / `CREATE_AND_PAY_INVOICE`) and links cleanly to a `Contact` record and Contact 360° activity feed.
+
+- [x] **12.1 Schema Extensions for Context-Aware Statement Lines (`schema.prisma` & `schema-sync.ts`)**:
+  - Extend `BankStatementLine` with optional pre-validated coding references populated during CSV statement import when optional columns are supplied:
+    - `suggestedContactId` (`String?`, FK to `Contact`)
+    - `suggestedAccountId` (`String?`, FK to `Account`)
+    - `suggestedTrackingOptionId` (`String?`, FK to `TrackingOption`)
+    - `suggestedTaxTreatment` (`TaxTreatment?`)
+  - Synchronize schema changes idempotently in `backend/src/lib/schema-sync.ts` and `backend/prisma/migrations/rebuild_all_schema.sql`.
+- [x] **12.2 Context-Aware Bank Statement CSV Upload with Two-Step Validate & Preview (`banking.ts` & `BankingPage.tsx`)**:
+  - Expand `parseStatementCsv` in `backend/src/routes/banking.ts` to recognize optional CSV columns alongside standard Date/Description/Reference/Amount/Debit/Credit headers:
+    - **Supplier / Merchant / Contact** (`contact`, `merchant`, `supplier`, `payee`, `customer`, `vendor`)
+    - **GL Account** (`account`, `account_code`, `gl_account`, `account_name`)
+    - **Cost Centre / Tracking Option** (`cost_centre`, `cost_center`, `tracking`, `department`, `project`)
+    - **Tax Treatment** (`tax`, `tax_treatment`, `gst`, `tax_code`)
+  - **Strict Validation Rule for Optional Columns:** Any optional column left blank is ignored (optional). However, when a non-empty value is provided for Contact, Account, or Cost Centre, it MUST strictly match an existing record in the organization's database (case-insensitive exact match on Contact `name`, Account `code` or `name`, and TrackingOption `name`).
+  - **Two-Step Validate & Preview Flow (`POST /api/v1/banking/statements/import`):**
+    - Support `dryRun: true` (Step 1: Validate & Preview) returning parsed rows with validation status (`VALID` in green with resolved `Contact`, `Account`, and `TrackingOption` badges, or `INVALID` in red with exact column mismatch reasons).
+    - Step 2 (Commit): Allows the user in `BankingPage.tsx` to either fix and re-upload the CSV or commit all valid rows, persisting `suggestedContactId`, `suggestedAccountId`, `suggestedTrackingOptionId`, and `suggestedTaxTreatment` onto each created `BankStatementLine`.
+- [x] **12.3 Multi-Mode Contact-Linked Bank Reconciliation (`banking.ts`, `contacts.ts`, `BankingPage.tsx`)**:
+  - Upgrade the Split-Pane Reconciliation Workbench (`BankingPage.tsx`) and `POST /api/v1/banking/reconciliation/create-and-reconcile` so that when reconciling a bank statement line, the user explicitly selects the **Transaction Mode** based on cash direction:
+    - **For Outflows / Withdrawals (`amountCents < 0`):**
+      1. **Direct Expense (`DIRECT_EXPENSE`):** Creates a full `DirectTransaction` (`type: 'SPEND_MONEY'`) linked to the selected `contactId` (and `payeeName`), posts the balanced GL `JournalEntry` (`referenceType: 'DIRECT_TRANSACTION'`, `referenceId: directTx.id`, `isReconciled: true`), and links `BankStatementLine.matchedJournalId`. Appears immediately in `/expenses` and Contact 360°.
+      2. **Pay Existing Vendor Bill (`ALLOCATE_BILL`):** Selects an open/partially-paid `Bill` (`AWAITING_PAYMENT` / `PARTIALLY_PAID`), records a `PaymentOut` for the statement line amount, updates `Bill.amountPaidCents` and status (`PAID` / `PARTIALLY_PAID`), posts the `PAYMENT_OUT` GL journal (`DR 2000 Accounts Payable`, `CR Bank`), and reconciles the statement line.
+      3. **Create & Pay New Vendor Bill (`CREATE_AND_PAY_BILL`):** Atomically creates an approved `Bill` for the selected Supplier `contactId` (posting `DR Expense` / `DR 2200 GST Paid` / `CR 2000 AP`), immediately records the settling `PaymentOut` (`DR 2000 AP` / `CR Bank`), and reconciles the statement line against the payment journal.
+    - **For Inflows / Deposits (`amountCents > 0`):**
+      1. **Direct Income (`DIRECT_INCOME`):** Creates a full `DirectTransaction` (`type: 'RECEIVE_MONEY'`) linked to the selected `contactId`, posts the balanced GL `JournalEntry` (`referenceType: 'DIRECT_TRANSACTION'`, `referenceId: directTx.id`, `isReconciled: true`), and reconciles the statement line.
+      2. **Receive Against Existing Customer Invoice (`ALLOCATE_INVOICE`):** Selects an open `Invoice` (`ISSUED` / `PARTIALLY_PAID`), records a `PaymentIn` for the statement line amount, updates `Invoice.amountPaidCents` and status (`PAID` / `PARTIALLY_PAID`), posts the `PAYMENT_IN` GL journal (`DR Bank`, `CR 1200 Accounts Receivable`), and reconciles the statement line.
+      3. **Create & Settle New Customer Invoice (`CREATE_AND_PAY_INVOICE`):** Atomically creates an issued `Invoice` for the selected Customer `contactId` (posting `DR 1200 AR` / `CR Revenue` / `CR 2100 GST Collected`), immediately records the settling `PaymentIn` (`DR Bank` / `CR 1200 AR`), and reconciles the statement line against the receipt journal.
+  - **Pre-Fill from Statement Hints & Contact Defaults:** When clicking a statement line in `BankingPage.tsx`, automatically pre-populate the Contact, GL Account, Cost Centre, and Tax Treatment from `suggestedContactId`, `suggestedAccountId` (or the Contact's `defaultExpenseAccountId` / `defaultRevenueAccountId` if no account column was in the CSV), `suggestedTrackingOptionId`, and `suggestedTaxTreatment`.
+  - **Contact 360° Direct Transaction Integration (`GET /api/v1/contacts/:id/360`):** Include `DirectTransaction` (`SPEND_MONEY` and `RECEIVE_MONEY`) records in the Contact 360° chronological activity feed and lifetime spend/revenue summary metrics in `backend/src/routes/contacts.ts` and `frontend/src/pages/ContactsPage.tsx`.
+- [x] **12.4 Centralized Admin Bulk CSV Import Engine — Backend API (`backend/src/routes/bulk-import.ts`)**:
+  - RBAC-restricted to `ADMIN` (`requireRole('ADMIN')`).
+  - **Supported 13 Record Types (`entityType`):**
+    1. `CONTACTS` — Customers, Suppliers/Vendors, and Dual contacts (with optional ABN, payment terms, BSB/Account, default GL accounts).
+    2. `ITEMS` — Products & Services catalog (with code, name, sales/purchase unit prices, default revenue/expense account codes, tax treatments).
+    3. `ACCOUNTS` — Chart of Accounts (code, name, type, normal balance, parent account code, default tax treatment, bank details).
+    4. `TRACKING_OPTIONS` — Cost Centres & Tracking Categories (`category_name`, `option_name`).
+    5. `INVOICES` — Customer Tax Invoices (grouped into multi-line documents by `invoice_number`, with optional `status`: `DRAFT` default or `ISSUED` to auto-post to GL).
+    6. `QUOTES` — Customer Quotes / Estimates (grouped by `quote_number`, with optional `status`: `DRAFT` or `SENT` / `ACCEPTED`).
+    7. `CREDIT_NOTES` — Customer AR Credit Notes (grouped by `credit_note_number`, with optional `status`: `DRAFT` or `ISSUED` to auto-post contra-AR GL).
+    8. `BILLS` — Vendor Bills (grouped into multi-line documents by `bill_reference` / `bill_number`, with optional `status`: `DRAFT` default or `AWAITING_PAYMENT` to auto-post to GL).
+    9. `PURCHASE_ORDERS` — Vendor Purchase Orders (grouped by `po_number`, with optional `status`: `DRAFT` or `APPROVED`).
+    10. `VENDOR_CREDITS` — Vendor AP Credits (grouped by `vendor_credit_number`, with optional `status`: `DRAFT` or `ISSUED` to auto-post contra-AP GL).
+    11. `DIRECT_TRANSACTIONS` — Direct Spend Money & Receive Money transactions (grouped by `reference` or per-row, linked to `bank_account_code`, optional `contact_name`, `account_code`, `cost_centre`, `tax_treatment`, auto-posting to GL).
+    12. `EXPENSE_CLAIMS` — Employee Expense Claims (grouped by `claim_title` + `employee_email`, with optional `status`: `DRAFT` or `APPROVED` to auto-post to `2050 Employee Reimbursements Payable`).
+    13. `JOURNAL_ENTRIES` — Manual General Ledger Journals (grouped by `entry_number` / `reference`, validating $\sum \text{Debits} == \sum \text{Credits}$, with optional `status`: `DRAFT` or `POSTED`).
+  - **Endpoints:**
+    - `GET /api/v1/bulk-import/templates`: Returns metadata, column specifications (required vs. optional fields, accepted values, defaults), and downloadable sample CSV templates for all supported record types.
+    - `POST /api/v1/bulk-import/validate`: Parses uploaded CSV for the selected `entityType`, groups multi-line documents by reference number, validates all foreign keys (strictly matching existing Contact names, Account codes/names, Item codes, Tracking Option names, and Lock Dates), and returns a structured row/document preview (`VALID` vs. `INVALID` with field-level error diagnostics) without mutating the database.
+    - `POST /api/v1/bulk-import/commit`: Atomically commits all validated records/documents inside a Prisma transaction, executing full `LedgerPostingService` GL postings for any documents flagged as `ISSUED` / `AWAITING_PAYMENT` / `APPROVED` / `POSTED` and recording an immutable `AuditLog` summary.
+- [x] **12.5 Centralized Admin Bulk CSV Import Hub UI (`SettingsPage.tsx` / Dedicated Admin Tab)**:
+  - Add a dedicated **"Bulk CSV Import"** workbench tab inside Workspace Settings (`/settings`) exclusively for `ADMIN` users:
+    - **Record Type Selector Grid:** Choose from the supported master and transactional record types with clear schema rules (showing required fields vs. optional fields and multi-line grouping key).
+    - **1-Click Template Download:** Download a clean, pre-formatted `.csv` template with example rows for the chosen record type.
+    - **Step 1 — Upload & Validate Preview Table:** Drag-and-drop or select a `.csv` file to run `POST /api/v1/bulk-import/validate`. Renders an interactive Corporate Precision preview table showing:
+      - Summary counters (`Total Rows/Documents`, `Valid & Ready` in green, `Validation Errors` in red).
+      - Resolved entity badges (matched Contact, GL Account, Cost Centre, Tax Treatment, and calculated AUD cent totals).
+      - Exact row/column error messages for any unrecognized Contact, Account, Cost Centre, unbalanced journal, or lock-date violation.
+    - **Step 2 — Commit Valid Records:** Action buttons to either **Re-Upload Corrected CSV** or **Commit Valid Records ($N$)** via `POST /api/v1/bulk-import/commit`, displaying a completion receipt with links to inspect the newly imported records.

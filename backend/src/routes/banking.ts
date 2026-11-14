@@ -28,9 +28,13 @@ import {
 } from '../lib/ledger-posting.js';
 import {
   AccountType,
+  BillStatus,
+  DirectTransactionType,
   EntryType,
+  InvoiceStatus,
   JournalStatus,
   NormalBalance,
+  PaymentReceiptType,
   Role,
   TaxTreatment,
 } from '@prisma/client';
@@ -51,10 +55,33 @@ function serializeData<T>(data: T): any {
 // ---------------------------------------------------------------------------
 
 interface ParsedStatementRow {
+  rowNumber: number;
   statementDate: Date;
   description: string;
   reference?: string | null;
   amountCents: bigint;
+  rawContactName?: string | null;
+  rawAccountCodeOrName?: string | null;
+  rawTrackingOptionName?: string | null;
+  rawTaxTreatment?: string | null;
+}
+
+function parseTaxTreatmentString(raw: string | null | undefined): {
+  valid: boolean;
+  value: TaxTreatment | null;
+} {
+  if (!raw || !raw.trim()) return { valid: true, value: null };
+  const norm = raw.trim().toUpperCase().replace(/[\s-]+/g, '_');
+  if (['TAX_EXCLUSIVE', 'EXCLUSIVE', 'GST_EXCLUSIVE', 'EX_GST', 'GST_ON_INCOME', 'GST_ON_EXPENSES', '10%_GST'].includes(norm)) {
+    return { valid: true, value: TaxTreatment.TAX_EXCLUSIVE };
+  }
+  if (['TAX_INCLUSIVE', 'INCLUSIVE', 'GST_INCLUSIVE', 'INC_GST', 'GST'].includes(norm)) {
+    return { valid: true, value: TaxTreatment.TAX_INCLUSIVE };
+  }
+  if (['GST_FREE', 'FREE', 'ZERO', '0%', 'NO_GST', 'BAS_EXCLUDED', 'EXEMPT', 'NONE', 'INPUT_TAXED', 'INPUT'].includes(norm)) {
+    return { valid: true, value: TaxTreatment.GST_FREE };
+  }
+  return { valid: false, value: null };
 }
 
 function parseAustralianDate(dateStr: string): Date | null {
@@ -148,7 +175,7 @@ export function parseStatementCsv(csvContent: string): ParsedStatementRow[] {
     return tokens;
   };
 
-  const headers = tokenize(headerLine).map((h) => h.toLowerCase());
+  const headers = tokenize(headerLine).map((h) => h.toLowerCase().trim());
 
   let dateCol = -1;
   let descCol = -1;
@@ -156,21 +183,33 @@ export function parseStatementCsv(csvContent: string): ParsedStatementRow[] {
   let amountCol = -1;
   let debitCol = -1;
   let creditCol = -1;
+  let contactCol = -1;
+  let accountCol = -1;
+  let trackingCol = -1;
+  let taxCol = -1;
 
   for (let i = 0; i < headers.length; i++) {
     const h = headers[i]!;
-    if (['date', 'statement date', 'transaction date', 'posted date', 'tran date', 'effective date'].includes(h)) {
+    if (['date', 'statement date', 'transaction date', 'posted date', 'tran date', 'effective date', 'statement_date', 'transaction_date'].includes(h)) {
       dateCol = i;
-    } else if (['description', 'narrative', 'details', 'particulars', 'memo', 'transaction details', 'payee'].includes(h)) {
+    } else if (['description', 'narrative', 'details', 'particulars', 'memo', 'transaction details', 'transaction_details'].includes(h)) {
       descCol = i;
-    } else if (['reference', 'ref', 'reference number', 'cheque number', 'receipt'].includes(h)) {
+    } else if (['reference', 'ref', 'reference number', 'cheque number', 'receipt', 'reference_number'].includes(h)) {
       refCol = i;
-    } else if (['amount', 'value', 'tran amount', 'net amount'].includes(h)) {
+    } else if (['amount', 'value', 'tran amount', 'net amount', 'amount_cents', 'tran_amount'].includes(h)) {
       amountCol = i;
-    } else if (['debit', 'withdrawal', 'dr', 'debit amount'].includes(h)) {
+    } else if (['debit', 'withdrawal', 'dr', 'debit amount', 'debit_amount'].includes(h)) {
       debitCol = i;
-    } else if (['credit', 'deposit', 'cr', 'credit amount'].includes(h)) {
+    } else if (['credit', 'deposit', 'cr', 'credit amount', 'credit_amount'].includes(h)) {
       creditCol = i;
+    } else if (['contact', 'merchant', 'supplier', 'vendor', 'customer', 'payee', 'contact_name', 'supplier_name', 'merchant_name'].includes(h)) {
+      contactCol = i;
+    } else if (['account', 'account code', 'account_code', 'gl account', 'gl_account', 'account name', 'account_name', 'gl code', 'gl_code'].includes(h)) {
+      accountCol = i;
+    } else if (['cost centre', 'cost_centre', 'cost center', 'cost_center', 'tracking', 'tracking_option', 'tracking option', 'department', 'project'].includes(h)) {
+      trackingCol = i;
+    } else if (['tax', 'tax treatment', 'tax_treatment', 'gst', 'tax code', 'tax_code'].includes(h)) {
+      taxCol = i;
     }
   }
 
@@ -194,6 +233,10 @@ export function parseStatementCsv(csvContent: string): ParsedStatementRow[] {
 
     const desc = tokens[descCol] ?? 'Imported Transaction';
     const ref = refCol !== -1 && tokens[refCol] ? tokens[refCol]! : null;
+    const rawContactName = contactCol !== -1 && tokens[contactCol] ? tokens[contactCol]!.trim() : null;
+    const rawAccountCodeOrName = accountCol !== -1 && tokens[accountCol] ? tokens[accountCol]!.trim() : null;
+    const rawTrackingOptionName = trackingCol !== -1 && tokens[trackingCol] ? tokens[trackingCol]!.trim() : null;
+    const rawTaxTreatment = taxCol !== -1 && tokens[taxCol] ? tokens[taxCol]!.trim() : null;
 
     let rowCents: bigint | null = null;
 
@@ -218,10 +261,15 @@ export function parseStatementCsv(csvContent: string): ParsedStatementRow[] {
     if (rowCents === null || rowCents === 0n) continue;
 
     results.push({
+      rowNumber: r + 1,
       statementDate: parsedDate,
       description: desc.trim() || 'Imported Transaction',
       reference: ref ? ref.trim() : null,
       amountCents: rowCents,
+      rawContactName: rawContactName || null,
+      rawAccountCodeOrName: rawAccountCodeOrName || null,
+      rawTrackingOptionName: rawTrackingOptionName || null,
+      rawTaxTreatment: rawTaxTreatment || null,
     });
   }
 
@@ -251,6 +299,7 @@ const CreateTransferBody = z.object({
 const ImportStatementBody = z.object({
   bankAccountId: z.string().uuid(),
   csvContent: z.string().optional(),
+  dryRun: z.boolean().optional().default(false),
   lines: z
     .array(
       z.object({
@@ -258,6 +307,10 @@ const ImportStatementBody = z.object({
         description: z.string().trim().min(1).max(500),
         reference: z.string().trim().max(100).nullable().optional(),
         amountCents: z.number().int(),
+        suggestedContactId: z.string().uuid().nullable().optional(),
+        suggestedAccountId: z.string().uuid().nullable().optional(),
+        suggestedTrackingOptionId: z.string().uuid().nullable().optional(),
+        suggestedTaxTreatment: TaxTreatmentEnum.nullable().optional(),
       }),
     )
     .optional(),
@@ -272,9 +325,24 @@ const UnmatchReconciliationBody = z.object({
   statementLineId: z.string().uuid(),
 });
 
+const ReconciliationModeEnum = z.enum([
+  'DIRECT_EXPENSE',
+  'DIRECT_INCOME',
+  'ALLOCATE_BILL',
+  'CREATE_AND_PAY_BILL',
+  'ALLOCATE_INVOICE',
+  'CREATE_AND_PAY_INVOICE',
+]);
+
 const CreateAndReconcileBody = z.object({
   statementLineId: z.string().uuid(),
-  targetAccountId: z.string().uuid(),
+  mode: ReconciliationModeEnum.optional(),
+  contactId: z.string().uuid().nullable().optional(),
+  payeeName: z.string().trim().max(255).nullable().optional(),
+  targetAccountId: z.string().uuid().nullable().optional(),
+  billId: z.string().uuid().nullable().optional(),
+  invoiceId: z.string().uuid().nullable().optional(),
+  documentReference: z.string().trim().max(100).nullable().optional(),
   description: z.string().trim().min(1).max(500).optional(),
   taxTreatment: TaxTreatmentEnum.default(TaxTreatment.GST_FREE),
   trackingOptionId: z.string().uuid().nullable().optional(),
@@ -845,6 +913,8 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
 
   // -------------------------------------------------------------------------
   // POST /api/v1/banking/statements/import — Upload & parse bank statement CSV
+  // Supports Two-Step Validate & Preview (dryRun: true) and Strict Matching
+  // of optional Supplier/Merchant, GL Account, Cost Centre, and Tax Treatment.
   // -------------------------------------------------------------------------
   fastify.post(
     '/api/v1/banking/statements/import',
@@ -864,7 +934,7 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const { bankAccountId, csvContent, lines: manualLines } = bodyParse.data;
+      const { bankAccountId, csvContent, dryRun, lines: manualLines } = bodyParse.data;
 
       const bankAccount = await fastify.prisma.account.findFirst({
         where: { id: bankAccountId, organizationId, isActive: true },
@@ -872,6 +942,51 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
 
       if (!bankAccount) {
         return reply.code(404).send({ error: 'Bank account not found or inactive.' });
+      }
+
+      // If committing pre-validated lines directly (Step 2 of Validate & Preview)
+      if (!csvContent && manualLines && manualLines.length > 0 && !dryRun) {
+        const createdCount = await fastify.prisma.$transaction(async (tx) => {
+          let count = 0;
+          for (const l of manualLines) {
+            await tx.bankStatementLine.create({
+              data: {
+                organizationId,
+                bankAccountId,
+                statementDate: new Date(l.statementDate),
+                description: l.description.trim(),
+                reference: l.reference?.trim() || null,
+                amountCents: BigInt(l.amountCents),
+                suggestedContactId: l.suggestedContactId || null,
+                suggestedAccountId: l.suggestedAccountId || null,
+                suggestedTrackingOptionId: l.suggestedTrackingOptionId || null,
+                suggestedTaxTreatment: l.suggestedTaxTreatment || null,
+                isReconciled: false,
+              },
+            });
+            count++;
+          }
+
+          await recordAuditLog(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            action: 'BANK_STATEMENT_IMPORTED',
+            entityType: 'ACCOUNT',
+            entityId: bankAccountId,
+            summary: `Imported ${count} validated statement lines for ${bankAccount.code} - ${bankAccount.name}`,
+            metadata: {
+              bankAccountId,
+              importedCount: count,
+            },
+          });
+
+          return count;
+        });
+
+        return reply.code(201).send({
+          message: `Successfully imported ${createdCount} bank statement lines.`,
+          importedCount: createdCount,
+        });
       }
 
       let parsedRows: ParsedStatementRow[] = [];
@@ -883,7 +998,8 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
           return reply.code(400).send({ error: err.message || 'Failed to parse CSV statement.' });
         }
       } else if (manualLines && manualLines.length > 0) {
-        parsedRows = manualLines.map((l) => ({
+        parsedRows = manualLines.map((l, idx) => ({
+          rowNumber: idx + 1,
           statementDate: new Date(l.statementDate),
           description: l.description.trim(),
           reference: l.reference?.trim() || null,
@@ -901,18 +1017,167 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // Insert rows into bank_statement_lines
+      // Fetch organization lookup tables for strict optional column validation
+      const [orgContacts, orgAccounts, orgTrackingOptions] = await Promise.all([
+        fastify.prisma.contact.findMany({
+          where: { organizationId, isActive: true },
+          select: {
+            id: true,
+            name: true,
+            legalName: true,
+            type: true,
+            defaultExpenseAccountId: true,
+            defaultRevenueAccountId: true,
+          },
+        }),
+        fastify.prisma.account.findMany({
+          where: { organizationId, isActive: true },
+          select: { id: true, code: true, name: true, type: true, defaultTaxTreatment: true },
+        }),
+        fastify.prisma.trackingOption.findMany({
+          where: { organizationId, isActive: true },
+          include: { trackingCategory: { select: { name: true } } },
+        }),
+      ]);
+
+      const accountById = new Map(orgAccounts.map((a) => [a.id, a]));
+
+      // Validate each row against existing Contacts, Accounts, Tracking Options & Tax Treatments
+      const validatedRows = parsedRows.map((row) => {
+        const errors: string[] = [];
+        let matchedContact: (typeof orgContacts)[number] | null = null;
+        let matchedAccount: (typeof orgAccounts)[number] | null = null;
+        let matchedTracking: (typeof orgTrackingOptions)[number] | null = null;
+        let matchedTax: TaxTreatment | null = null;
+
+        if (row.rawContactName) {
+          const target = row.rawContactName.toLowerCase();
+          matchedContact =
+            orgContacts.find(
+              (c) =>
+                c.name.toLowerCase() === target ||
+                (c.legalName && c.legalName.toLowerCase() === target),
+            ) ?? null;
+          if (!matchedContact) {
+            errors.push(`Unrecognized Contact/Merchant "${row.rawContactName}" (no exact match in Contacts directory)`);
+          }
+        }
+
+        if (row.rawAccountCodeOrName) {
+          const target = row.rawAccountCodeOrName.toLowerCase();
+          matchedAccount =
+            orgAccounts.find(
+              (a) =>
+                a.code.toLowerCase() === target ||
+                a.name.toLowerCase() === target ||
+                `${a.code} - ${a.name}`.toLowerCase() === target ||
+                `${a.code} ${a.name}`.toLowerCase() === target,
+            ) ?? null;
+          if (!matchedAccount) {
+            errors.push(`Unrecognized GL Account "${row.rawAccountCodeOrName}" (no exact match by code or name in Chart of Accounts)`);
+          }
+        } else if (matchedContact) {
+          // If Contact matched and no Account column was specified, fall back to Contact's default account
+          const isDeposit = row.amountCents > 0n;
+          const fallbackAccountId = isDeposit
+            ? matchedContact.defaultRevenueAccountId
+            : matchedContact.defaultExpenseAccountId;
+          if (fallbackAccountId) {
+            matchedAccount = accountById.get(fallbackAccountId) ?? null;
+          }
+        }
+
+        if (row.rawTrackingOptionName) {
+          const target = row.rawTrackingOptionName.toLowerCase();
+          matchedTracking =
+            orgTrackingOptions.find(
+              (t) =>
+                t.name.toLowerCase() === target ||
+                (t.code && t.code.toLowerCase() === target) ||
+                `${t.trackingCategory.name}: ${t.name}`.toLowerCase() === target,
+            ) ?? null;
+          if (!matchedTracking) {
+            errors.push(`Unrecognized Cost Centre / Tracking Option "${row.rawTrackingOptionName}"`);
+          }
+        }
+
+        if (row.rawTaxTreatment) {
+          const parsedTax = parseTaxTreatmentString(row.rawTaxTreatment);
+          if (!parsedTax.valid) {
+            errors.push(
+              `Unrecognized Tax Treatment "${row.rawTaxTreatment}" (use TAX_EXCLUSIVE, TAX_INCLUSIVE, or GST_FREE)`,
+            );
+          } else {
+            matchedTax = parsedTax.value;
+          }
+        } else if (matchedAccount) {
+          matchedTax = matchedAccount.defaultTaxTreatment;
+        }
+
+        return {
+          rowNumber: row.rowNumber,
+          statementDate: row.statementDate.toISOString().slice(0, 10),
+          description: row.description,
+          reference: row.reference ?? null,
+          amountCents: Number(row.amountCents),
+          rawContactName: row.rawContactName ?? null,
+          rawAccountCodeOrName: row.rawAccountCodeOrName ?? null,
+          rawTrackingOptionName: row.rawTrackingOptionName ?? null,
+          rawTaxTreatment: row.rawTaxTreatment ?? null,
+          suggestedContactId: matchedContact?.id ?? null,
+          suggestedContactName: matchedContact?.name ?? null,
+          suggestedAccountId: matchedAccount?.id ?? null,
+          suggestedAccountCode: matchedAccount?.code ?? null,
+          suggestedAccountName: matchedAccount?.name ?? null,
+          suggestedTrackingOptionId: matchedTracking?.id ?? null,
+          suggestedTrackingOptionName: matchedTracking
+            ? `${matchedTracking.trackingCategory.name}: ${matchedTracking.name}`
+            : null,
+          suggestedTaxTreatment: matchedTax,
+          valid: errors.length === 0,
+          errors,
+        };
+      });
+
+      const validRows = validatedRows.filter((r) => r.valid);
+      const invalidRows = validatedRows.filter((r) => !r.valid);
+
+      if (dryRun) {
+        return reply.code(200).send({
+          dryRun: true,
+          totalCount: validatedRows.length,
+          validCount: validRows.length,
+          invalidCount: invalidRows.length,
+          rows: validatedRows,
+        });
+      }
+
+      if (invalidRows.length > 0) {
+        return reply.code(400).send({
+          error: `${invalidRows.length} row(s) failed strict Contact/Account/Cost Centre validation. Use Validate & Preview to inspect errors or commit valid rows only.`,
+          totalCount: validatedRows.length,
+          validCount: validRows.length,
+          invalidCount: invalidRows.length,
+          rows: validatedRows,
+        });
+      }
+
+      // Insert validated rows into bank_statement_lines
       const createdCount = await fastify.prisma.$transaction(async (tx) => {
         let count = 0;
-        for (const row of parsedRows) {
+        for (const row of validRows) {
           await tx.bankStatementLine.create({
             data: {
               organizationId,
               bankAccountId,
-              statementDate: row.statementDate,
+              statementDate: new Date(row.statementDate),
               description: row.description,
               reference: row.reference,
-              amountCents: row.amountCents,
+              amountCents: BigInt(row.amountCents),
+              suggestedContactId: row.suggestedContactId,
+              suggestedAccountId: row.suggestedAccountId,
+              suggestedTrackingOptionId: row.suggestedTrackingOptionId,
+              suggestedTaxTreatment: row.suggestedTaxTreatment,
               isReconciled: false,
             },
           });
@@ -997,24 +1262,66 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
         }),
       ]);
 
-      // If matched journals exist, retrieve their numbers
+      // If matched journals or suggested entities exist, retrieve their metadata
       const matchedJournalIds = lines
         .map((l) => l.matchedJournalId)
         .filter((id): id is string => Boolean(id));
+      const suggestedContactIds = lines
+        .map((l) => l.suggestedContactId)
+        .filter((id): id is string => Boolean(id));
+      const suggestedAccountIds = lines
+        .map((l) => l.suggestedAccountId)
+        .filter((id): id is string => Boolean(id));
+      const suggestedTrackingIds = lines
+        .map((l) => l.suggestedTrackingOptionId)
+        .filter((id): id is string => Boolean(id));
 
-      const journals =
-        matchedJournalIds.length > 0
-          ? await fastify.prisma.journalEntry.findMany({
-              where: { id: { in: matchedJournalIds } },
-              select: { id: true, entryNumber: true, description: true, referenceType: true },
-            })
-          : [];
+      const [journals, suggestedContacts, suggestedAccounts, suggestedTrackings] =
+        await Promise.all([
+          matchedJournalIds.length > 0
+            ? fastify.prisma.journalEntry.findMany({
+                where: { id: { in: matchedJournalIds } },
+                select: { id: true, entryNumber: true, description: true, referenceType: true },
+              })
+            : Promise.resolve([]),
+          suggestedContactIds.length > 0
+            ? fastify.prisma.contact.findMany({
+                where: { id: { in: suggestedContactIds } },
+                select: { id: true, name: true, type: true },
+              })
+            : Promise.resolve([]),
+          suggestedAccountIds.length > 0
+            ? fastify.prisma.account.findMany({
+                where: { id: { in: suggestedAccountIds } },
+                select: { id: true, code: true, name: true },
+              })
+            : Promise.resolve([]),
+          suggestedTrackingIds.length > 0
+            ? fastify.prisma.trackingOption.findMany({
+                where: { id: { in: suggestedTrackingIds } },
+                select: { id: true, name: true, trackingCategory: { select: { name: true } } },
+              })
+            : Promise.resolve([]),
+        ]);
 
       const journalMap = new Map(journals.map((j) => [j.id, j]));
+      const contactMap = new Map(suggestedContacts.map((c) => [c.id, c]));
+      const accountMap = new Map(suggestedAccounts.map((a) => [a.id, a]));
+      const trackingMap = new Map(
+        suggestedTrackings.map((t) => [
+          t.id,
+          { id: t.id, name: t.name, category: { name: t.trackingCategory.name } },
+        ]),
+      );
 
       const enriched = lines.map((l) => ({
         ...l,
         matchedJournal: l.matchedJournalId ? journalMap.get(l.matchedJournalId) ?? null : null,
+        suggestedContact: l.suggestedContactId ? contactMap.get(l.suggestedContactId) ?? null : null,
+        suggestedAccount: l.suggestedAccountId ? accountMap.get(l.suggestedAccountId) ?? null : null,
+        suggestedTrackingOption: l.suggestedTrackingOptionId
+          ? trackingMap.get(l.suggestedTrackingOptionId) ?? null
+          : null,
       }));
 
       return reply.send({
@@ -1436,7 +1743,9 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
 
   // -------------------------------------------------------------------------
   // POST /api/v1/banking/reconciliation/create-and-reconcile
-  // On-the-fly Direct Spend / Receive Money and instant reconciliation
+  // Multi-Mode Contact-Linked Bank Reconciliation:
+  //  - Outflows (amountCents < 0): DIRECT_EXPENSE | ALLOCATE_BILL | CREATE_AND_PAY_BILL
+  //  - Inflows  (amountCents > 0): DIRECT_INCOME  | ALLOCATE_INVOICE | CREATE_AND_PAY_INVOICE
   // -------------------------------------------------------------------------
   fastify.post(
     '/api/v1/banking/reconciliation/create-and-reconcile',
@@ -1458,10 +1767,16 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
 
       const {
         statementLineId,
-        targetAccountId,
+        mode: rawMode,
+        contactId: rawContactId,
+        payeeName,
+        targetAccountId: rawTargetAccountId,
+        billId,
+        invoiceId,
+        documentReference,
         description,
         taxTreatment,
-        trackingOptionId,
+        trackingOptionId: rawTrackingOptionId,
       } = bodyParse.data;
 
       const stmtLine = await fastify.prisma.bankStatementLine.findFirst({
@@ -1485,165 +1800,714 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: lockCheck.message });
       }
 
-      const [bankAccount, targetAccount] = await Promise.all([
-        fastify.prisma.account.findFirst({
-          where: { id: stmtLine.bankAccountId, organizationId, isActive: true },
-        }),
-        fastify.prisma.account.findFirst({
-          where: { id: targetAccountId, organizationId, isActive: true },
-        }),
-      ]);
+      const bankAccount = await fastify.prisma.account.findFirst({
+        where: { id: stmtLine.bankAccountId, organizationId, isActive: true },
+      });
 
       if (!bankAccount) {
         return reply.code(404).send({ error: 'Bank account not found or inactive.' });
       }
-      if (!targetAccount) {
-        return reply.code(404).send({ error: 'Target coding account not found or inactive.' });
-      }
-
-      // GST System Accounts if tax applies
-      let gstPaidAccount: { id: string } | null = null;
-      let gstCollectedAccount: { id: string } | null = null;
-
-      if (taxTreatment !== TaxTreatment.GST_FREE) {
-        [gstPaidAccount, gstCollectedAccount] = await Promise.all([
-          fastify.prisma.account.findFirst({
-            where: { organizationId, systemKey: 'GST_PAID' },
-            select: { id: true },
-          }),
-          fastify.prisma.account.findFirst({
-            where: { organizationId, systemKey: 'GST_COLLECTED' },
-            select: { id: true },
-          }),
-        ]);
-      }
 
       const isDeposit = stmtLine.amountCents > 0n;
       const totalAmountCents = isDeposit ? stmtLine.amountCents : -stmtLine.amountCents;
-      const gstCalc = calculateGST(totalAmountCents, taxTreatment);
-      const subtotalCents = totalAmountCents - gstCalc.gstCents;
+      const effectiveMode = rawMode ?? (isDeposit ? 'DIRECT_INCOME' : 'DIRECT_EXPENSE');
 
+      // Validate mode matches cash direction
+      if (
+        isDeposit &&
+        !['DIRECT_INCOME', 'ALLOCATE_INVOICE', 'CREATE_AND_PAY_INVOICE'].includes(effectiveMode)
+      ) {
+        return reply.code(400).send({
+          error: `Deposit statement line cannot be reconciled with outflow mode ${effectiveMode}.`,
+        });
+      }
+      if (
+        !isDeposit &&
+        !['DIRECT_EXPENSE', 'ALLOCATE_BILL', 'CREATE_AND_PAY_BILL'].includes(effectiveMode)
+      ) {
+        return reply.code(400).send({
+          error: `Withdrawal statement line cannot be reconciled with inflow mode ${effectiveMode}.`,
+        });
+      }
+
+      const effectiveContactId = rawContactId || stmtLine.suggestedContactId || null;
+      const effectiveTargetAccountId = rawTargetAccountId || stmtLine.suggestedAccountId || null;
+      const effectiveTrackingOptionId = rawTrackingOptionId ?? stmtLine.suggestedTrackingOptionId ?? null;
       const narrative = description?.trim() || stmtLine.description;
+
+      // Resolve Contact if provided
+      const contact = effectiveContactId
+        ? await fastify.prisma.contact.findFirst({
+            where: { id: effectiveContactId, organizationId },
+          })
+        : null;
+
+      if (effectiveContactId && !contact) {
+        return reply.code(404).send({ error: 'Selected Contact not found in this organization.' });
+      }
+
+      // Resolve System Control Accounts
+      const systemAccounts = await fastify.prisma.account.findMany({
+        where: {
+          organizationId,
+          OR: [
+            { systemKey: { in: ['GST_PAID', 'GST_COLLECTED', 'ACCOUNTS_PAYABLE', 'ACCOUNTS_RECEIVABLE'] } },
+            { code: { in: ['1200', '2000', '2100', '2200'] } },
+          ],
+        },
+      });
+
+      const gstPaidAccount =
+        systemAccounts.find((a) => a.systemKey === 'GST_PAID') ??
+        systemAccounts.find((a) => a.code === '2200') ??
+        null;
+      const gstCollectedAccount =
+        systemAccounts.find((a) => a.systemKey === 'GST_COLLECTED') ??
+        systemAccounts.find((a) => a.code === '2100') ??
+        null;
+      const apAccount =
+        systemAccounts.find((a) => a.systemKey === 'ACCOUNTS_PAYABLE') ??
+        systemAccounts.find((a) => a.code === '2000') ??
+        null;
+      const arAccount =
+        systemAccounts.find((a) => a.systemKey === 'ACCOUNTS_RECEIVABLE') ??
+        systemAccounts.find((a) => a.code === '1200') ??
+        null;
 
       try {
         const result = await fastify.prisma.$transaction(async (tx) => {
-          const journalLines: Array<{
-            accountId: string;
-            trackingOptionId?: string | null;
-            entryType: EntryType;
-            amountCents: bigint;
-            description?: string;
-          }> = [];
+          const now = new Date();
+          let matchedEntry: any = null;
+          let auditSummary = '';
 
-          if (isDeposit) {
-            // Receive Money:
-            // DEBIT Bank Account (Total Cents)
-            // CREDIT GST Collected (if GST > 0)
-            // CREDIT Target Account (Subtotal Cents)
-            journalLines.push({
-              accountId: bankAccount.id,
-              entryType: EntryType.DEBIT,
-              amountCents: totalAmountCents,
-              description: narrative,
+          // ===================================================================
+          // MODE 1 & 2: DIRECT_EXPENSE (Spend Money) or DIRECT_INCOME (Receive Money)
+          // Creates a full DirectTransaction record linked to Contact & GL
+          // ===================================================================
+          if (effectiveMode === 'DIRECT_EXPENSE' || effectiveMode === 'DIRECT_INCOME') {
+            if (!effectiveTargetAccountId) {
+              throw new Error('Target GL Account is required for Direct Expense / Direct Income.');
+            }
+            const targetAccount = await tx.account.findFirst({
+              where: { id: effectiveTargetAccountId, organizationId, isActive: true },
+            });
+            if (!targetAccount) {
+              throw new Error('Target coding GL account not found or inactive.');
+            }
+
+            // In bank reconciliation, the statement line amount is the gross bank settlement total.
+            // Calculate GST so totalCents === totalAmountCents
+            const effectiveTax =
+              taxTreatment === TaxTreatment.TAX_EXCLUSIVE
+                ? TaxTreatment.TAX_INCLUSIVE
+                : taxTreatment;
+            const gstCalc = calculateGST(totalAmountCents, effectiveTax);
+            const subtotalCents = gstCalc.subtotalCents;
+
+            const directTx = await tx.directTransaction.create({
+              data: {
+                organizationId,
+                bankAccountId: bankAccount.id,
+                contactId: contact?.id ?? null,
+                payeeName: contact?.name ?? payeeName?.trim() ?? stmtLine.description,
+                type: isDeposit
+                  ? DirectTransactionType.RECEIVE_MONEY
+                  : DirectTransactionType.SPEND_MONEY,
+                transactionDate: stmtLine.statementDate,
+                reference: documentReference?.trim() || stmtLine.reference || null,
+                subtotalCents,
+                gstCents: gstCalc.gstCents,
+                totalCents: totalAmountCents,
+                notes: narrative,
+                createdByUserId: request.user.userId,
+                lines: {
+                  create: [
+                    {
+                      organizationId,
+                      accountId: targetAccount.id,
+                      trackingOptionId: effectiveTrackingOptionId,
+                      description: narrative,
+                      amountCents: subtotalCents,
+                      taxTreatment: effectiveTax,
+                      gstCents: gstCalc.gstCents,
+                      totalCents: totalAmountCents,
+                    },
+                  ],
+                },
+              },
             });
 
-            if (gstCalc.gstCents > 0n && gstCollectedAccount) {
+            const journalLines: Array<{
+              accountId: string;
+              trackingOptionId?: string | null;
+              entryType: EntryType;
+              amountCents: bigint;
+              description?: string;
+            }> = [];
+
+            if (isDeposit) {
               journalLines.push({
-                accountId: gstCollectedAccount.id,
+                accountId: bankAccount.id,
+                entryType: EntryType.DEBIT,
+                amountCents: totalAmountCents,
+                description: narrative,
+              });
+              if (gstCalc.gstCents > 0n && gstCollectedAccount) {
+                journalLines.push({
+                  accountId: gstCollectedAccount.id,
+                  entryType: EntryType.CREDIT,
+                  amountCents: gstCalc.gstCents,
+                  description: `GST on ${narrative}`,
+                });
+              }
+              journalLines.push({
+                accountId: targetAccount.id,
+                trackingOptionId: effectiveTrackingOptionId,
                 entryType: EntryType.CREDIT,
-                amountCents: gstCalc.gstCents,
-                description: `GST on ${narrative}`,
+                amountCents: subtotalCents,
+                description: narrative,
+              });
+            } else {
+              journalLines.push({
+                accountId: targetAccount.id,
+                trackingOptionId: effectiveTrackingOptionId,
+                entryType: EntryType.DEBIT,
+                amountCents: subtotalCents,
+                description: narrative,
+              });
+              if (gstCalc.gstCents > 0n && gstPaidAccount) {
+                journalLines.push({
+                  accountId: gstPaidAccount.id,
+                  entryType: EntryType.DEBIT,
+                  amountCents: gstCalc.gstCents,
+                  description: `GST on ${narrative}`,
+                });
+              }
+              journalLines.push({
+                accountId: bankAccount.id,
+                entryType: EntryType.CREDIT,
+                amountCents: totalAmountCents,
+                description: narrative,
               });
             }
 
-            journalLines.push({
-              accountId: targetAccount.id,
-              trackingOptionId,
-              entryType: EntryType.CREDIT,
-              amountCents: subtotalCents,
-              description: narrative,
-            });
-          } else {
-            // Spend Money (Bank Fee, Purchase, Payment out):
-            // DEBIT Target Account (Subtotal Cents)
-            // DEBIT GST Paid (if GST > 0)
-            // CREDIT Bank Account (Total Cents)
-            journalLines.push({
-              accountId: targetAccount.id,
-              trackingOptionId,
-              entryType: EntryType.DEBIT,
-              amountCents: subtotalCents,
-              description: narrative,
+            matchedEntry = await postJournalEntry(tx, {
+              organizationId,
+              actorUserId: request.user.userId,
+              description: `${isDeposit ? 'Receive Money' : 'Spend Money'}: ${contact?.name || payeeName || narrative}`,
+              referenceType: 'DIRECT_TRANSACTION',
+              referenceId: directTx.id,
+              postedAt: stmtLine.statementDate,
+              status: JournalStatus.POSTED,
+              lines: journalLines,
             });
 
+            auditSummary = `Created ${isDeposit ? 'Direct Income' : 'Direct Expense'} (${matchedEntry.entryNumber})${contact ? ` for ${contact.name}` : ''} and reconciled against ${targetAccount.code}`;
+          }
+
+          // ===================================================================
+          // MODE 3: ALLOCATE_BILL — Pay an existing open Vendor Bill
+          // ===================================================================
+          else if (effectiveMode === 'ALLOCATE_BILL') {
+            if (!billId) {
+              throw new Error('Must select an open Vendor Bill to allocate payment against.');
+            }
+            if (!apAccount) {
+              throw new Error('Protected System Account 2000 (Accounts Payable) is missing.');
+            }
+
+            const bill = await tx.bill.findFirst({
+              where: { id: billId, organizationId },
+              include: { contact: true },
+            });
+            if (!bill) {
+              throw new Error('Selected Vendor Bill not found.');
+            }
+            if (bill.status === BillStatus.PAID || bill.status === BillStatus.VOID || bill.status === BillStatus.DRAFT) {
+              throw new Error(`Cannot allocate payment to a ${bill.status} bill.`);
+            }
+
+            const remainingCents = bill.totalCents - bill.amountPaidCents;
+            if (totalAmountCents > remainingCents) {
+              throw new Error(
+                `Statement withdrawal ($${(Number(totalAmountCents) / 100).toFixed(2)}) exceeds bill remaining balance ($${(Number(remainingCents) / 100).toFixed(2)}).`,
+              );
+            }
+
+            const newAmountPaid = bill.amountPaidCents + totalAmountCents;
+            const newStatus =
+              newAmountPaid >= bill.totalCents ? BillStatus.PAID : BillStatus.PARTIALLY_PAID;
+
+            const paymentOut = await tx.paymentOut.create({
+              data: {
+                organizationId,
+                billId: bill.id,
+                paymentDate: stmtLine.statementDate,
+                amountCents: totalAmountCents,
+                bankAccountId: bankAccount.id,
+                reference: documentReference?.trim() || stmtLine.reference || null,
+              },
+            });
+
+            await tx.bill.update({
+              where: { id: bill.id },
+              data: {
+                amountPaidCents: newAmountPaid,
+                status: newStatus,
+              },
+            });
+
+            matchedEntry = await postJournalEntry(tx, {
+              organizationId,
+              actorUserId: request.user.userId,
+              description: `Payment for bill ${bill.reference || bill.id} from ${bill.contact.name}`,
+              referenceType: 'PAYMENT_OUT',
+              referenceId: paymentOut.id,
+              postedAt: stmtLine.statementDate,
+              status: JournalStatus.POSTED,
+              lines: [
+                {
+                  accountId: apAccount.id,
+                  description: `AP Settlement: Bill ${bill.reference || bill.id}`,
+                  entryType: EntryType.DEBIT,
+                  amountCents: totalAmountCents,
+                },
+                {
+                  accountId: bankAccount.id,
+                  description: `Cash Outflow: Bill ${bill.reference || bill.id}`,
+                  entryType: EntryType.CREDIT,
+                  amountCents: totalAmountCents,
+                },
+              ],
+            });
+
+            auditSummary = `Allocated bank payment ($${(Number(totalAmountCents) / 100).toFixed(2)}) to Bill ${bill.reference || bill.id} (${bill.contact.name}) and reconciled`;
+          }
+
+          // ===================================================================
+          // MODE 4: CREATE_AND_PAY_BILL — Create new Vendor Bill + settle & reconcile
+          // ===================================================================
+          else if (effectiveMode === 'CREATE_AND_PAY_BILL') {
+            if (!contact) {
+              throw new Error('Must select a Supplier / Contact to create and pay a new Vendor Bill.');
+            }
+            if (!effectiveTargetAccountId) {
+              throw new Error('Must select an Expense GL Account for the new Vendor Bill.');
+            }
+            if (!apAccount) {
+              throw new Error('Protected System Account 2000 (Accounts Payable) is missing.');
+            }
+
+            const targetAccount = await tx.account.findFirst({
+              where: { id: effectiveTargetAccountId, organizationId, isActive: true },
+            });
+            if (!targetAccount) {
+              throw new Error('Target Expense GL Account not found.');
+            }
+
+            const effectiveTax =
+              taxTreatment === TaxTreatment.TAX_EXCLUSIVE
+                ? TaxTreatment.TAX_INCLUSIVE
+                : taxTreatment;
+            const gstCalc = calculateGST(totalAmountCents, effectiveTax);
+            const subtotalCents = gstCalc.subtotalCents;
+            const billRef =
+              documentReference?.trim() ||
+              stmtLine.reference ||
+              `BILL-${stmtLine.statementDate.toISOString().slice(0, 10).replace(/-/g, '')}`;
+
+            const newBill = await tx.bill.create({
+              data: {
+                organizationId,
+                contactId: contact.id,
+                reference: billRef,
+                issueDate: stmtLine.statementDate,
+                dueDate: stmtLine.statementDate,
+                status: BillStatus.PAID,
+                subtotalCents,
+                gstCents: gstCalc.gstCents,
+                totalCents: totalAmountCents,
+                amountPaidCents: totalAmountCents,
+                notes: narrative,
+                createdByUserId: request.user.userId,
+                approvedByUserId: request.user.userId,
+                lineItems: {
+                  create: [
+                    {
+                      organizationId,
+                      accountId: targetAccount.id,
+                      trackingOptionId: effectiveTrackingOptionId,
+                      description: narrative,
+                      quantity: 1,
+                      unitPriceCents: totalAmountCents,
+                      amountCents: subtotalCents,
+                      taxTreatment: effectiveTax,
+                      gstCents: gstCalc.gstCents,
+                      totalCents: totalAmountCents,
+                    },
+                  ],
+                },
+              },
+            });
+
+            // 1. Post BILL accrual journal (DR Expense, DR GST Paid, CR 2000 AP)
+            const billJournalLines: Array<{
+              accountId: string;
+              trackingOptionId?: string | null;
+              entryType: EntryType;
+              amountCents: bigint;
+              description?: string;
+            }> = [
+              {
+                accountId: targetAccount.id,
+                trackingOptionId: effectiveTrackingOptionId,
+                entryType: EntryType.DEBIT,
+                amountCents: subtotalCents,
+                description: `${billRef}: ${narrative}`,
+              },
+            ];
             if (gstCalc.gstCents > 0n && gstPaidAccount) {
-              journalLines.push({
+              billJournalLines.push({
                 accountId: gstPaidAccount.id,
                 entryType: EntryType.DEBIT,
                 amountCents: gstCalc.gstCents,
-                description: `GST on ${narrative}`,
+                description: `GST Paid on Bill ${billRef}`,
+              });
+            }
+            billJournalLines.push({
+              accountId: apAccount.id,
+              entryType: EntryType.CREDIT,
+              amountCents: totalAmountCents,
+              description: `Bill ${billRef} - ${contact.name}`,
+            });
+
+            await postJournalEntry(tx, {
+              organizationId,
+              actorUserId: request.user.userId,
+              description: `Bill ${billRef} from ${contact.name}`,
+              referenceType: 'BILL',
+              referenceId: newBill.id,
+              postedAt: stmtLine.statementDate,
+              status: JournalStatus.POSTED,
+              lines: billJournalLines,
+            });
+
+            // 2. Record PaymentOut & post PAYMENT_OUT settlement journal (DR 2000 AP, CR Bank)
+            const paymentOut = await tx.paymentOut.create({
+              data: {
+                organizationId,
+                billId: newBill.id,
+                paymentDate: stmtLine.statementDate,
+                amountCents: totalAmountCents,
+                bankAccountId: bankAccount.id,
+                reference: billRef,
+              },
+            });
+
+            matchedEntry = await postJournalEntry(tx, {
+              organizationId,
+              actorUserId: request.user.userId,
+              description: `Payment for bill ${billRef} from ${contact.name}`,
+              referenceType: 'PAYMENT_OUT',
+              referenceId: paymentOut.id,
+              postedAt: stmtLine.statementDate,
+              status: JournalStatus.POSTED,
+              lines: [
+                {
+                  accountId: apAccount.id,
+                  description: `AP Settlement: Bill ${billRef}`,
+                  entryType: EntryType.DEBIT,
+                  amountCents: totalAmountCents,
+                },
+                {
+                  accountId: bankAccount.id,
+                  description: `Cash Outflow: Bill ${billRef}`,
+                  entryType: EntryType.CREDIT,
+                  amountCents: totalAmountCents,
+                },
+              ],
+            });
+
+            auditSummary = `Created & paid Bill ${billRef} for ${contact.name} ($${(Number(totalAmountCents) / 100).toFixed(2)}) and reconciled`;
+          }
+
+          // ===================================================================
+          // MODE 5: ALLOCATE_INVOICE — Receive payment against an open Customer Invoice
+          // ===================================================================
+          else if (effectiveMode === 'ALLOCATE_INVOICE') {
+            if (!invoiceId) {
+              throw new Error('Must select an open Customer Invoice to allocate payment against.');
+            }
+            if (!arAccount) {
+              throw new Error('Protected System Account 1200 (Accounts Receivable) is missing.');
+            }
+
+            const invoice = await tx.invoice.findFirst({
+              where: { id: invoiceId, organizationId },
+              include: { contact: true },
+            });
+            if (!invoice) {
+              throw new Error('Selected Customer Invoice not found.');
+            }
+            if (
+              invoice.status === InvoiceStatus.PAID ||
+              invoice.status === InvoiceStatus.VOID ||
+              invoice.status === InvoiceStatus.DRAFT
+            ) {
+              throw new Error(`Cannot allocate receipt to a ${invoice.status} invoice.`);
+            }
+
+            const remainingCents = invoice.totalCents - invoice.amountPaidCents;
+            if (totalAmountCents > remainingCents) {
+              throw new Error(
+                `Statement deposit ($${(Number(totalAmountCents) / 100).toFixed(2)}) exceeds invoice remaining balance ($${(Number(remainingCents) / 100).toFixed(2)}).`,
+              );
+            }
+
+            const newAmountPaid = invoice.amountPaidCents + totalAmountCents;
+            const newStatus =
+              newAmountPaid >= invoice.totalCents ? InvoiceStatus.PAID : InvoiceStatus.PARTIALLY_PAID;
+
+            const paymentIn = await tx.paymentIn.create({
+              data: {
+                organizationId,
+                invoiceId: invoice.id,
+                contactId: invoice.contactId,
+                receiptType: PaymentReceiptType.INVOICE_PAYMENT,
+                bankAccountId: bankAccount.id,
+                paymentDate: stmtLine.statementDate,
+                amountCents: totalAmountCents,
+                reference: documentReference?.trim() || stmtLine.reference || null,
+              },
+            });
+
+            await tx.invoice.update({
+              where: { id: invoice.id },
+              data: {
+                amountPaidCents: newAmountPaid,
+                status: newStatus,
+              },
+            });
+
+            matchedEntry = await postJournalEntry(tx, {
+              organizationId,
+              actorUserId: request.user.userId,
+              description: `Payment received for invoice ${invoice.invoiceNumber} from ${invoice.contact.name}`,
+              referenceType: 'PAYMENT_IN',
+              referenceId: paymentIn.id,
+              postedAt: stmtLine.statementDate,
+              status: JournalStatus.POSTED,
+              lines: [
+                {
+                  accountId: bankAccount.id,
+                  description: `Cash Receipt: Invoice ${invoice.invoiceNumber}`,
+                  entryType: EntryType.DEBIT,
+                  amountCents: totalAmountCents,
+                },
+                {
+                  accountId: arAccount.id,
+                  description: `AR Settlement: Invoice ${invoice.invoiceNumber}`,
+                  entryType: EntryType.CREDIT,
+                  amountCents: totalAmountCents,
+                },
+              ],
+            });
+
+            auditSummary = `Allocated bank receipt ($${(Number(totalAmountCents) / 100).toFixed(2)}) to Invoice ${invoice.invoiceNumber} (${invoice.contact.name}) and reconciled`;
+          }
+
+          // ===================================================================
+          // MODE 6: CREATE_AND_PAY_INVOICE — Create new Customer Invoice + settle & reconcile
+          // ===================================================================
+          else if (effectiveMode === 'CREATE_AND_PAY_INVOICE') {
+            if (!contact) {
+              throw new Error('Must select a Customer / Contact to create and settle a new Customer Invoice.');
+            }
+            if (!effectiveTargetAccountId) {
+              throw new Error('Must select a Revenue GL Account for the new Customer Invoice.');
+            }
+            if (!arAccount) {
+              throw new Error('Protected System Account 1200 (Accounts Receivable) is missing.');
+            }
+
+            const targetAccount = await tx.account.findFirst({
+              where: { id: effectiveTargetAccountId, organizationId, isActive: true },
+            });
+            if (!targetAccount) {
+              throw new Error('Target Revenue GL Account not found.');
+            }
+
+            const effectiveTax =
+              taxTreatment === TaxTreatment.TAX_EXCLUSIVE
+                ? TaxTreatment.TAX_INCLUSIVE
+                : taxTreatment;
+            const gstCalc = calculateGST(totalAmountCents, effectiveTax);
+            const subtotalCents = gstCalc.subtotalCents;
+
+            let invoiceNumber = documentReference?.trim() || '';
+            if (!invoiceNumber) {
+              const count = await tx.invoice.count({ where: { organizationId } });
+              invoiceNumber = `INV-${String(count + 1).padStart(4, '0')}`;
+              while (await tx.invoice.findFirst({ where: { organizationId, invoiceNumber } })) {
+                invoiceNumber = `INV-${String(Math.floor(1000 + Math.random() * 9000))}`;
+              }
+            }
+
+            const newInvoice = await tx.invoice.create({
+              data: {
+                organizationId,
+                contactId: contact.id,
+                invoiceNumber,
+                issueDate: stmtLine.statementDate,
+                dueDate: stmtLine.statementDate,
+                status: InvoiceStatus.PAID,
+                subtotalCents,
+                gstCents: gstCalc.gstCents,
+                totalCents: totalAmountCents,
+                amountPaidCents: totalAmountCents,
+                notes: narrative,
+                createdByUserId: request.user.userId,
+                approvedByUserId: request.user.userId,
+                lineItems: {
+                  create: [
+                    {
+                      organizationId,
+                      accountId: targetAccount.id,
+                      trackingOptionId: effectiveTrackingOptionId,
+                      description: narrative,
+                      quantity: 1,
+                      unitPriceCents: totalAmountCents,
+                      amountCents: subtotalCents,
+                      taxTreatment: effectiveTax,
+                      gstCents: gstCalc.gstCents,
+                      totalCents: totalAmountCents,
+                    },
+                  ],
+                },
+              },
+            });
+
+            // 1. Post INVOICE accrual journal (DR 1200 AR, CR Revenue, CR 2100 GST Collected)
+            const invJournalLines: Array<{
+              accountId: string;
+              trackingOptionId?: string | null;
+              entryType: EntryType;
+              amountCents: bigint;
+              description?: string;
+            }> = [
+              {
+                accountId: arAccount.id,
+                entryType: EntryType.DEBIT,
+                amountCents: totalAmountCents,
+                description: `Invoice ${invoiceNumber} - ${contact.name}`,
+              },
+              {
+                accountId: targetAccount.id,
+                trackingOptionId: effectiveTrackingOptionId,
+                entryType: EntryType.CREDIT,
+                amountCents: subtotalCents,
+                description: `${invoiceNumber}: ${narrative}`,
+              },
+            ];
+            if (gstCalc.gstCents > 0n && gstCollectedAccount) {
+              invJournalLines.push({
+                accountId: gstCollectedAccount.id,
+                entryType: EntryType.CREDIT,
+                amountCents: gstCalc.gstCents,
+                description: `GST Collected on Invoice ${invoiceNumber}`,
               });
             }
 
-            journalLines.push({
-              accountId: bankAccount.id,
-              entryType: EntryType.CREDIT,
-              amountCents: totalAmountCents,
-              description: narrative,
+            await postJournalEntry(tx, {
+              organizationId,
+              actorUserId: request.user.userId,
+              description: `Invoice ${invoiceNumber} issued to ${contact.name}`,
+              referenceType: 'INVOICE',
+              referenceId: newInvoice.id,
+              postedAt: stmtLine.statementDate,
+              status: JournalStatus.POSTED,
+              lines: invJournalLines,
             });
+
+            // 2. Record PaymentIn & post PAYMENT_IN settlement journal (DR Bank, CR 1200 AR)
+            const paymentIn = await tx.paymentIn.create({
+              data: {
+                organizationId,
+                invoiceId: newInvoice.id,
+                contactId: contact.id,
+                receiptType: PaymentReceiptType.INVOICE_PAYMENT,
+                bankAccountId: bankAccount.id,
+                paymentDate: stmtLine.statementDate,
+                amountCents: totalAmountCents,
+                reference: invoiceNumber,
+              },
+            });
+
+            matchedEntry = await postJournalEntry(tx, {
+              organizationId,
+              actorUserId: request.user.userId,
+              description: `Payment received for invoice ${invoiceNumber} from ${contact.name}`,
+              referenceType: 'PAYMENT_IN',
+              referenceId: paymentIn.id,
+              postedAt: stmtLine.statementDate,
+              status: JournalStatus.POSTED,
+              lines: [
+                {
+                  accountId: bankAccount.id,
+                  description: `Cash Receipt: Invoice ${invoiceNumber}`,
+                  entryType: EntryType.DEBIT,
+                  amountCents: totalAmountCents,
+                },
+                {
+                  accountId: arAccount.id,
+                  description: `AR Settlement: Invoice ${invoiceNumber}`,
+                  entryType: EntryType.CREDIT,
+                  amountCents: totalAmountCents,
+                },
+              ],
+            });
+
+            auditSummary = `Created & settled Invoice ${invoiceNumber} for ${contact.name} ($${(Number(totalAmountCents) / 100).toFixed(2)}) and reconciled`;
           }
 
-          // 1. Post double-entry journal entry
-          const entry = await postJournalEntry(tx, {
-            organizationId,
-            actorUserId: request.user.userId,
-            description: `[Bank Reconciliation] ${narrative}`,
-            referenceType: 'DIRECT_RECONCILIATION',
-            referenceId: stmtLine.id,
-            postedAt: stmtLine.statementDate,
-            status: JournalStatus.POSTED,
-            lines: journalLines,
-          });
-
-          const now = new Date();
-
-          // 2. Mark journal entry as reconciled
+          // Mark matched journal entry as reconciled
           await tx.journalEntry.update({
-            where: { id: entry.id },
+            where: { id: matchedEntry.id },
             data: {
               isReconciled: true,
               reconciledAt: now,
             },
           });
 
-          // 3. Mark statement line as reconciled
+          // Mark statement line as reconciled
           const updatedLine = await tx.bankStatementLine.update({
             where: { id: stmtLine.id },
             data: {
               isReconciled: true,
-              matchedJournalId: entry.id,
+              matchedJournalId: matchedEntry.id,
               reconciledAt: now,
               reconciledByUserId: request.user.userId,
             },
           });
 
-          // 4. Record audit log
+          // Record audit log
           await recordAuditLog(tx, {
             organizationId,
             actorUserId: request.user.userId,
             action: 'BANK_STATEMENT_CREATED_AND_RECONCILED',
             entityType: 'BANK_STATEMENT_LINE',
             entityId: stmtLine.id,
-            summary: `Created ${isDeposit ? 'Receive' : 'Spend'} Money (${entry.entryNumber}) and reconciled line "${stmtLine.description}" against ${targetAccount.code}`,
+            summary: auditSummary,
             metadata: {
               statementLineId: stmtLine.id,
-              journalEntryId: entry.id,
+              mode: effectiveMode,
+              contactId: contact?.id ?? null,
+              journalEntryId: matchedEntry.id,
               amountCents: Number(stmtLine.amountCents),
-              targetAccountId,
             },
           });
 
-          return { entry, updatedLine };
+          return { entry: matchedEntry, updatedLine };
         });
 
         return reply.code(201).send({

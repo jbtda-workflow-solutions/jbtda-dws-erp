@@ -466,6 +466,10 @@ const IDEMPOTENT_DDL_STATEMENTS: readonly string[] = [
       "description" TEXT NOT NULL,
       "reference" TEXT,
       "amount_cents" BIGINT NOT NULL,
+      "suggested_contact_id" TEXT,
+      "suggested_account_id" TEXT,
+      "suggested_tracking_option_id" TEXT,
+      "suggested_tax_treatment" "TaxTreatment",
       "is_reconciled" BOOLEAN NOT NULL DEFAULT false,
       "matched_journal_id" TEXT,
       "reconciled_at" TIMESTAMP(3),
@@ -473,6 +477,12 @@ const IDEMPOTENT_DDL_STATEMENTS: readonly string[] = [
       "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "bank_statement_lines_pkey" PRIMARY KEY ("id")
   )`,
+
+  `ALTER TABLE "bank_statement_lines"
+    ADD COLUMN IF NOT EXISTS "suggested_contact_id" TEXT,
+    ADD COLUMN IF NOT EXISTS "suggested_account_id" TEXT,
+    ADD COLUMN IF NOT EXISTS "suggested_tracking_option_id" TEXT,
+    ADD COLUMN IF NOT EXISTS "suggested_tax_treatment" "TaxTreatment"`,
 
   `CREATE TABLE IF NOT EXISTS "recurring_schedules" (
       "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
