@@ -427,19 +427,19 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Page Action Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-lg font-semibold text-slate-900 tracking-tight">
+            <h1 className="text-xl font-medium text-slate-900 tracking-tight">
               Workspace Governance & Entity Controls
             </h1>
             <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
               ABN {formatABN(organization?.abn)}
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs font-light text-slate-500 mt-0.5">
             Manage legal entity registration, EFT remittance banking, period lock dates, 7-tier RBAC access, and immutable system audit logs.
           </p>
         </div>

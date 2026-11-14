@@ -211,11 +211,11 @@ Contacts represent Customers (AR), Vendors/Suppliers (AP), or Both:
 
 ---
 
-## 6. 8-Module Enterprise Architecture Scope
+## 6. 10-Module Enterprise Architecture Scope
 
-The platform is organized into **8 cohesive, deep-built modules** (see `docs/STAGES_ROADMAP.md` for full specifications):
+The platform is organized into **10 cohesive, deep-built modules** (see `docs/STAGES_ROADMAP.md` for full specifications):
 
-1. **Module 1 — Enterprise Workspace, RBAC, Governance & Unified Schema:** Multi-company switcher, 7-tier domain-isolated RBAC, Organization remittance profile (BSB/Account #/APCA ID), Period Lock Dates, `enabledModules` feature flags (`['CORE_FINANCE', 'EXPENSES', 'FLEET', 'INVENTORY']`), and Immutable System Audit Log.
+1. **Module 1 — Enterprise Workspace, RBAC, Governance & Unified Schema:** Multi-company switcher, 7-tier domain-isolated RBAC, Organization remittance profile (BSB/Account #/APCA ID), Period Lock Dates, `enabledModules` feature flags (`['CORE_FINANCE', 'EXPENSES', 'FLEET', 'INVENTORY', 'DEVELOPER_PORTAL']`), and Immutable System Audit Log.
 2. **Module 2 — The Financial Spine (CoA, Dimensions & GL Engine):** Full CRUD Chart of Accounts (`/accounts`), 10 protected system accounts, sub-account balance sweep decommissioning, Tracking Categories/Cost Centers, Manual & Recurring Adjusting Journals, and 1-click Journal Reversals.
 3. **Module 3 — Master Data (Contacts & Items Catalog):** Customers & Vendors with Australian banking details and Contact 360 history; Products & Services Catalog (`/items`) with default sales/purchase pricing, GST treatments, and linked GL accounts.
 4. **Module 4 — Accounts Receivable (AR):** Quotes/Estimates (with 1-click Invoice conversion), Coded Customer Invoices (with EFT remittance slip), Recurring Invoices, Customer Credit Notes, and Payments In (Invoice settlement, Direct Income Receipt, or Customer Prepayment).
@@ -223,6 +223,8 @@ The platform is organized into **8 cohesive, deep-built modules** (see `docs/STA
 6. **Module 6 — Enterprise Expenses (`/expenses`):** Direct "Spend Money" (Bank & Corporate Card purchases coded directly to GL) and Employee Expense Claims (`DRAFT` $\rightarrow$ `SUBMITTED` $\rightarrow$ `APPROVED` crediting `2050 Employee Reimbursements Payable` $\rightarrow$ `PAID` via single or `.aba` batch reimbursement).
 7. **Module 7 — Multi-Account Banking, Transfers & Reconciliation (`/banking`):** Multiple Bank & Corporate Card accounts, Inter-Account Money Transfers, and CSV/OFX Bank Statement Import & Matching Reconciliation workspace.
 8. **Module 8 — Financial Statements, Australian BAS Engine, Live Dashboard & Plug-Ins (`/reports` & `/`):** Trial Balance, Dimensional Profit & Loss, Balance Sheet, AR/AP Aging (Current, 1–30, 31–60, 61–90, 90+ days), ATO BAS Worksheet (G1, 1A, 1B), 100% live database Dashboard, and plug-in hooks for Fleet Management, Inventory, and GCS Attachments.
+9. **Module 9 — Developer & Agent Context Interface (`/developer`):** `ADMIN`-gated governance console providing an allowlisted Markdown documentation reader (`AGENTS.md`, `AGENT_SPECIFICATION.md`, `docs/*.md`), deterministic API Reference catalog (`GET /api/v1/developer/api-catalog`), live Roadmap Tracker, Changelog & Audit Feed, and secret-redacted Runtime Diagnostics.
+10. **Module 10 — Corporate Precision UI/UX Alignment, Overlay Architecture, Expenses Remediation & A4 Report Print Engine:** Universal `createPortal(..., document.body)` overlay architecture (`!mt-0`), `/expenses` data contract alignment and GL inspector integration, dedicated `@media print` A4 financial statement isolation (`#report-print-sheet`), and platform-wide geometry/typography standardization.
 
 ---
 
@@ -320,7 +322,7 @@ The frontend implements an institutional, high-density financial interface codif
 
 ## 10. Module-by-Module Deep-Build Roadmap
 
-Development executes sequentially across **8 complete enterprise modules** (detailed in `docs/STAGES_ROADMAP.md`):
+Development executes sequentially across **10 complete enterprise modules** (all completed and detailed in `docs/STAGES_ROADMAP.md`):
 
 - **Module 1:** Enterprise Workspace, 7-Role RBAC, Governance, Immutable Audit Log & Unified Enterprise Prisma Schema
 - **Module 2:** The Financial Spine — Chart of Accounts (`/accounts`), Tracking Dimensions & General Ledger Engine (`/ledger`)
@@ -330,3 +332,5 @@ Development executes sequentially across **8 complete enterprise modules** (deta
 - **Module 6:** Enterprise Expenses (`/expenses`) — Direct "Spend Money" (Bank/Card) & Employee Expense Claims (`2050` Reimbursements)
 - **Module 7:** Multi-Account Banking, Inter-Account Transfers & CSV/OFX Statement Reconciliation (`/banking`)
 - **Module 8:** Financial Statements, Australian BAS Engine, 100% Live Executive Dashboard & Plug-In Module Contract (`/reports` & `/`)
+- **Module 9:** Developer & Agent Context Interface (`/developer`) — In-App Governance Docs Reader, API Reference Catalog, Roadmap Tracker & Runtime Diagnostics
+- **Module 10:** Corporate Precision UI/UX Alignment, Portal Overlay Architecture, Expenses Remediation & A4 Financial Report Print Engine

@@ -391,33 +391,33 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 
 ---
 
-### Module 10: Corporate Precision UI/UX Alignment, Overlay Architecture, Expenses Remediation & A4 Report Print Engine
+### Module 10: Corporate Precision UI/UX Alignment, Overlay Architecture, Expenses Remediation & A4 Report Print Engine (✅ COMPLETED)
 **Objective:** Remediate UI/UX discrepancies, data-mapping bugs in `/expenses`, modal/drawer backdrop alignment, and `/reports` A4 print isolation to bring every screen into 100% compliance with `docs/DESIGN_SYSTEM.md`.
 
-- [ ] **10.1 Universal Overlay Portal Architecture & Top-of-Viewport Backdrop Fix (`Modal.tsx`, `Drawer.tsx`, `InvoicePreviewModal.tsx`, `BillPreviewModal.tsx`, `OnboardingModal.tsx`)**:
+- [x] **10.1 Universal Overlay Portal Architecture & Top-of-Viewport Backdrop Fix (`Modal.tsx`, `Drawer.tsx`, `InvoicePreviewModal.tsx`, `BillPreviewModal.tsx`, `OnboardingModal.tsx`)**:
   - Render `Modal`, `Drawer`, `InvoicePreviewModal`, `BillPreviewModal`, and `OnboardingModal` into `document.body` via React `createPortal(..., document.body)` and enforce `!mt-0` on `fixed inset-0` overlay containers.
   - Eliminates the `24px` (`1.5rem`) top-of-screen gap caused by parent `.space-y-6` / `.space-y-5` sibling margin selectors and isolates all overlays from `<header className="z-40">` stacking contexts.
-- [ ] **10.2 Expenses Module Data Contract Alignment & `$NaN` Remediation (`ExpensesPage.tsx` & `client.ts`)**:
+- [x] **10.2 Expenses Module Data Contract Alignment & `$NaN` Remediation (`ExpensesPage.tsx` & `client.ts`)**:
   - Align frontend TypeScript interfaces (`DirectTransaction`, `DirectTransactionLine`, `ExpenseClaim`, `ExpenseClaimItem`) in `frontend/src/api/client.ts` and property accessors in `frontend/src/pages/ExpensesPage.tsx` with backend Prisma responses (`subtotalCents`, `gstCents`, `totalCents`, `amountCents`, `notes`, `bankAccountCode`, `bankAccountName`, and `claim.employee`).
   - Fix `$NaN` rendering for GST and Total columns across Direct Bank Spend, My Expense Claims, Team Approvals Queue, Reimbursement Payouts, and inspection drawers for both GST-Inclusive (`TAX_INCLUSIVE`) and GST-Exclusive (`TAX_EXCLUSIVE`) entries.
   - Fix GST-Inclusive claim editing (`CreateEditClaimModal`) so `TAX_INCLUSIVE` lines pre-fill from gross `it.totalCents` rather than net `it.amountCents` (preventing 10% amount reduction on re-save).
   - Fix employee identity and EFT banking status mapping (`claim.employee.name`, `claim.employee.hasBankDetails`, `claim.employee.bankBsb`, `claim.employee.bankAccountNumber`) so valid staff banking details display accurately instead of showing false `"Missing Banking"` / `"No BSB"` warnings.
-- [ ] **10.3 Expenses Slide-Over Inspector GL Journal Integration (`ExpensesPage.tsx`)**:
+- [x] **10.3 Expenses Slide-Over Inspector GL Journal Integration (`ExpensesPage.tsx`)**:
   - Fetch single-record detail endpoints (`GET /api/v1/expense-claims/:id` and `GET /api/v1/direct-transactions/:id`) when opening `InspectClaimDrawer` and `InspectDirectTxnDrawer` so the complete Double-Entry GL debit/credit journal impact table renders inside the drawer.
-- [ ] **10.4 Financial Reports A4 Print Engine & Chrome Isolation (`ReportsPage.tsx`, `AppShell.tsx`, `index.css`)**:
+- [x] **10.4 Financial Reports A4 Print Engine & Chrome Isolation (`ReportsPage.tsx`, `AppShell.tsx`, `index.css`)**:
   - Implement dedicated `@media print` and `@page { size: A4; margin: 10mm; }` stylesheet rules isolating `#report-print-sheet` so printing from `/reports` outputs only the formatted A4 financial statement or BAS worksheet.
   - Suppress all webpage chrome (`AppShell.tsx` top navigation header and bottom status footer, page title bar, report navigation tabs, filter toolbars, and `.no-print` controls) during print.
   - Reset viewport scroll-lock containers (`h-screen`, `overflow-hidden`, `overflow-y-auto` on `AppShell` and `<main>`) in `@media print` so multi-page Trial Balance, Profit & Loss, Balance Sheet, Aged AR/AP, and BAS reports paginate cleanly across A4 sheets without clipping.
-- [ ] **10.5 Removal of Internal Meta-Tags & Footer Architecture Jargon (`ExpensesPage.tsx`, `ContactsPage.tsx`, `ItemsPage.tsx`, `ReportsPage.tsx`, `AppShell.tsx`)**:
+- [x] **10.5 Removal of Internal Meta-Tags & Footer Architecture Jargon (`ExpensesPage.tsx`, `ContactsPage.tsx`, `ItemsPage.tsx`, `ReportsPage.tsx`, `AppShell.tsx`)**:
   - Remove `<StatusTag>MODULE 06</StatusTag>` from `ExpensesPage.tsx`.
   - Remove non-user-facing `<StatusTag label="Master Data" />` badges from `ContactsPage.tsx` and `ItemsPage.tsx`, and the `Double-Entry Certified` badge from `ReportsPage.tsx`.
   - Streamline the `AppShell.tsx` footer by removing internal developer/infrastructure labels (`Cloud SQL (Unix Socket)`, `Deterministic Ledger Engine`, `Zero-LLM Runtime`, `ATO Mod-89`, and stale hardcoded version strings) in favor of clean entity, ABN, and workspace status details.
-- [ ] **10.6 Corporate Precision Geometry, Hairline Borders & Surface Standardization (`DashboardPage.tsx`, `InvoicesPage.tsx`, `BillsPage.tsx`, `AccountsPage.tsx`, `ExpensesPage.tsx`, `BankingPage.tsx`)**:
+- [x] **10.6 Corporate Precision Geometry, Hairline Borders & Surface Standardization (`DashboardPage.tsx`, `InvoicesPage.tsx`, `BillsPage.tsx`, `AccountsPage.tsx`, `ExpensesPage.tsx`, `BankingPage.tsx`)**:
   - Replace legacy `rounded-xl`, `rounded-2xl`, `rounded-lg`, and `shadow-sm` card/table wrappers with crisp `rounded-md` (`6px`) `border border-slate-200 bg-white` flat surfaces per `docs/DESIGN_SYSTEM.md`.
   - Remove banned decorative pastel icon boxes (`w-10 h-10 rounded-xl bg-blue-50` / `bg-forest-50` / `bg-amber-50` / `bg-emerald-50`) on `DashboardPage.tsx` and adopt flat hairline metric strips.
   - Convert `rounded-full` pill tab counters across `InvoicesPage.tsx`, `BillsPage.tsx`, `ExpensesPage.tsx`, and `BankingPage.tsx` to squared `rounded` (`4px`) `font-mono` counter badges.
-- [ ] **10.7 Workbench Viewport Padding Deduplication (`DashboardPage.tsx` & `ReportsPage.tsx`)**:
+- [x] **10.7 Workbench Viewport Padding Deduplication (`DashboardPage.tsx` & `ReportsPage.tsx`)**:
   - Remove redundant outer `<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">` and `<div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8">` wrappers in `DashboardPage.tsx` and `ReportsPage.tsx` so all pages share the single `<main>` container gutter from `AppShell.tsx`.
-- [ ] **10.8 Page Header Typography & Sub-Navigation Tab Bar Unification (All Pages)**:
+- [x] **10.8 Page Header Typography & Sub-Navigation Tab Bar Unification (All Pages)**:
   - Standardize all page headers to `Inter` (`font-sans`) `text-xl font-medium tracking-tight text-slate-900` (replacing `font-mono uppercase font-bold` on `ReportsPage.tsx` and decorative header icon boxes on `BankingPage.tsx`).
   - Unify horizontal sub-navigation tab bar active indicators across all modules to `border-b-2 border-forest-900 text-forest-900 font-medium`.

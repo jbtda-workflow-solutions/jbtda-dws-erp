@@ -4,6 +4,33 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.22.0] — 2026-11-14 — Module 10: Corporate Precision UI/UX Alignment, Overlay Architecture, Expenses Remediation & A4 Report Print Engine
+
+### Fixed
+- **Universal Overlay Portal Architecture (`10.1` — `Modal.tsx`, `Drawer.tsx`, `InvoicePreviewModal.tsx`, `BillPreviewModal.tsx`, `OnboardingModal.tsx`)**:
+  - Rendered all modal and slide-over drawer components into `document.body` via `createPortal(..., document.body)` with `!mt-0` on `fixed inset-0` overlay wrappers, eliminating the `24px` (`1.5rem`) top-of-screen backdrop gap caused by parent `.space-y-6` / `.space-y-5` sibling margin selectors and isolating overlays from `<header className="z-40">`.
+- **Expenses Data Contract Alignment & `$NaN` Remediation (`10.2` — `backend/src/routes/expense-claims.ts`, `frontend/src/api/client.ts`, `frontend/src/pages/ExpensesPage.tsx`)**:
+  - Aligned `DirectTransaction`, `DirectTransactionLine`, `ExpenseClaim`, `ExpenseClaimItem`, and `ExpenseClaimEmployee` TypeScript interfaces and property accessors with backend Prisma responses (`subtotalCents`, `gstCents`, `totalCents`, `amountCents`, `notes`, `payeeName`, `bankAccountCode`, `bankAccountName`, `claim.employee`, `journalEntries`).
+  - Fixed `$NaN` rendering for GST and Total columns across Direct Bank Spend, My Expense Claims, Team Approvals Queue, Reimbursement Payouts, and inspection drawers for both `TAX_INCLUSIVE` and `TAX_EXCLUSIVE` transactions.
+  - Fixed GST-Inclusive (`TAX_INCLUSIVE`) claim editing (`CreateEditClaimModal`) so gross line amounts pre-fill from `it.totalCents ?? it.amountCents` rather than net `it.amountCents`, preventing a 10% reduction on re-save.
+  - Updated `GET /api/v1/expense-claims` and `GET /api/v1/expense-claims/:id` to consistently enrich `claim.employee` with `bankBsb`, `bankAccountNumber`, `bankAccountName`, and `hasBankDetails`, eliminating false `"Missing Banking"` / `"No BSB"` warnings.
+- **Expenses Slide-Over Inspector GL Journal Integration (`10.3` — `frontend/src/pages/ExpensesPage.tsx`)**:
+  - Updated `InspectClaimDrawer` (`expenseClaimApi.get(claim.id)`) and `InspectDirectTxnDrawer` (`directTransactionApi.get(transaction.id)`) to fetch single-record details on open and render the complete Double-Entry GL debit/credit journal impact table.
+- **Financial Reports A4 Print Engine & Chrome Isolation (`10.4` — `frontend/src/index.css`, `frontend/src/components/AppShell.tsx`, `frontend/src/pages/ReportsPage.tsx`)**:
+  - Added `@media print` and `@page { size: A4; margin: 10mm; }` stylesheet rules isolating `#report-print-sheet`, suppressing webpage chrome (`AppShell.tsx` header/footer, page title bar, report tabs, filter toolbars, and `.no-print` elements), and unlocking `h-screen overflow-hidden` / `<main>` scroll containers so multi-page Trial Balance, P&L, Balance Sheet, Aged AR/AP, and ATO BAS reports paginate cleanly across A4 sheets.
+
+### Changed
+- **Removal of Internal Meta-Tags & Footer Architecture Jargon (`10.5` — `ExpensesPage.tsx`, `ContactsPage.tsx`, `ItemsPage.tsx`, `ReportsPage.tsx`, `AppShell.tsx`)**:
+  - Removed `<StatusTag>MODULE 06</StatusTag>` from `/expenses`, `<StatusTag label="Master Data" />` from `/contacts` and `/items`, and the `Double-Entry Certified` badge from `/reports`.
+  - Streamlined the `AppShell.tsx` status footer by removing internal developer/infrastructure jargon (`Cloud SQL (Unix Socket)`, `Deterministic Ledger Engine`, `Zero-LLM Runtime`, `ATO Mod-89`, and hardcoded version strings) in favor of clean entity, ABN, and workspace status details.
+- **Corporate Precision Geometry, Viewport Padding Deduplication & Header/Tab Unification (`10.6`, `10.7`, `10.8` — All Pages)**:
+  - Replaced legacy `rounded-xl`, `rounded-2xl`, `shadow-sm`, and decorative pastel icon boxes on `DashboardPage.tsx`, `InvoicesPage.tsx`, `BillsPage.tsx`, `AccountsPage.tsx`, `LedgerPage.tsx`, `BankingPage.tsx`, `ContactsPage.tsx`, `ItemsPage.tsx`, `ReportsPage.tsx`, and `SettingsPage.tsx` with crisp `rounded-md` (`6px`) `border border-slate-200 bg-white` flat surfaces.
+  - Converted `rounded-full` pill tab counters across `ExpensesPage.tsx`, `BankingPage.tsx`, `LedgerPage.tsx`, `InvoicesPage.tsx`, and `BillsPage.tsx` to squared `rounded` (`4px`) `font-mono` counter badges.
+  - Removed duplicate outer `max-w-* mx-auto px-* py-*` wrappers in `DashboardPage.tsx` and `ReportsPage.tsx` so all pages share the single `<main>` container gutter from `AppShell.tsx`.
+  - Standardized all page titles to `Inter` (`font-sans`) `text-xl font-medium tracking-tight text-slate-900` and unified sub-navigation tab bar active indicators to `border-b-2 border-forest-900 text-forest-900 font-medium`.
+
+---
+
 ## [0.21.1] — 2026-11-14 — Module 9 API Reference & Endpoint Catalog
 
 ### Added

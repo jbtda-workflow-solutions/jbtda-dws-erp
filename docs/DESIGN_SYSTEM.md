@@ -26,7 +26,7 @@ The interface rejects the "generic AI SaaS template" aesthetic (bubbly `rounded-
 The platform pairs a geometric grotesque sans-serif for interface clarity with a technical monospace typeface for financial figures, account codes, and statutory identifiers.
 
 ### 1. Interface & Prose — `font-sans` (`Inter`)
-- **Page Titles:** `text-lg` (`18px`), `font-medium` (500), `tracking-tight text-slate-900`. Never use `font-bold` (700).
+- **Page Titles:** `text-xl` (`20px`), `font-medium` (500), `tracking-tight text-slate-900`. Never use `font-bold` (700) or `font-mono` on primary page headers.
 - **Section & Drawer Headers:** `text-sm` (`14px`), `font-medium` (500), `tracking-tight text-slate-900`.
 - **Micro Column & Metric Labels:** `text-[11px]`, `font-medium` (500), `uppercase tracking-wider text-slate-500`.
 - **Table & Form Body Text:** `text-xs` (`12px`) or `text-[13px]`, `font-normal` (400), `text-slate-700`.
@@ -86,14 +86,23 @@ Statuses use a **squared `4px` (`rounded`) tag with a `1px` border and a `6px` s
 
 ---
 
-## 4. Layout Architecture & Process-Driven Density
+## 4. Layout Architecture, Overlays & Print Standards
 
-### 1. Lean Top Context Bar (`h-12` / `48px`)
-Every view sits beneath a unified `48px` header bar (`bg-white border-b border-slate-200 px-6 flex items-center justify-between`):
-- **Left:** Breadcrumb hierarchy (`Entity Legal Name` $\rightarrow$ `Module Domain` $\rightarrow$ `Active View`) + Accounting Period Lock badge (if `lockDate` is set).
-- **Right:** Compact contextual actions (`h-8 px-3 text-xs rounded`) such as `+ New Journal`, `+ New Invoice`, or `Export .ABA`.
+### 1. Obsidian Carbon Top Header (`h-14` / `56px`) & Lean Static Footer (`h-7` / `28px`)
+- **Top Header (`AppShell.tsx`):** Fixed-height `56px` Obsidian Carbon bar (`bg-obsidian-950 border-b border-white/[0.08]`) containing the brand mark, grouped domain dropdown menus (*Ledgers*, *Receivables*, *Payables*, *Treasury & Tax*, *Governance*), active entity switcher, and user session controls.
+- **Main Viewport Container (`<main>`):** Provides the single canonical page padding wrapper (`max-w-[1600px] mx-auto px-4 md:px-6 py-5`). Individual page components must never wrap their root element in duplicate `max-w-* mx-auto px-* py-*` containers.
+- **Sub-Navigation Tab Bars:** Module sub-tabs use a unified `border-b-2 border-forest-900 text-forest-900 font-medium` active underline and squared `rounded` (`4px`) `font-mono` counter badges (`px-1.5 py-0.5 text-[10px] font-mono rounded`).
+- **Lean Status Footer (`h-7`):** Displays only user-relevant active entity legal name, formatted ABN, active Accounting Period Lock date, and quick links to Workspace Governance and Audit Log.
 
-### 2. Connected Process Pipeline Ribbon (Workflow Navigation)
+### 2. Universal Portal Overlay Architecture (`Modal.tsx`, `Drawer.tsx`, Document Previews)
+- All modal dialogs (`Modal.tsx`, `InvoicePreviewModal.tsx`, `BillPreviewModal.tsx`, `OnboardingModal.tsx`) and slide-over inspection drawers (`Drawer.tsx`) render directly into `document.body` via `createPortal(..., document.body)` with `!mt-0` on `fixed inset-0` overlay wrappers.
+- This prevents parent `.space-y-6` / `.space-y-5` vertical margin utilities from shifting the backdrop down by `24px` (`1.5rem`) and isolates overlays from `<header className="z-40">` stacking contexts.
+
+### 3. A4 Financial Statement & Document Print Isolation (`@media print`)
+- **Financial Reports (`/reports`):** The active report card is wrapped in `#report-print-sheet`. In `@media print` (`@page { size: A4; margin: 10mm; }`), `AppShell.tsx` headers/footers, page title bars, tab bars, and filter toolbars (`.no-print` / `print:hidden`) are suppressed, and `h-screen overflow-hidden` scroll locks are released so multi-page Trial Balance, Profit & Loss, Balance Sheet, Aged AR/AP, and ATO BAS reports paginate cleanly across A4 sheets.
+- **Commercial Landscape A4 Vouchers (`InvoicePreviewModal.tsx`, `BillPreviewModal.tsx`):** Render dedicated `@page { size: A4 landscape; margin: 10mm; }` tax invoices and vendor remittance vouchers via portal-mounted print sheets.
+
+### 4. Connected Process Pipeline Ribbon (Workflow Navigation)
 Instead of disconnected KPI cards or plain filter dropdowns, operational modules (AR, AP, Expenses, General Ledger) feature a **Connected Process Pipeline Ribbon** (`grid grid-flow-col auto-cols-fr divide-x divide-slate-200 border border-slate-200 bg-white rounded-md overflow-hidden`):
 - Each cell represents a sequential step in the accounting process:
   - *Example (Accounts Payable):* `1. Purchase Orders` $\rightarrow$ `2. Draft Bills` $\rightarrow$ `3. Pending Approval` $\rightarrow$ `4. Awaiting Payment` $\rightarrow$ `5. Overdue` $\rightarrow$ `6. Paid (MTD)`
@@ -103,14 +112,14 @@ Instead of disconnected KPI cards or plain filter dropdowns, operational modules
   - Aggregate monetary value (`font-numbers text-base font-medium tabular-nums text-slate-900 mt-1`)
 - Clicking any pipeline cell filters the data table directly below and highlights the active cell with a `border-b-2 border-b-forest-900 bg-forest-50/30`.
 
-### 3. High-Density Data Tables
+### 5. High-Density Data Tables
 - **Wrapper:** `bg-white border border-slate-200 rounded-md overflow-hidden` (no drop shadow).
 - **Toolbar Row:** Integrated directly into the top of the table container (`px-3 py-2 border-b border-slate-200 bg-slate-50/40 flex items-center justify-between gap-2`) housing compact search input (`h-7 text-xs`), dimension filter, and date range filter.
 - **Header Row (`<thead>`):** `bg-slate-50 border-b border-slate-200 h-8` (`32px`). Cells use `px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-slate-500`.
 - **Body Rows (`<tbody>`):** `divide-y divide-slate-100`. Row height `h-9` (`36px`) to `h-10` (`40px`). Cells use `px-3 py-1.5 text-xs text-slate-700 whitespace-nowrap`.
 - **Selected / Active Row State:** When a record is open in the right-hand Inspector Drawer, its table row stays highlighted (`bg-forest-50/60 border-l-2 border-l-forest-700`).
 
-### 4. Right-Hand Slide-Over Inspector Drawer (`Drawer` / `Sheet`)
+### 6. Right-Hand Slide-Over Inspector Drawer (`Drawer` / `Sheet`)
 - Used for inspecting records (Invoices, Bills, Quotes, POs, Expense Claims, Contacts, Journal Entries) and performing in-context approvals or payment allocations.
 - **Geometry:** Docked to `fixed inset-y-0 right-0 z-50 w-full max-w-xl bg-white border-l border-slate-200 shadow-2xl flex flex-col`.
 - **Internal Structure:**
@@ -123,7 +132,7 @@ Instead of disconnected KPI cards or plain filter dropdowns, operational modules
      - Audit Log timeline for that record.
   4. **Sticky Action Footer (`px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between`):** Primary and secondary workflow actions.
 
-### 5. Structured Multi-Line Document Workbenches
+### 7. Structured Multi-Line Document Workbenches
 - Creating or editing multi-line documents (Manual Journals, Invoices, Bills, Quotes, Purchase Orders, Expense Claims) uses a wide workbench (`max-w-4xl` modal or dedicated full-height slide-over workbench) featuring:
   - A spreadsheet-style line editor (`border border-slate-200 rounded-md`) with compact inline inputs (`Item`, `Description`, `GL Account`, `Dimension`, `Qty`, `Unit Price`, `GST`, `Total`).
   - A sticky **Live Financial Summary & Double-Entry Verification Footer** showing Subtotal, 10% GST, Total AUD, and whether $\sum \text{Debits} == \sum \text{Credits}$.

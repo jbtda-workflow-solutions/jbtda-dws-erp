@@ -488,21 +488,21 @@ export function LedgerPage() {
       )}
 
       {/* Main Workbench Container */}
-      <div className="bg-white rounded border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
         {/* Navigation Tabs Bar */}
         <div className="border-b border-slate-200 bg-slate-50/70 px-4 pt-2.5 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1">
             <button
               type="button"
               onClick={() => setActiveTab('POSTED')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-t border-t border-x transition-colors inline-flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 text-xs border-b-2 transition-colors inline-flex items-center gap-1.5 -mb-px ${
                 activeTab === 'POSTED'
-                  ? 'bg-white text-slate-900 border-slate-200 -mb-px font-semibold shadow-xs'
-                  : 'bg-transparent text-slate-600 border-transparent hover:text-slate-900'
+                  ? 'border-forest-900 text-forest-900 font-medium bg-white'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
             >
               <span>Posted</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-emerald-100 text-emerald-800">
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-100 text-emerald-800">
                 {statusCounts.POSTED}
               </span>
             </button>
@@ -510,15 +510,15 @@ export function LedgerPage() {
             <button
               type="button"
               onClick={() => setActiveTab('PENDING_APPROVAL')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-t border-t border-x transition-colors inline-flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 text-xs border-b-2 transition-colors inline-flex items-center gap-1.5 -mb-px ${
                 activeTab === 'PENDING_APPROVAL'
-                  ? 'bg-white text-slate-900 border-slate-200 -mb-px font-semibold shadow-xs'
-                  : 'bg-transparent text-slate-600 border-transparent hover:text-slate-900'
+                  ? 'border-forest-900 text-forest-900 font-medium bg-white'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
             >
               <span>Pending Approval</span>
               {statusCounts.PENDING_APPROVAL > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-amber-100 text-amber-800 font-bold">
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-100 text-amber-800 font-bold">
                   {statusCounts.PENDING_APPROVAL}
                 </span>
               )}
@@ -527,14 +527,14 @@ export function LedgerPage() {
             <button
               type="button"
               onClick={() => setActiveTab('DRAFT')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-t border-t border-x transition-colors inline-flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 text-xs border-b-2 transition-colors inline-flex items-center gap-1.5 -mb-px ${
                 activeTab === 'DRAFT'
-                  ? 'bg-white text-slate-900 border-slate-200 -mb-px font-semibold shadow-xs'
-                  : 'bg-transparent text-slate-600 border-transparent hover:text-slate-900'
+                  ? 'border-forest-900 text-forest-900 font-medium bg-white'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
             >
               <span>Drafts</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-slate-200 text-slate-700">
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-200 text-slate-700">
                 {statusCounts.DRAFT}
               </span>
             </button>
@@ -542,14 +542,14 @@ export function LedgerPage() {
             <button
               type="button"
               onClick={() => setActiveTab('REVERSED')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-t border-t border-x transition-colors inline-flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 text-xs border-b-2 transition-colors inline-flex items-center gap-1.5 -mb-px ${
                 activeTab === 'REVERSED'
-                  ? 'bg-white text-slate-900 border-slate-200 -mb-px font-semibold shadow-xs'
-                  : 'bg-transparent text-slate-600 border-transparent hover:text-slate-900'
+                  ? 'border-forest-900 text-forest-900 font-medium bg-white'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
             >
               <span>Reversed</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-slate-200 text-slate-600">
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-200 text-slate-600">
                 {statusCounts.REVERSED}
               </span>
             </button>
@@ -557,14 +557,14 @@ export function LedgerPage() {
             <button
               type="button"
               onClick={() => setActiveTab('ALL')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-t border-t border-x transition-colors inline-flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 text-xs border-b-2 transition-colors inline-flex items-center gap-1.5 -mb-px ${
                 activeTab === 'ALL'
-                  ? 'bg-white text-slate-900 border-slate-200 -mb-px font-semibold shadow-xs'
-                  : 'bg-transparent text-slate-600 border-transparent hover:text-slate-900'
+                  ? 'border-forest-900 text-forest-900 font-medium bg-white'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
             >
               <span>All Entries</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-slate-100 text-slate-600">
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-600">
                 {statusCounts.ALL}
               </span>
             </button>

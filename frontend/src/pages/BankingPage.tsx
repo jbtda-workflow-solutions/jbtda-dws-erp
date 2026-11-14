@@ -7,22 +7,12 @@ import {
   AlertCircle,
   Upload,
   Plus,
-  Search,
   RefreshCw,
   Sparkles,
   Link as LinkIcon,
-  Unlink,
-  CreditCard,
-  Building2,
-  DollarSign,
-  TrendingUp,
-  FileText,
-  Calendar,
-  Layers,
   Trash2,
   Edit2,
   X,
-  ExternalLink,
 } from 'lucide-react';
 import {
   bankingApi,
@@ -33,13 +23,10 @@ import {
   type ReconciliationSuggestionItem,
   type AccountWithBalance,
   type TrackingCategory,
-  type TrackingOption,
-  ApiError,
 } from '@/api/client';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
-import { StatusTag } from '@/components/ui/StatusTag';
 
 function formatCents(cents: number): string {
   return new Intl.NumberFormat('en-AU', {
@@ -203,10 +190,6 @@ export function BankingPage() {
     return suggestions.find((s) => s.statementLine.id === selectedStmtLineId) ?? null;
   }, [suggestions, selectedStmtLineId]);
 
-  const activeBankAccount = useMemo(() => {
-    return bankAccounts.find((a) => a.id === selectedAccountId) ?? null;
-  }, [bankAccounts, selectedAccountId]);
-
   // ---------------------------------------------------------------------------
   // Reconciliation Actions
   // ---------------------------------------------------------------------------
@@ -287,19 +270,14 @@ export function BankingPage() {
       )}
 
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
         <div>
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-forest-900 text-white rounded-[4px]">
-              <Landmark className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-900 tracking-tight">Banking & Accounts Hub</h1>
-              <p className="text-xs text-slate-500 font-normal">
-                Multi-Account Cash & Card Management, Clean Inter-Account Transfers & Statement Reconciliation
-              </p>
-            </div>
-          </div>
+          <h1 className="text-xl font-medium tracking-tight text-slate-900">
+            Banking & Accounts Hub
+          </h1>
+          <p className="text-xs text-slate-500 font-light mt-0.5">
+            Multi-Account Cash & Card Management, Clean Inter-Account Transfers & Statement Reconciliation
+          </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -341,13 +319,13 @@ export function BankingPage() {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-200 gap-1">
+      <div className="flex border-b border-slate-200 gap-1 overflow-x-auto">
         <button
           onClick={() => setActiveTab('OVERVIEW')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors whitespace-nowrap ${
             activeTab === 'OVERVIEW'
-              ? 'border-forest-900 text-forest-900 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
           Accounts Overview Hub
@@ -355,15 +333,15 @@ export function BankingPage() {
 
         <button
           onClick={() => setActiveTab('RECONCILIATION')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2 ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'RECONCILIATION'
-              ? 'border-forest-900 text-forest-900 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
           <span>Reconciliation Workspace</span>
           {bankAccounts.some((a) => a.unreconciledLineCount > 0) && (
-            <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-800">
+            <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-amber-100 text-amber-800">
               {bankAccounts.reduce((acc, a) => acc + a.unreconciledLineCount, 0)}
             </span>
           )}
@@ -371,10 +349,10 @@ export function BankingPage() {
 
         <button
           onClick={() => setActiveTab('TRANSFERS')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors whitespace-nowrap ${
             activeTab === 'TRANSFERS'
-              ? 'border-forest-900 text-forest-900 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
           Inter-Account Transfers
@@ -382,10 +360,10 @@ export function BankingPage() {
 
         <button
           onClick={() => setActiveTab('STATEMENTS')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors whitespace-nowrap ${
             activeTab === 'STATEMENTS'
-              ? 'border-forest-900 text-forest-900 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
           Statement Import & History
@@ -396,10 +374,10 @@ export function BankingPage() {
       {/* TAB 1: ACCOUNTS OVERVIEW HUB */}
       {/* ------------------------------------------------------------------- */}
       {activeTab === 'OVERVIEW' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Metric Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white border border-slate-200 rounded-[4px] p-4 shadow-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-white border border-slate-200 rounded-md p-4">
               <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
                 <span>Total Liquid Cash</span>
                 <Landmark className="w-4 h-4 text-forest-700" />
@@ -410,7 +388,7 @@ export function BankingPage() {
               <p className="text-[11px] text-slate-400 mt-1">General Ledger balance across bank/card accounts</p>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-[4px] p-4 shadow-sm">
+            <div className="bg-white border border-slate-200 rounded-md p-4">
               <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
                 <span>Reconciled Position</span>
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -421,7 +399,7 @@ export function BankingPage() {
               <p className="text-[11px] text-slate-400 mt-1">Confirmed against bank statement lines</p>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-[4px] p-4 shadow-sm">
+            <div className="bg-white border border-slate-200 rounded-md p-4">
               <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
                 <span>Unreconciled Variance</span>
                 <ArrowRightLeft className="w-4 h-4 text-amber-600" />
@@ -438,7 +416,7 @@ export function BankingPage() {
               <p className="text-[11px] text-slate-400 mt-1">Ledger balance minus statement confirmed</p>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-[4px] p-4 shadow-sm">
+            <div className="bg-white border border-slate-200 rounded-md p-4">
               <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
                 <span>Pending Reconciliation</span>
                 <Sparkles className="w-4 h-4 text-forest-700" />
@@ -452,7 +430,7 @@ export function BankingPage() {
           </div>
 
           {/* Accounts Table */}
-          <div className="bg-white border border-slate-200 rounded-[4px] shadow-sm overflow-hidden">
+          <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
             <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
               <h2 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">
                 Bank & Credit Card Accounts
@@ -546,7 +524,7 @@ export function BankingPage() {
 
                         <td className="py-3 px-3 text-center">
                           {account.unreconciledLineCount > 0 ? (
-                            <span className="px-2 py-0.5 bg-amber-100 text-amber-900 font-bold rounded-full text-[11px]">
+                            <span className="px-2 py-0.5 bg-amber-100 text-amber-900 font-mono font-bold rounded text-[11px]">
                               {account.unreconciledLineCount} pending
                             </span>
                           ) : (

@@ -46,6 +46,7 @@ import {
   type TrackingCategory,
   type TaxTreatment,
   type Role,
+  type JournalEntry,
   ApiError,
 } from '@/api/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -56,11 +57,12 @@ import { Drawer } from '@/components/ui/Drawer';
 import { StatusTag, type StatusTagTone } from '@/components/ui/StatusTag';
 import { PipelineRibbon, type PipelineStage } from '@/components/ui/PipelineRibbon';
 
-function formatCents(cents: number): string {
+function formatCents(cents?: number | null): string {
+  const safe = typeof cents === 'number' && Number.isFinite(cents) ? cents : 0;
   return new Intl.NumberFormat('en-AU', {
     style: 'currency',
     currency: 'AUD',
-  }).format(cents / 100);
+  }).format(safe / 100);
 }
 
 function formatDate(iso?: string | null): string {
@@ -308,10 +310,11 @@ export function ExpensesPage() {
     };
 
     for (const c of myClaims) {
-      totals.ALL += c.totalAmountCents;
+      const claimTotal = c.totalCents ?? c.totalAmountCents ?? 0;
+      totals.ALL += claimTotal;
       if (c.status in counts) {
         counts[c.status as keyof typeof counts]++;
-        totals[c.status as keyof typeof totals] += c.totalAmountCents;
+        totals[c.status as keyof typeof totals] += claimTotal;
       }
     }
 
@@ -511,16 +514,11 @@ export function ExpensesPage() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold text-slate-900 tracking-tight">
-              Expenses & Out-of-Pocket Claims
-            </h1>
-            <StatusTag tone="slate" mono className="text-xs">
-              MODULE 06
-            </StatusTag>
-          </div>
+          <h1 className="text-xl font-medium text-slate-900 tracking-tight">
+            Expenses &amp; Out-of-Pocket Claims
+          </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Direct card & bank spend money recording, employee out-of-pocket claims,
+            Direct card &amp; bank spend money recording, employee out-of-pocket claims,
             maker-checker approvals, and APCA Cemtex .ABA reimbursement runs.
           </p>
         </div>
@@ -588,15 +586,15 @@ export function ExpensesPage() {
         {isElevatedFinance && (
           <button
             onClick={() => setActiveTab('DIRECT_SPEND')}
-            className={`px-3.5 py-2 text-xs font-medium border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
+            className={`px-3.5 py-2 text-xs border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
               activeTab === 'DIRECT_SPEND'
-                ? 'border-slate-900 text-slate-900'
+                ? 'border-forest-900 text-forest-900 font-medium'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
             <CreditCard className="w-3.5 h-3.5" />
             <span>Direct Spend Money</span>
-            <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded-full font-mono">
+            <span className="text-[10px] bg-slate-100 border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-mono tabular-nums">
               {directTransactions.length}
             </span>
           </button>
@@ -605,16 +603,16 @@ export function ExpensesPage() {
         {(isManager || isElevatedFinance || role === 'AUDITOR') && (
           <button
             onClick={() => setActiveTab('APPROVALS')}
-            className={`px-3.5 py-2 text-xs font-medium border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
+            className={`px-3.5 py-2 text-xs border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
               activeTab === 'APPROVALS'
-                ? 'border-slate-900 text-slate-900'
+                ? 'border-forest-900 text-forest-900 font-medium'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>Team Approvals Queue</span>
             {teamClaims.length > 0 && (
-              <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded-full font-mono font-semibold">
+              <span className="text-[10px] bg-amber-50 border border-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-mono tabular-nums font-semibold">
                 {teamClaims.length}
               </span>
             )}
@@ -624,16 +622,16 @@ export function ExpensesPage() {
         {(isElevatedFinance || role === 'AUDITOR') && (
           <button
             onClick={() => setActiveTab('REIMBURSEMENTS')}
-            className={`px-3.5 py-2 text-xs font-medium border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
+            className={`px-3.5 py-2 text-xs border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
               activeTab === 'REIMBURSEMENTS'
-                ? 'border-slate-900 text-slate-900'
+                ? 'border-forest-900 text-forest-900 font-medium'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
             <Landmark className="w-3.5 h-3.5" />
             <span>Reimbursement Payouts</span>
             {approvedClaims.length > 0 && (
-              <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full font-mono font-semibold">
+              <span className="text-[10px] bg-emerald-50 border border-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-mono tabular-nums font-semibold">
                 {approvedClaims.length}
               </span>
             )}
@@ -642,31 +640,31 @@ export function ExpensesPage() {
 
         <button
           onClick={() => setActiveTab('MY_CLAIMS')}
-          className={`px-3.5 py-2 text-xs font-medium border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
+          className={`px-3.5 py-2 text-xs border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
             activeTab === 'MY_CLAIMS'
-              ? 'border-slate-900 text-slate-900'
+              ? 'border-forest-900 text-forest-900 font-medium'
               : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
           <Receipt className="w-3.5 h-3.5" />
           <span>My Out-of-Pocket Claims</span>
-          <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded-full font-mono">
+          <span className="text-[10px] bg-slate-100 border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-mono tabular-nums">
             {myClaims.length}
           </span>
         </button>
 
         <button
           onClick={() => setActiveTab('MY_BANKING')}
-          className={`px-3.5 py-2 text-xs font-medium border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
+          className={`px-3.5 py-2 text-xs border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
             activeTab === 'MY_BANKING'
-              ? 'border-slate-900 text-slate-900'
+              ? 'border-forest-900 text-forest-900 font-medium'
               : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
           <User className="w-3.5 h-3.5" />
           <span>My Reimbursement Banking</span>
           {!memberProfile?.bankBsb && (
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+            <span className="w-1.5 h-1.5 rounded-none bg-amber-500" />
           )}
         </button>
       </div>
@@ -677,7 +675,7 @@ export function ExpensesPage() {
       {activeTab === 'DIRECT_SPEND' && (
         <div className="space-y-4">
           {/* Filters Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-3 border border-slate-200 rounded">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-3 border border-slate-200 rounded-md">
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-sm">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -715,7 +713,7 @@ export function ExpensesPage() {
           </div>
 
           {/* Transactions Table */}
-          <div className="border border-slate-200 rounded bg-white overflow-hidden shadow-xs">
+          <div className="border border-slate-200 rounded-md bg-white overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
@@ -754,32 +752,32 @@ export function ExpensesPage() {
                           {formatDate(tx.transactionDate)}
                         </td>
                         <td className="py-2.5 px-3 font-medium text-slate-900 font-mono">
-                          {tx.transactionNumber}
+                          {tx.transactionNumber || tx.reference || tx.id.slice(0, 8).toUpperCase()}
                         </td>
                         <td className="py-2.5 px-3 text-slate-700">
                           <span className="font-mono text-slate-500 mr-1.5">
-                            {tx.bankAccount?.code}
+                            {tx.bankAccountCode || tx.bankAccount?.code}
                           </span>
-                          {tx.bankAccount?.name}
+                          {tx.bankAccountName || tx.bankAccount?.name}
                         </td>
                         <td className="py-2.5 px-3 text-slate-800">
                           <div className="font-medium">
-                            {tx.contact?.name || tx.reference || '—'}
+                            {tx.contact?.name || tx.payeeName || tx.reference || '—'}
                           </div>
-                          {tx.description && (
+                          {(tx.notes || tx.description) && (
                             <div className="text-[11px] text-slate-400 truncate max-w-xs">
-                              {tx.description}
+                              {tx.notes || tx.description}
                             </div>
                           )}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-slate-600">
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-600">
                           {formatCents(tx.subtotalCents)}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-slate-600">
-                          {formatCents(tx.taxTotalCents)}
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-600">
+                          {formatCents(tx.gstCents ?? tx.taxTotalCents ?? 0)}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900">
-                          {formatCents(tx.totalAmountCents)}
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-slate-900">
+                          {formatCents(tx.totalCents ?? tx.totalAmountCents ?? 0)}
                         </td>
                         <td className="py-2.5 px-3 text-center">
                           <StatusTag tone="emerald" mono className="text-[11px]">
@@ -811,7 +809,7 @@ export function ExpensesPage() {
       {/* ========================================================================= */}
       {activeTab === 'APPROVALS' && (
         <div className="space-y-4">
-          <div className="bg-white p-4 border border-slate-200 rounded flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="bg-white p-4 border border-slate-200 rounded-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold text-slate-900">
                 Pending Expense Approvals
@@ -832,7 +830,7 @@ export function ExpensesPage() {
             </Button>
           </div>
 
-          <div className="border border-slate-200 rounded bg-white overflow-hidden shadow-xs">
+          <div className="border border-slate-200 rounded-md bg-white overflow-hidden">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold">
@@ -861,9 +859,15 @@ export function ExpensesPage() {
                   </tr>
                 ) : (
                   teamClaims.map((claim) => {
-                    const isSelf = claim.memberId === memberProfile?.id;
+                    const isSelf =
+                      claim.employeeUserId === user?.id ||
+                      Boolean(claim.memberId && claim.memberId === memberProfile?.id);
+                    const empBsb = claim.employee?.bankBsb || claim.member?.bankBsb;
+                    const empAcc =
+                      claim.employee?.bankAccountNumber || claim.member?.bankAccountNumber;
                     const hasBanking =
-                      !!claim.member?.bankBsb && !!claim.member?.bankAccountNumber;
+                      Boolean(claim.employee?.hasBankDetails) ||
+                      (Boolean(empBsb) && Boolean(empAcc));
 
                     return (
                       <tr
@@ -878,34 +882,38 @@ export function ExpensesPage() {
                         </td>
                         <td className="py-2.5 px-3 text-slate-800">
                           <div className="font-medium">
-                            {claim.member?.user?.name || 'Employee'}
+                            {claim.employee?.name || claim.member?.user?.name || 'Employee'}
                           </div>
                           <div className="text-[11px] text-slate-400">
-                            {claim.member?.department || claim.member?.jobTitle || 'Staff'}
+                            {claim.employee?.department ||
+                              claim.employee?.jobTitle ||
+                              claim.member?.department ||
+                              claim.member?.jobTitle ||
+                              'Staff'}
                           </div>
                         </td>
                         <td className="py-2.5 px-3 text-slate-800 max-w-xs">
                           <div className="font-medium truncate">{claim.title}</div>
-                          {claim.description && (
+                          {(claim.notes || claim.description) && (
                             <div className="text-[11px] text-slate-400 truncate">
-                              {claim.description}
+                              {claim.notes || claim.description}
                             </div>
                           )}
                         </td>
-                        <td className="py-2.5 px-3 text-center font-mono text-slate-600">
+                        <td className="py-2.5 px-3 text-center font-mono tabular-nums text-slate-600">
                           {claim.items.length}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900">
-                          {formatCents(claim.totalAmountCents)}
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-slate-900">
+                          {formatCents(claim.totalCents ?? claim.totalAmountCents ?? 0)}
                         </td>
                         <td className="py-2.5 px-3 text-center">
                           {hasBanking ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-mono">
+                            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-mono">
                               <Check className="w-3 h-3" />
-                              {formatBsb(claim.member?.bankBsb)}
+                              {empBsb ? formatBsb(empBsb) : 'Verified'}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
+                            <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                               <AlertTriangle className="w-3 h-3" />
                               No BSB
                             </span>
@@ -965,7 +973,7 @@ export function ExpensesPage() {
       {/* ========================================================================= */}
       {activeTab === 'REIMBURSEMENTS' && (
         <div className="space-y-4">
-          <div className="bg-white p-4 border border-slate-200 rounded flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="bg-white p-4 border border-slate-200 rounded-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold text-slate-900">
                 Approved Claims Ready for Payout
@@ -991,7 +999,7 @@ export function ExpensesPage() {
             </div>
           </div>
 
-          <div className="border border-slate-200 rounded bg-white overflow-hidden shadow-xs">
+          <div className="border border-slate-200 rounded-md bg-white overflow-hidden">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold">
@@ -1037,8 +1045,14 @@ export function ExpensesPage() {
                 ) : (
                   approvedClaims.map((claim) => {
                     const isSelected = selectedClaimIdsForBatch.includes(claim.id);
+                    const empBsb = claim.employee?.bankBsb || claim.member?.bankBsb;
+                    const empAcc =
+                      claim.employee?.bankAccountNumber || claim.member?.bankAccountNumber;
+                    const empAccName =
+                      claim.employee?.bankAccountName || claim.member?.bankAccountName;
                     const hasEft =
-                      !!claim.member?.bankBsb && !!claim.member?.bankAccountNumber;
+                      Boolean(claim.employee?.hasBankDetails) ||
+                      (Boolean(empBsb) && Boolean(empAcc));
 
                     return (
                       <tr
@@ -1071,26 +1085,26 @@ export function ExpensesPage() {
                         </td>
                         <td className="py-2.5 px-3 text-slate-800">
                           <div className="font-medium">
-                            {claim.member?.user?.name || 'Staff Member'}
+                            {claim.employee?.name || claim.member?.user?.name || 'Staff Member'}
                           </div>
                           <div className="text-[11px] text-slate-400 font-mono">
-                            {claim.member?.bankAccountName || 'Account Name Missing'}
+                            {empAccName || (hasEft ? 'EFT Account Configured' : 'Account Name Missing')}
                           </div>
                         </td>
                         <td className="py-2.5 px-3 text-slate-800 font-medium max-w-xs truncate">
                           {claim.title}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900">
-                          {formatCents(claim.totalAmountCents)}
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-slate-900">
+                          {formatCents(claim.totalCents ?? claim.totalAmountCents ?? 0)}
                         </td>
                         <td className="py-2.5 px-3 text-center">
                           {hasEft ? (
-                            <span className="font-mono text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                              {formatBsb(claim.member?.bankBsb)} ····{' '}
-                              {claim.member?.bankAccountNumber?.slice(-4)}
+                            <span className="font-mono text-[11px] bg-slate-100 border border-slate-200 text-slate-700 px-2 py-0.5 rounded">
+                              {empBsb ? formatBsb(empBsb) : 'BSB'} ····{' '}
+                              {empAcc ? empAcc.slice(-4) : 'EFT'}
                             </span>
                           ) : (
-                            <span className="text-[11px] text-rose-700 bg-rose-50 px-2 py-0.5 rounded font-medium inline-flex items-center gap-1">
+                            <span className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded font-medium inline-flex items-center gap-1">
                               <AlertCircle className="w-3 h-3" />
                               Missing Banking
                             </span>
@@ -1139,7 +1153,7 @@ export function ExpensesPage() {
           />
 
           {/* Search bar */}
-          <div className="flex items-center justify-between gap-3 bg-white p-3 border border-slate-200 rounded">
+          <div className="flex items-center justify-between gap-3 bg-white p-3 border border-slate-200 rounded-md">
             <div className="relative flex-1 max-w-sm">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
@@ -1162,7 +1176,7 @@ export function ExpensesPage() {
           </div>
 
           {/* Table */}
-          <div className="border border-slate-200 rounded bg-white overflow-hidden shadow-xs">
+          <div className="border border-slate-200 rounded-md bg-white overflow-hidden">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold">
@@ -1203,9 +1217,9 @@ export function ExpensesPage() {
                       </td>
                       <td className="py-2.5 px-3 text-slate-800 max-w-sm">
                         <div className="font-medium truncate">{claim.title}</div>
-                        {claim.description && (
+                        {(claim.notes || claim.description) && (
                           <div className="text-[11px] text-slate-400 truncate">
-                            {claim.description}
+                            {claim.notes || claim.description}
                           </div>
                         )}
                         {claim.status === 'REJECTED' && claim.rejectionReason && (
@@ -1214,14 +1228,14 @@ export function ExpensesPage() {
                           </div>
                         )}
                       </td>
-                      <td className="py-2.5 px-3 text-center font-mono text-slate-600">
+                      <td className="py-2.5 px-3 text-center font-mono tabular-nums text-slate-600">
                         {claim.items.length}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono text-slate-600">
-                        {formatCents(claim.taxTotalCents)}
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-600">
+                        {formatCents(claim.gstCents ?? claim.taxTotalCents ?? 0)}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900">
-                        {formatCents(claim.totalAmountCents)}
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-slate-900">
+                        {formatCents(claim.totalCents ?? claim.totalAmountCents ?? 0)}
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         <StatusTag
@@ -1282,7 +1296,7 @@ export function ExpensesPage() {
       {/* TAB 5: MY REIMBURSEMENT BANKING                                           */}
       {/* ========================================================================= */}
       {activeTab === 'MY_BANKING' && (
-        <div className="max-w-2xl bg-white border border-slate-200 rounded p-6 shadow-xs space-y-6">
+        <div className="max-w-2xl bg-white border border-slate-200 rounded-md p-6 space-y-6">
           <div>
             <div className="flex items-center gap-2">
               <Landmark className="w-5 h-5 text-slate-900" />
@@ -1451,7 +1465,7 @@ export function ExpensesPage() {
             <strong className="text-slate-900 font-mono">
               {claimToSubmit?.claimNumber}
             </strong>{' '}
-            ({formatCents(claimToSubmit?.totalAmountCents || 0)}) for manager review?
+            ({formatCents(claimToSubmit?.totalCents ?? claimToSubmit?.totalAmountCents ?? 0)}) for manager review?
           </p>
           <p className="text-slate-500">
             Once submitted, line items cannot be modified unless rejected by your reviewer.
@@ -1483,11 +1497,11 @@ export function ExpensesPage() {
             </strong>{' '}
             submitted by{' '}
             <strong className="text-slate-900">
-              {claimToApprove?.member?.user?.name || 'Employee'}
+              {claimToApprove?.employee?.name || claimToApprove?.member?.user?.name || 'Employee'}
             </strong>{' '}
             for a total of{' '}
             <strong className="text-slate-900 font-mono">
-              {formatCents(claimToApprove?.totalAmountCents || 0)}
+              {formatCents(claimToApprove?.totalCents ?? claimToApprove?.totalAmountCents ?? 0)}
             </strong>
             .
           </p>
@@ -1500,20 +1514,21 @@ export function ExpensesPage() {
               <span>DEBIT Expense Accounts (Net)</span>
               <span>
                 {formatCents(
-                  (claimToApprove?.totalAmountCents || 0) -
-                    (claimToApprove?.taxTotalCents || 0),
+                  claimToApprove?.subtotalCents ??
+                    (claimToApprove?.totalCents ?? claimToApprove?.totalAmountCents ?? 0) -
+                      (claimToApprove?.gstCents ?? claimToApprove?.taxTotalCents ?? 0),
                 )}
               </span>
             </div>
-            {(claimToApprove?.taxTotalCents || 0) > 0 && (
+            {(claimToApprove?.gstCents ?? claimToApprove?.taxTotalCents ?? 0) > 0 && (
               <div className="flex justify-between text-slate-800">
                 <span>DEBIT 2200 GST Paid</span>
-                <span>{formatCents(claimToApprove?.taxTotalCents || 0)}</span>
+                <span>{formatCents(claimToApprove?.gstCents ?? claimToApprove?.taxTotalCents ?? 0)}</span>
               </div>
             )}
             <div className="flex justify-between text-forest-800 font-semibold border-t border-slate-200 pt-1">
               <span>CREDIT 2050 Employee Reimbursements Payable</span>
-              <span>{formatCents(claimToApprove?.totalAmountCents || 0)}</span>
+              <span>{formatCents(claimToApprove?.totalCents ?? claimToApprove?.totalAmountCents ?? 0)}</span>
             </div>
           </div>
 
@@ -1772,6 +1787,7 @@ function RecordDirectSpendModal({
         bankAccountId,
         contactId: contactId || null,
         reference: reference.trim() || null,
+        notes: description.trim() || null,
         description: description.trim() || null,
         lines: processedLines,
       });
@@ -2017,7 +2033,7 @@ function CreateEditClaimModal({
   onSuccess,
 }: CreateEditClaimModalProps) {
   const [title, setTitle] = useState(claim?.title || '');
-  const [notes, setNotes] = useState(claim?.description || '');
+  const [notes, setNotes] = useState(claim?.notes || claim?.description || '');
   const [items, setItems] = useState<ExpenseItemDraft[]>([
     {
       id: '1',
@@ -2035,19 +2051,26 @@ function CreateEditClaimModal({
   useEffect(() => {
     if (claim) {
       setTitle(claim.title);
-      setNotes(claim.description || '');
+      setNotes(claim.notes || claim.description || '');
       if (claim.items.length > 0) {
         setItems(
-          claim.items.map((it) => ({
-            id: it.id,
-            expenseDate: it.expenseDate.slice(0, 10),
-            merchant: it.merchant || '',
-            description: it.description,
-            accountId: it.accountId,
-            amount: (it.amountCents / 100).toFixed(2),
-            taxTreatment: it.taxTreatment,
-            trackingOptionId: it.trackingCategoryOptionId || undefined,
-          })),
+          claim.items.map((it) => {
+            const rawCents =
+              it.taxTreatment === 'TAX_INCLUSIVE'
+                ? (it.totalCents ?? it.amountCents)
+                : it.amountCents;
+            return {
+              id: it.id,
+              expenseDate: it.expenseDate.slice(0, 10),
+              merchant: it.merchant || '',
+              description: it.description,
+              accountId: it.accountId,
+              amount: (rawCents / 100).toFixed(2),
+              taxTreatment: it.taxTreatment,
+              trackingOptionId:
+                it.trackingOptionId || it.trackingCategoryOptionId || undefined,
+            };
+          }),
         );
       }
     } else {
@@ -2401,6 +2424,10 @@ function SettleSingleClaimModal({
 
   if (!claim) return null;
 
+  const empBsb = claim.employee?.bankBsb || claim.member?.bankBsb;
+  const empAcc = claim.employee?.bankAccountNumber || claim.member?.bankAccountNumber;
+  const empAccName = claim.employee?.bankAccountName || claim.member?.bankAccountName;
+
   return (
     <Modal open={open} onClose={onClose} title="Settle Single Reimbursement" size="lg">
       <div className="space-y-4 text-xs text-slate-600">
@@ -2408,7 +2435,7 @@ function SettleSingleClaimModal({
           Disburse reimbursement for claim{' '}
           <strong className="text-slate-900 font-mono">{claim.claimNumber}</strong> to{' '}
           <strong className="text-slate-900">
-            {claim.member?.user?.name || 'Staff Member'}
+            {claim.employee?.name || claim.member?.user?.name || 'Staff Member'}
           </strong>
           .
         </p>
@@ -2417,19 +2444,19 @@ function SettleSingleClaimModal({
           <div className="flex justify-between">
             <span className="text-slate-500">Employee Banking:</span>
             <span className="font-mono text-slate-800">
-              BSB: {formatBsb(claim.member?.bankBsb)} · Acc:{' '}
-              {claim.member?.bankAccountNumber || 'None'}
+              BSB: {formatBsb(empBsb)} · Acc:{' '}
+              {empAcc || 'None'}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Account Name:</span>
             <span className="font-medium text-slate-800">
-              {claim.member?.bankAccountName || 'Missing'}
+              {empAccName || 'Missing'}
             </span>
           </div>
           <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-1 text-xs">
             <span>Reimbursement Amount:</span>
-            <span className="font-mono">{formatCents(claim.totalAmountCents)}</span>
+            <span className="font-mono">{formatCents(claim.totalCents ?? claim.totalAmountCents ?? 0)}</span>
           </div>
         </div>
 
@@ -2503,15 +2530,21 @@ function CreateBatchModal({
   );
 
   const totalCents = useMemo(
-    () => selectedClaims.reduce((acc, c) => acc + c.totalAmountCents, 0),
+    () =>
+      selectedClaims.reduce(
+        (acc, c) => acc + (c.totalCents ?? c.totalAmountCents ?? 0),
+        0,
+      ),
     [selectedClaims],
   );
 
   const missingBanking = useMemo(
     () =>
-      selectedClaims.filter(
-        (c) => !c.member?.bankBsb || !c.member?.bankAccountNumber,
-      ),
+      selectedClaims.filter((c) => {
+        const bsb = c.employee?.bankBsb || c.member?.bankBsb;
+        const acc = c.employee?.bankAccountNumber || c.member?.bankAccountNumber;
+        return !c.employee?.hasBankDetails && (!bsb || !acc);
+      }),
     [selectedClaims],
   );
 
@@ -2607,17 +2640,58 @@ function InspectClaimDrawer({
   claim: ExpenseClaim | null;
   onClose: () => void;
 }) {
-  if (!claim) return null;
+  const [detailedClaim, setDetailedClaim] = useState<ExpenseClaim | null>(null);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+
+  useEffect(() => {
+    if (!claim) {
+      setDetailedClaim(null);
+      setJournalEntries([]);
+      return;
+    }
+    let cancelled = false;
+    setDetailedClaim(claim);
+    setJournalEntries(claim.journalEntry ? [claim.journalEntry] : []);
+
+    void expenseClaimApi
+      .get(claim.id)
+      .then((res) => {
+        if (cancelled) return;
+        setDetailedClaim(res.expenseClaim);
+        if (res.journalEntries && res.journalEntries.length > 0) {
+          setJournalEntries(res.journalEntries);
+        } else if (res.expenseClaim.journalEntry) {
+          setJournalEntries([res.expenseClaim.journalEntry]);
+        }
+      })
+      .catch(() => {
+        // Fallback to list record if detail fetch fails
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [claim]);
+
+  const activeClaim = detailedClaim ?? claim;
+  if (!activeClaim) return null;
+
+  const netCents =
+    activeClaim.subtotalCents ??
+    (activeClaim.totalCents ?? activeClaim.totalAmountCents ?? 0) -
+      (activeClaim.gstCents ?? activeClaim.taxTotalCents ?? 0);
+  const gstCents = activeClaim.gstCents ?? activeClaim.taxTotalCents ?? 0;
+  const grossCents = activeClaim.totalCents ?? activeClaim.totalAmountCents ?? 0;
 
   return (
     <Drawer
       open={!!claim}
       onClose={onClose}
-      title={`Claim ${claim.claimNumber}`}
-      subtitle={claim.title}
+      title={`Claim ${activeClaim.claimNumber}`}
+      subtitle={activeClaim.title}
       badge={
         <StatusTag tone="emerald" mono className="text-xs">
-          {claim.status}
+          {activeClaim.status}
         </StatusTag>
       }
     >
@@ -2627,41 +2701,47 @@ function InspectClaimDrawer({
           <div className="flex justify-between">
             <span className="text-slate-500">Employee:</span>
             <span className="font-semibold text-slate-900">
-              {claim.member?.user?.name || 'Staff Member'}
+              {activeClaim.employee?.name || activeClaim.member?.user?.name || 'Staff Member'}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Department / Role:</span>
             <span className="text-slate-700">
-              {claim.member?.department || claim.member?.jobTitle || 'General Staff'}
+              {activeClaim.employee?.department ||
+                activeClaim.employee?.jobTitle ||
+                activeClaim.member?.department ||
+                activeClaim.member?.jobTitle ||
+                'General Staff'}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Created:</span>
-            <span className="font-mono text-slate-700">{formatDate(claim.createdAt)}</span>
+            <span className="font-mono text-slate-700">{formatDate(activeClaim.createdAt)}</span>
           </div>
-          {claim.submittedAt && (
+          {activeClaim.submittedAt && (
             <div className="flex justify-between">
               <span className="text-slate-500">Submitted:</span>
               <span className="font-mono text-slate-700">
-                {formatDate(claim.submittedAt)}
+                {formatDate(activeClaim.submittedAt)}
               </span>
             </div>
           )}
-          {claim.approvedAt && (
+          {activeClaim.approvedAt && (
             <div className="flex justify-between">
               <span className="text-slate-500">Approved:</span>
               <span className="font-mono text-emerald-800 font-medium">
-                {formatDate(claim.approvedAt)} by{' '}
-                {claim.approvedBy?.user?.name || 'Manager'}
+                {formatDate(activeClaim.approvedAt)} by{' '}
+                {activeClaim.approvedBy?.name ||
+                  activeClaim.approvedBy?.user?.name ||
+                  'Manager'}
               </span>
             </div>
           )}
-          {claim.paidAt && (
+          {activeClaim.paidAt && (
             <div className="flex justify-between">
               <span className="text-slate-500">Reimbursed (Paid):</span>
               <span className="font-mono text-forest-800 font-medium">
-                {formatDate(claim.paidAt)}
+                {formatDate(activeClaim.paidAt)}
               </span>
             </div>
           )}
@@ -2678,11 +2758,11 @@ function InspectClaimDrawer({
                   <th className="py-2 px-2.5">Merchant / Description</th>
                   <th className="py-2 px-2.5">Account</th>
                   <th className="py-2 px-2.5 text-right">GST</th>
-                  <th className="py-2 px-2.5 text-right">Amount</th>
+                  <th className="py-2 px-2.5 text-right">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {claim.items.map((it) => (
+                {activeClaim.items.map((it) => (
                   <tr key={it.id}>
                     <td className="py-2 px-2.5 font-mono text-slate-600">
                       {formatDate(it.expenseDate)}
@@ -2692,13 +2772,17 @@ function InspectClaimDrawer({
                       <div className="text-[11px] text-slate-500">{it.description}</div>
                     </td>
                     <td className="py-2 px-2.5 font-mono text-slate-600">
-                      {it.account ? `${it.account.code} - ${it.account.name}` : 'Expense'}
+                      {it.accountCode
+                        ? `${it.accountCode} - ${it.accountName}`
+                        : it.account
+                          ? `${it.account.code} - ${it.account.name}`
+                          : 'Expense'}
                     </td>
-                    <td className="py-2 px-2.5 text-right font-mono text-slate-600">
-                      {formatCents(it.taxAmountCents)}
+                    <td className="py-2 px-2.5 text-right font-mono tabular-nums text-slate-600">
+                      {formatCents(it.gstCents ?? it.taxAmountCents ?? 0)}
                     </td>
-                    <td className="py-2 px-2.5 text-right font-mono font-semibold text-slate-900">
-                      {formatCents(it.amountCents)}
+                    <td className="py-2 px-2.5 text-right font-mono tabular-nums font-semibold text-slate-900">
+                      {formatCents(it.totalCents ?? it.amountCents ?? 0)}
                     </td>
                   </tr>
                 ))}
@@ -2711,24 +2795,29 @@ function InspectClaimDrawer({
         <div className="p-3 bg-slate-50 border border-slate-200 rounded font-mono text-[11px] space-y-1">
           <div className="flex justify-between text-slate-600">
             <span>Net Expense:</span>
-            <span>{formatCents(claim.totalAmountCents - claim.taxTotalCents)}</span>
+            <span>{formatCents(netCents)}</span>
           </div>
           <div className="flex justify-between text-slate-600">
             <span>GST Component:</span>
-            <span>{formatCents(claim.taxTotalCents)}</span>
+            <span>{formatCents(gstCents)}</span>
           </div>
           <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-1 text-xs">
             <span>Total Payable:</span>
-            <span>{formatCents(claim.totalAmountCents)}</span>
+            <span>{formatCents(grossCents)}</span>
           </div>
         </div>
 
         {/* Journal Entries */}
-        {claim.journalEntry && (
-          <div className="space-y-2">
+        {journalEntries.map((je) => (
+          <div key={je.id} className="space-y-2">
             <h4 className="font-semibold text-slate-900 flex items-center gap-1.5">
               <FileCheck2 className="w-4 h-4 text-emerald-600" />
-              <span>Approval Journal Entry ({claim.journalEntry.entryNumber})</span>
+              <span>
+                {je.referenceType === 'EXPENSE_CLAIM_PAYOUT'
+                  ? 'Reimbursement Payout Journal'
+                  : 'Approval Journal Entry'}
+                {je.entryNumber ? ` (${je.entryNumber})` : ''}
+              </span>
             </h4>
             <div className="border border-slate-200 rounded overflow-hidden">
               <table className="w-full text-left text-[11px] font-mono">
@@ -2740,15 +2829,15 @@ function InspectClaimDrawer({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {claim.journalEntry.lines?.map((jl) => (
+                  {je.lines?.map((jl: any) => (
                     <tr key={jl.id}>
                       <td className="py-1.5 px-2">
-                        {jl.account?.code} - {jl.account?.name}
+                        {jl.accountCode || jl.account?.code} - {jl.accountName || jl.account?.name}
                       </td>
-                      <td className="py-1.5 px-2 text-right text-slate-900">
+                      <td className="py-1.5 px-2 text-right tabular-nums text-slate-900">
                         {jl.entryType === 'DEBIT' ? formatCents(jl.amountCents) : '—'}
                       </td>
-                      <td className="py-1.5 px-2 text-right text-slate-900">
+                      <td className="py-1.5 px-2 text-right tabular-nums text-slate-900">
                         {jl.entryType === 'CREDIT' ? formatCents(jl.amountCents) : '—'}
                       </td>
                     </tr>
@@ -2757,7 +2846,7 @@ function InspectClaimDrawer({
               </table>
             </div>
           </div>
-        )}
+        ))}
       </div>
     </Drawer>
   );
@@ -2774,14 +2863,49 @@ function InspectDirectTxnDrawer({
   transaction: DirectTransaction | null;
   onClose: () => void;
 }) {
-  if (!transaction) return null;
+  const [detailedTxn, setDetailedTxn] = useState<DirectTransaction | null>(null);
+  const [journalEntry, setJournalEntry] = useState<JournalEntry | null>(null);
+
+  useEffect(() => {
+    if (!transaction) {
+      setDetailedTxn(null);
+      setJournalEntry(null);
+      return;
+    }
+    let cancelled = false;
+    setDetailedTxn(transaction);
+    setJournalEntry(transaction.journalEntry ?? null);
+
+    void directTransactionApi
+      .get(transaction.id)
+      .then((res) => {
+        if (cancelled) return;
+        setDetailedTxn(res.directTransaction);
+        setJournalEntry(res.journalEntry ?? res.directTransaction.journalEntry ?? null);
+      })
+      .catch(() => {
+        // Fallback to list record
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [transaction]);
+
+  const activeTxn = detailedTxn ?? transaction;
+  if (!activeTxn) return null;
+
+  const txnLabel =
+    activeTxn.transactionNumber ||
+    activeTxn.reference ||
+    activeTxn.id.slice(0, 8).toUpperCase();
 
   return (
     <Drawer
       open={!!transaction}
       onClose={onClose}
-      title={`Transaction ${transaction.transactionNumber}`}
-      subtitle={transaction.description || 'Direct Spend Money'}
+      title={`Transaction ${txnLabel}`}
+      subtitle={activeTxn.notes || activeTxn.description || 'Direct Spend Money'}
       badge={
         <StatusTag tone="emerald" mono className="text-xs">
           POSTED
@@ -2793,25 +2917,26 @@ function InspectDirectTxnDrawer({
           <div className="flex justify-between">
             <span className="text-slate-500">Date:</span>
             <span className="font-mono text-slate-800">
-              {formatDate(transaction.transactionDate)}
+              {formatDate(activeTxn.transactionDate)}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Source Account:</span>
             <span className="font-mono text-slate-900 font-semibold">
-              {transaction.bankAccount?.code} - {transaction.bankAccount?.name}
+              {activeTxn.bankAccountCode || activeTxn.bankAccount?.code} -{' '}
+              {activeTxn.bankAccountName || activeTxn.bankAccount?.name}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Payee / Contact:</span>
             <span className="text-slate-800">
-              {transaction.contact?.name || transaction.reference || '—'}
+              {activeTxn.contact?.name || activeTxn.payeeName || activeTxn.reference || '—'}
             </span>
           </div>
-          {transaction.reference && (
+          {activeTxn.reference && (
             <div className="flex justify-between">
               <span className="text-slate-500">Reference:</span>
-              <span className="font-mono text-slate-700">{transaction.reference}</span>
+              <span className="font-mono text-slate-700">{activeTxn.reference}</span>
             </div>
           )}
         </div>
@@ -2826,21 +2951,25 @@ function InspectDirectTxnDrawer({
                   <th className="py-2 px-2.5">Account</th>
                   <th className="py-2 px-2.5">Description</th>
                   <th className="py-2 px-2.5 text-right">GST</th>
-                  <th className="py-2 px-2.5 text-right">Amount</th>
+                  <th className="py-2 px-2.5 text-right">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {transaction.lines.map((l) => (
+                {activeTxn.lines.map((l) => (
                   <tr key={l.id}>
                     <td className="py-2 px-2.5 font-mono text-slate-700">
-                      {l.account ? `${l.account.code} - ${l.account.name}` : 'Expense'}
+                      {l.accountCode
+                        ? `${l.accountCode} - ${l.accountName}`
+                        : l.account
+                          ? `${l.account.code} - ${l.account.name}`
+                          : 'Expense'}
                     </td>
                     <td className="py-2 px-2.5 text-slate-800">{l.description}</td>
-                    <td className="py-2 px-2.5 text-right font-mono text-slate-600">
-                      {formatCents(l.taxAmountCents)}
+                    <td className="py-2 px-2.5 text-right font-mono tabular-nums text-slate-600">
+                      {formatCents(l.gstCents ?? l.taxAmountCents ?? 0)}
                     </td>
-                    <td className="py-2 px-2.5 text-right font-mono font-semibold text-slate-900">
-                      {formatCents(l.amountCents)}
+                    <td className="py-2 px-2.5 text-right font-mono tabular-nums font-semibold text-slate-900">
+                      {formatCents(l.totalCents ?? l.amountCents ?? 0)}
                     </td>
                   </tr>
                 ))}
@@ -2853,24 +2982,27 @@ function InspectDirectTxnDrawer({
         <div className="p-3 bg-slate-50 border border-slate-200 rounded font-mono text-[11px] space-y-1">
           <div className="flex justify-between text-slate-600">
             <span>Subtotal (Net):</span>
-            <span>{formatCents(transaction.subtotalCents)}</span>
+            <span>{formatCents(activeTxn.subtotalCents)}</span>
           </div>
           <div className="flex justify-between text-slate-600">
             <span>Australian GST (2200):</span>
-            <span>{formatCents(transaction.taxTotalCents)}</span>
+            <span>{formatCents(activeTxn.gstCents ?? activeTxn.taxTotalCents ?? 0)}</span>
           </div>
           <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-1 text-xs">
             <span>Total Payment Amount:</span>
-            <span>{formatCents(transaction.totalAmountCents)}</span>
+            <span>{formatCents(activeTxn.totalCents ?? activeTxn.totalAmountCents ?? 0)}</span>
           </div>
         </div>
 
         {/* Journal Entry */}
-        {transaction.journalEntry && (
+        {journalEntry && (
           <div className="space-y-2">
             <h4 className="font-semibold text-slate-900 flex items-center gap-1.5">
               <FileCheck2 className="w-4 h-4 text-emerald-600" />
-              <span>Posted Journal Entry ({transaction.journalEntry.entryNumber})</span>
+              <span>
+                Posted Journal Entry
+                {journalEntry.entryNumber ? ` (${journalEntry.entryNumber})` : ''}
+              </span>
             </h4>
             <div className="border border-slate-200 rounded overflow-hidden">
               <table className="w-full text-left text-[11px] font-mono">
@@ -2882,15 +3014,16 @@ function InspectDirectTxnDrawer({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {transaction.journalEntry.lines?.map((jl) => (
+                  {journalEntry.lines?.map((jl: any) => (
                     <tr key={jl.id}>
                       <td className="py-1.5 px-2">
-                        {jl.account?.code} - {jl.account?.name}
+                        {jl.accountCode || jl.account?.code} -{' '}
+                        {jl.accountName || jl.account?.name}
                       </td>
-                      <td className="py-1.5 px-2 text-right text-slate-900">
+                      <td className="py-1.5 px-2 text-right tabular-nums text-slate-900">
                         {jl.entryType === 'DEBIT' ? formatCents(jl.amountCents) : '—'}
                       </td>
-                      <td className="py-1.5 px-2 text-right text-slate-900">
+                      <td className="py-1.5 px-2 text-right tabular-nums text-slate-900">
                         {jl.entryType === 'CREDIT' ? formatCents(jl.amountCents) : '—'}
                       </td>
                     </tr>

@@ -175,6 +175,9 @@ export const expenseClaimRoutes: FastifyPluginAsync = async (fastify) => {
             ...c.employee,
             jobTitle: mem?.jobTitle || null,
             department: mem?.department || null,
+            bankBsb: mem?.bankBsb || null,
+            bankAccountNumber: mem?.bankAccountNumber || null,
+            bankAccountName: mem?.bankAccountName || null,
             hasBankDetails: Boolean(mem?.bankBsb && mem?.bankAccountNumber),
           },
           items: c.items.map((it) => {
@@ -302,6 +305,7 @@ export const expenseClaimRoutes: FastifyPluginAsync = async (fastify) => {
             bankBsb: member?.bankBsb || null,
             bankAccountNumber: member?.bankAccountNumber || null,
             bankAccountName: member?.bankAccountName || null,
+            hasBankDetails: Boolean(member?.bankBsb && member?.bankAccountNumber),
           },
           items: enrichedItems,
         }),

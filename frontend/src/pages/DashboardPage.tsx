@@ -1,26 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   TrendingUp,
-  Receipt,
-  FileText,
   Building2,
   AlertTriangle,
   Clock,
-  ArrowUpRight,
-  ArrowDownRight,
   CheckCircle2,
   RefreshCw,
   BarChart3,
   ChevronRight,
   ShieldCheck,
-  Wallet,
   Activity,
-  Calendar,
 } from 'lucide-react';
 import { dashboardApi, type DashboardSummary, ApiError } from '@/api/client';
 import { Button } from '@/components/ui/Button';
-import { StatusTag } from '@/components/ui/StatusTag';
 
 function formatMoney(cents: number): string {
   const isNegative = cents < 0;
@@ -75,7 +68,7 @@ export function DashboardPage() {
 
   if (loading && !data) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col items-center justify-center min-h-[400px]">
+      <div className="py-12 flex flex-col items-center justify-center min-h-[400px]">
         <div className="w-8 h-8 rounded-full border-2 border-forest-900 border-t-transparent animate-spin mb-4" />
         <p className="text-sm font-light text-slate-500">Loading live financial intelligence…</p>
       </div>
@@ -84,8 +77,8 @@ export function DashboardPage() {
 
   if (error && !data) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-6 text-center">
+      <div className="py-12">
+        <div className="rounded-md border border-rose-200 bg-rose-50/50 p-6 text-center">
           <AlertTriangle className="w-8 h-8 text-rose-600 mx-auto mb-2" />
           <h2 className="text-base font-medium text-rose-900">Failed to Load Dashboard</h2>
           <p className="text-sm text-rose-600 mt-1 mb-4">{error}</p>
@@ -124,27 +117,27 @@ export function DashboardPage() {
     payables.aging.days90PlusCents || 1;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <div className="space-y-6">
       {/* Executive Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            <h1 className="text-xl font-medium tracking-tight text-slate-900">
               Executive Dashboard
             </h1>
             {organization.lockDate ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium bg-amber-50 text-amber-800 border border-amber-200">
                 <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
                 BAS Locked: {new Date(organization.lockDate).toLocaleDateString('en-AU')}
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                 Ledger Unlocked
               </span>
             )}
           </div>
-          <p className="text-sm font-light text-slate-500 mt-1">
+          <p className="text-xs font-light text-slate-500 mt-1">
             Real-time financial position, working capital aging, and general ledger performance for{' '}
             <span className="font-medium text-slate-700">{organization.name}</span>.
           </p>
@@ -172,13 +165,11 @@ export function DashboardPage() {
 
       {/* Actionable Approvals Alert Banner */}
       {approvalsQueue.totalPending > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="rounded-md border border-amber-200 bg-amber-50/70 p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
-            <div className="p-2 rounded-lg bg-amber-100 text-amber-800 shrink-0 mt-0.5">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
+            <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-amber-900">
+              <p className="text-xs font-semibold text-amber-900">
                 Action Required: {approvalsQueue.totalPending} Items Awaiting Review & Approval
               </p>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-amber-800 mt-1">
@@ -232,23 +223,18 @@ export function DashboardPage() {
       )}
 
       {/* Top Working Capital KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Cash Position */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                Total Cash Position
-              </p>
-              <p className="mt-2 text-2xl font-mono tabular-nums font-semibold text-slate-900">
-                {formatMoney(cashPosition.totalCashCents)}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-forest-50 flex items-center justify-center text-forest-700">
-              <Building2 className="w-5 h-5" />
-            </div>
+        <div className="rounded-md border border-slate-200 bg-white p-4 flex flex-col justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+              Total Cash Position
+            </p>
+            <p className="mt-1.5 text-2xl font-mono tabular-nums font-semibold text-slate-900">
+              {formatMoney(cashPosition.totalCashCents)}
+            </p>
           </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
             <span className="text-slate-500 font-light">
               Across {cashPosition.accounts.length} bank account{cashPosition.accounts.length === 1 ? '' : 's'}
             </span>
@@ -259,21 +245,16 @@ export function DashboardPage() {
         </div>
 
         {/* Receivables */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                Outstanding Invoices (AR)
-              </p>
-              <p className="mt-2 text-2xl font-mono tabular-nums font-semibold text-slate-900">
-                {formatMoney(receivables.totalOutstandingCents)}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
-              <FileText className="w-5 h-5" />
-            </div>
+        <div className="rounded-md border border-slate-200 bg-white p-4 flex flex-col justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+              Outstanding Invoices (AR)
+            </p>
+            <p className="mt-1.5 text-2xl font-mono tabular-nums font-semibold text-slate-900">
+              {formatMoney(receivables.totalOutstandingCents)}
+            </p>
           </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
             {receivables.overdueCents > 0 ? (
               <span className="text-rose-600 font-medium flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
@@ -289,21 +270,16 @@ export function DashboardPage() {
         </div>
 
         {/* Payables */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                Outstanding Payables (AP)
-              </p>
-              <p className="mt-2 text-2xl font-mono tabular-nums font-semibold text-slate-900">
-                {formatMoney(payables.totalOutstandingCents)}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
-              <Receipt className="w-5 h-5" />
-            </div>
+        <div className="rounded-md border border-slate-200 bg-white p-4 flex flex-col justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+              Outstanding Payables (AP)
+            </p>
+            <p className="mt-1.5 text-2xl font-mono tabular-nums font-semibold text-slate-900">
+              {formatMoney(payables.totalOutstandingCents)}
+            </p>
           </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
             {payables.overdueCents > 0 ? (
               <span className="text-rose-600 font-medium flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
@@ -319,35 +295,20 @@ export function DashboardPage() {
         </div>
 
         {/* Net Profit YTD */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                Net Profit (YTD)
-              </p>
-              <p
-                className={`mt-2 text-2xl font-mono tabular-nums font-semibold ${
-                  performance.ytdNetProfitCents >= 0 ? 'text-forest-800' : 'text-rose-600'
-                }`}
-              >
-                {formatMoney(performance.ytdNetProfitCents)}
-              </p>
-            </div>
-            <div
-              className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                performance.ytdNetProfitCents >= 0
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : 'bg-rose-50 text-rose-600'
+        <div className="rounded-md border border-slate-200 bg-white p-4 flex flex-col justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+              Net Profit (YTD)
+            </p>
+            <p
+              className={`mt-1.5 text-2xl font-mono tabular-nums font-semibold ${
+                performance.ytdNetProfitCents >= 0 ? 'text-forest-800' : 'text-rose-600'
               }`}
             >
-              {performance.ytdNetProfitCents >= 0 ? (
-                <ArrowUpRight className="w-5 h-5" />
-              ) : (
-                <ArrowDownRight className="w-5 h-5" />
-              )}
-            </div>
+              {formatMoney(performance.ytdNetProfitCents)}
+            </p>
           </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
             <span className="text-slate-500 font-light">
               MTD: <strong className="font-mono text-slate-700">{formatMoney(performance.mtdNetProfitCents)}</strong>
             </span>
@@ -359,20 +320,20 @@ export function DashboardPage() {
       </div>
 
       {/* Middle Section: Bank Accounts & Aging Analysis */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Bank & Cash Balances Workbench */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="rounded-md border border-slate-200 bg-white flex flex-col">
+          <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Building2 className="w-4 h-4 text-forest-800" />
-              <h2 className="text-sm font-semibold text-slate-900">Cash & Bank Accounts</h2>
+              <h2 className="text-sm font-medium text-slate-900">Cash & Bank Accounts</h2>
             </div>
             <Link to="/banking" className="text-xs text-forest-700 hover:text-forest-800 font-medium">
               Open Banking →
             </Link>
           </div>
 
-          <div className="p-6 flex-1 flex flex-col justify-between">
+          <div className="p-5 flex-1 flex flex-col justify-between">
             {cashPosition.accounts.length === 0 ? (
               <div className="text-center py-10">
                 <Building2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
@@ -382,11 +343,11 @@ export function DashboardPage() {
                 </Link>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {cashPosition.accounts.map((acc) => (
                   <div
                     key={acc.id}
-                    className="p-3.5 rounded-lg border border-slate-100 bg-slate-50/60 hover:bg-slate-50 transition-colors flex items-center justify-between"
+                    className="p-3 rounded border border-slate-200 bg-slate-50/60 hover:bg-slate-50 transition-colors flex items-center justify-between"
                   >
                     <div>
                       <div className="flex items-center gap-2">
@@ -412,7 +373,7 @@ export function DashboardPage() {
               </div>
             )}
 
-            <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
               <span>Total Available Liquid Capital</span>
               <span className="font-mono tabular-nums font-semibold text-slate-900 text-sm">
                 {formatMoney(cashPosition.totalCashCents)}
@@ -422,18 +383,18 @@ export function DashboardPage() {
         </div>
 
         {/* Working Capital Aging Comparison */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="rounded-md border border-slate-200 bg-white flex flex-col">
+          <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-slate-700" />
-              <h2 className="text-sm font-semibold text-slate-900">Aging Analysis (AR vs AP)</h2>
+              <h2 className="text-sm font-medium text-slate-900">Aging Analysis (AR vs AP)</h2>
             </div>
             <Link to="/reports" className="text-xs text-forest-700 hover:text-forest-800 font-medium">
               Detailed Aging →
             </Link>
           </div>
 
-          <div className="p-6 space-y-6">
+          <div className="p-5 space-y-5">
             {/* AR Aging Bar */}
             <div>
               <div className="flex items-center justify-between text-xs mb-1.5">
@@ -442,7 +403,7 @@ export function DashboardPage() {
                   {formatMoney(receivables.totalOutstandingCents)}
                 </span>
               </div>
-              <div className="w-full h-3 rounded-full bg-slate-100 flex overflow-hidden">
+              <div className="w-full h-2.5 rounded bg-slate-100 flex overflow-hidden">
                 <div
                   style={{ width: `${(receivables.aging.currentCents / totalAgingAr) * 100}%` }}
                   className="bg-emerald-500"
@@ -479,7 +440,7 @@ export function DashboardPage() {
                   {formatMoney(payables.totalOutstandingCents)}
                 </span>
               </div>
-              <div className="w-full h-3 rounded-full bg-slate-100 flex overflow-hidden">
+              <div className="w-full h-2.5 rounded bg-slate-100 flex overflow-hidden">
                 <div
                   style={{ width: `${(payables.aging.currentCents / totalAgingAp) * 100}%` }}
                   className="bg-emerald-500"
@@ -510,35 +471,35 @@ export function DashboardPage() {
 
             {/* Aging Bracket Legend */}
             <div className="pt-2 grid grid-cols-5 gap-2 text-center text-[11px]">
-              <div className="p-2 rounded bg-slate-50 border border-slate-100">
+              <div className="p-2 rounded bg-slate-50 border border-slate-200">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 mx-auto mb-1" />
                 <span className="text-slate-500 block font-light">Current</span>
                 <span className="font-mono text-slate-800 font-semibold block mt-0.5">
                   {formatMoney(receivables.aging.currentCents)}
                 </span>
               </div>
-              <div className="p-2 rounded bg-slate-50 border border-slate-100">
+              <div className="p-2 rounded bg-slate-50 border border-slate-200">
                 <div className="w-2 h-2 rounded-full bg-blue-400 mx-auto mb-1" />
                 <span className="text-slate-500 block font-light">1-30d</span>
                 <span className="font-mono text-slate-800 font-semibold block mt-0.5">
                   {formatMoney(receivables.aging.days1to30Cents)}
                 </span>
               </div>
-              <div className="p-2 rounded bg-slate-50 border border-slate-100">
+              <div className="p-2 rounded bg-slate-50 border border-slate-200">
                 <div className="w-2 h-2 rounded-full bg-amber-400 mx-auto mb-1" />
                 <span className="text-slate-500 block font-light">31-60d</span>
                 <span className="font-mono text-slate-800 font-semibold block mt-0.5">
                   {formatMoney(receivables.aging.days31to60Cents)}
                 </span>
               </div>
-              <div className="p-2 rounded bg-slate-50 border border-slate-100">
+              <div className="p-2 rounded bg-slate-50 border border-slate-200">
                 <div className="w-2 h-2 rounded-full bg-orange-500 mx-auto mb-1" />
                 <span className="text-slate-500 block font-light">61-90d</span>
                 <span className="font-mono text-slate-800 font-semibold block mt-0.5">
                   {formatMoney(receivables.aging.days61to90Cents)}
                 </span>
               </div>
-              <div className="p-2 rounded bg-slate-50 border border-slate-100">
+              <div className="p-2 rounded bg-slate-50 border border-slate-200">
                 <div className="w-2 h-2 rounded-full bg-rose-500 mx-auto mb-1" />
                 <span className="text-slate-500 block font-light">90+d</span>
                 <span className="font-mono text-slate-800 font-semibold block mt-0.5">
@@ -551,23 +512,23 @@ export function DashboardPage() {
       </div>
 
       {/* Bottom Section: Financial Performance & Live Audit Feed */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* P&L Performance Breakdown */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="rounded-md border border-slate-200 bg-white flex flex-col">
+          <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-forest-800" />
-              <h2 className="text-sm font-semibold text-slate-900">Operating Performance</h2>
+              <h2 className="text-sm font-medium text-slate-900">Operating Performance</h2>
             </div>
             <Link to="/reports" className="text-xs text-forest-700 hover:text-forest-800 font-medium">
               View P&L Statement →
             </Link>
           </div>
 
-          <div className="p-6 space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="p-5 space-y-5">
+            <div className="grid grid-cols-2 gap-3">
               {/* MTD Performance */}
-              <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-100">
+              <div className="p-3.5 rounded border border-slate-200 bg-slate-50/70">
                 <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
                   Month to Date (MTD)
                 </span>
@@ -598,7 +559,7 @@ export function DashboardPage() {
               </div>
 
               {/* YTD Performance */}
-              <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-100">
+              <div className="p-3.5 rounded border border-slate-200 bg-slate-50/70">
                 <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
                   Year to Date (YTD)
                 </span>
@@ -629,7 +590,7 @@ export function DashboardPage() {
               </div>
             </div>
 
-            <div className="p-4 rounded-lg bg-forest-50/50 border border-forest-100 flex items-center justify-between text-xs">
+            <div className="p-3.5 rounded bg-forest-50/50 border border-forest-200 flex items-center justify-between text-xs">
               <div className="flex items-center gap-2 text-forest-900">
                 <BarChart3 className="w-4 h-4 text-forest-700" />
                 <span>GST & BAS Period Compliance Ready</span>
@@ -642,18 +603,18 @@ export function DashboardPage() {
         </div>
 
         {/* Live Audit Activity Log */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="rounded-md border border-slate-200 bg-white flex flex-col">
+          <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-slate-700" />
-              <h2 className="text-sm font-semibold text-slate-900">Recent Financial Activity</h2>
+              <h2 className="text-sm font-medium text-slate-900">Recent Financial Activity</h2>
             </div>
             <Link to="/settings" className="text-xs text-forest-700 hover:text-forest-800 font-medium">
               Full Audit Trail →
             </Link>
           </div>
 
-          <div className="p-6 flex-1">
+          <div className="p-5 flex-1">
             {recentActivity.length === 0 ? (
               <div className="text-center py-10">
                 <Activity className="w-8 h-8 text-slate-300 mx-auto mb-2" />
@@ -663,10 +624,10 @@ export function DashboardPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-4 max-h-[320px] overflow-y-auto pr-1">
+              <div className="space-y-3.5 max-h-[320px] overflow-y-auto pr-1">
                 {recentActivity.map((event) => (
                   <div key={event.id} className="flex items-start gap-3 text-xs">
-                    <div className="w-2 h-2 rounded-full bg-forest-700 shrink-0 mt-1.5" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-forest-700 shrink-0 mt-1.5" />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-slate-900 truncate">{event.summary}</p>
                       <div className="flex items-center gap-2 text-slate-400 text-[11px] mt-0.5">

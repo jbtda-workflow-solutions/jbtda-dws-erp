@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import { X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 
 interface ModalProps {
@@ -40,16 +41,16 @@ export function Modal({
 
   const widthClass = maxWidth ?? (size ? SIZE_MAP[size] : 'max-w-md');
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 !mt-0 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-obsidian-950/60 backdrop-blur-[1px]"
+        className="fixed inset-0 !mt-0 bg-obsidian-950/60 backdrop-blur-[1px]"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -91,6 +92,7 @@ export function Modal({
         {/* Content */}
         <div className="p-5 overflow-y-auto">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

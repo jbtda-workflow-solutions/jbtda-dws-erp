@@ -302,13 +302,13 @@ export function AppShell({ children }: AppShellProps) {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden font-sans">
+    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden font-sans print:!h-auto print:!overflow-visible print:!bg-white">
       {/* ------------------------------------------------------------------ */}
       {/* High-Contrast Corporate Precision Static Header (#0B1311)         */}
       {/* ------------------------------------------------------------------ */}
       <header
         ref={headerRef}
-        className="flex h-12 items-center justify-between px-3 md:px-4 bg-obsidian-950 border-b border-white/[0.08] text-white shrink-0 z-40 select-none relative"
+        className="no-print print:hidden flex h-12 items-center justify-between px-3 md:px-4 bg-obsidian-950 border-b border-white/[0.08] text-white shrink-0 z-40 select-none relative"
       >
         {/* Left Section: Brand & Multi-Company Switcher & Primary Nav */}
         <div className="flex items-center gap-2 md:gap-3 min-w-0">
@@ -708,8 +708,8 @@ export function AppShell({ children }: AppShellProps) {
       {/* ------------------------------------------------------------------ */}
       {/* Main Content Workbench Viewport                                    */}
       {/* ------------------------------------------------------------------ */}
-      <main className="flex-1 overflow-y-auto min-w-0 bg-slate-50">
-        <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8">
+      <main className="flex-1 overflow-y-auto min-w-0 bg-slate-50 print:!overflow-visible print:!bg-white print:!p-0 print:!m-0">
+        <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 print:!max-w-none print:!p-0 print:!m-0">
           {children}
         </div>
       </main>
@@ -717,8 +717,8 @@ export function AppShell({ children }: AppShellProps) {
       {/* ------------------------------------------------------------------ */}
       {/* Lean Corporate Precision Static Footer (#0B1311, h-7)              */}
       {/* ------------------------------------------------------------------ */}
-      <footer className="h-7 bg-obsidian-950 border-t border-white/[0.08] px-3 md:px-4 flex items-center justify-between text-[11px] font-mono text-slate-400 shrink-0 z-40 select-none">
-        {/* Left: Active Entity & Connectivity */}
+      <footer className="no-print print:hidden h-7 bg-obsidian-950 border-t border-white/[0.08] px-3 md:px-4 flex items-center justify-between text-[11px] font-mono text-slate-400 shrink-0 z-40 select-none">
+        {/* Left: Active Corporate Entity & ABN */}
         <div className="flex items-center gap-2 truncate min-w-0">
           <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
           <span className="text-slate-300 font-medium truncate">
@@ -732,23 +732,18 @@ export function AppShell({ children }: AppShellProps) {
               </span>
             </>
           )}
-          <span className="text-white/20 hidden md:inline">•</span>
-          <span className="text-slate-500 hidden md:inline truncate">
-            Cloud SQL (Unix Socket)
-          </span>
         </div>
 
-        {/* Center: System Determinism & Governance Badges */}
-        <div className="hidden lg:flex items-center gap-2 text-slate-400 text-[10px]">
-          <span>Deterministic Ledger Engine</span>
-          <span className="text-white/20">•</span>
-          <span>Zero-LLM Runtime</span>
-          <span className="text-white/20">•</span>
-          <span>ATO Mod-89</span>
-        </div>
-
-        {/* Right: Version & Corporate Precision branding */}
+        {/* Right: Governance & Audit Trail */}
         <div className="flex items-center gap-2 shrink-0 text-[11px]">
+          {organization?.lockDate && (
+            <>
+              <span className="text-amber-300/90 hidden md:inline">
+                Period Lock: {new Date(organization.lockDate).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </span>
+              <span className="text-white/20 hidden md:inline">•</span>
+            </>
+          )}
           <Link
             to="/settings"
             className="hover:text-emerald-400 transition-colors hidden sm:inline"
@@ -756,10 +751,8 @@ export function AppShell({ children }: AppShellProps) {
             Audit Log
           </Link>
           <span className="text-white/20 hidden sm:inline">•</span>
-          <span className="text-slate-400 font-mono">v0.17.0</span>
-          <span className="text-white/20">•</span>
-          <span className="text-emerald-400/90 font-medium hidden xs:inline">
-            Corporate Precision
+          <span className="text-emerald-400/90 font-medium">
+            JBTDA DWS Ledger
           </span>
         </div>
       </footer>

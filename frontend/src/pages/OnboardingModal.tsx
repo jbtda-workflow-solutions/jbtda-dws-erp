@@ -135,7 +135,7 @@ export function OnboardingModal() {
         />
 
         {submitError && (
-          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+          <div className="rounded bg-red-50 border border-red-200 px-4 py-3">
             <p className="text-sm text-red-700">{submitError}</p>
           </div>
         )}

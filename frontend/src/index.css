@@ -16,3 +16,58 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Corporate Precision A4 Print Engine & Chrome Isolation                     */
+/* -------------------------------------------------------------------------- */
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  html,
+  body,
+  #root {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  #report-print-sheet {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    background: #ffffff !important;
+  }
+
+  #report-print-sheet table {
+    page-break-inside: auto;
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  #report-print-sheet tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  #report-print-sheet thead {
+    display: table-header-group;
+  }
+
+  #report-print-sheet tfoot {
+    display: table-footer-group;
+  }
+}

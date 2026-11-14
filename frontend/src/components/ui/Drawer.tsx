@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import { X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 
 interface DrawerProps {
@@ -40,15 +41,15 @@ export function Drawer({
 }: DrawerProps) {
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex justify-end"
+      className="fixed inset-0 z-50 !mt-0 flex justify-end"
       role="dialog"
       aria-modal="true"
     >
       {/* Subtle backdrop */}
       <div
-        className="fixed inset-0 bg-obsidian-950/35 transition-opacity"
+        className="fixed inset-0 !mt-0 bg-obsidian-950/35 transition-opacity"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -104,7 +105,8 @@ export function Drawer({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

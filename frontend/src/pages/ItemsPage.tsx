@@ -3,19 +3,12 @@ import {
   Package,
   Plus,
   Search,
-  Tag,
-  DollarSign,
   TrendingUp,
   TrendingDown,
-  Layers,
   Edit2,
   Trash2,
   AlertCircle,
-  CheckCircle2,
-  XCircle,
   Eye,
-  ShieldCheck,
-  Archive,
 } from 'lucide-react';
 import {
   itemApi,
@@ -23,13 +16,12 @@ import {
   type Item,
   type TaxTreatment,
   type AccountWithBalance,
-  ApiError,
 } from '@/api/client';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Drawer } from '@/components/ui/Drawer';
-import { StatusTag, resolveStatusTone } from '@/components/ui/StatusTag';
+import { StatusTag } from '@/components/ui/StatusTag';
 
 function formatCents(cents: number): string {
   return new Intl.NumberFormat('en-AU', {
@@ -257,7 +249,7 @@ export function ItemsPage() {
     if (!itemToDelete) return;
     setDeleteLoading(true);
     try {
-      const res = await itemApi.delete(itemToDelete.id);
+      await itemApi.delete(itemToDelete.id);
       await fetchItems();
       setItemToDelete(null);
       if (drawerItemId === itemToDelete.id) {
@@ -271,17 +263,14 @@ export function ItemsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-200">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-              Products & Services Catalog
-            </h1>
-            <StatusTag label="Master Data" tone="forest" />
-          </div>
-          <p className="text-xs font-light text-slate-500 mt-1">
+          <h1 className="text-xl font-medium tracking-tight text-slate-900">
+            Products & Services Catalog
+          </h1>
+          <p className="text-xs font-light text-slate-500 mt-0.5">
             Standardized items catalog with sales and purchase pricing, tax treatments, and pre-coded GL accounts.
           </p>
         </div>
@@ -293,25 +282,25 @@ export function ItemsPage() {
 
       {/* KPI Cards Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white border border-slate-200 rounded p-3.5 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-md p-3.5">
           <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Active Catalog</p>
           <p className="text-xl font-semibold text-slate-900 font-mono tabular-nums mt-1">
             {metrics.total}
           </p>
         </div>
-        <div className="bg-white border border-slate-200 rounded p-3.5 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-md p-3.5">
           <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Sales Items</p>
           <p className="text-xl font-semibold text-forest-900 font-mono tabular-nums mt-1">
             {metrics.sales}
           </p>
         </div>
-        <div className="bg-white border border-slate-200 rounded p-3.5 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-md p-3.5">
           <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Purchase Items</p>
           <p className="text-xl font-semibold text-amber-700 font-mono tabular-nums mt-1">
             {metrics.purchases}
           </p>
         </div>
-        <div className="bg-white border border-slate-200 rounded p-3.5 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-md p-3.5">
           <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Tracked Inventory</p>
           <p className="text-xl font-semibold text-slate-700 font-mono tabular-nums mt-1">
             {metrics.tracked}
@@ -320,7 +309,7 @@ export function ItemsPage() {
       </div>
 
       {/* Controls Bar */}
-      <div className="bg-white border border-slate-200 rounded p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-sm">
+      <div className="bg-white border border-slate-200 rounded-md p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         {/* Search */}
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
@@ -366,7 +355,7 @@ export function ItemsPage() {
       )}
 
       {/* Items Table */}
-      <div className="bg-white border border-slate-200 rounded shadow-sm overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
         {loading ? (
           <div className="py-20 flex flex-col items-center justify-center gap-2">
             <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />

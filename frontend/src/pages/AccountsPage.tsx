@@ -440,40 +440,14 @@ export function AccountsPage() {
   }, [accounts, sweepAccount]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-medium text-slate-900 tracking-tight">
-              Chart of Accounts & Cost Dimensions
-            </h1>
-            <div className="flex items-center rounded-lg bg-slate-100 p-0.5 border border-slate-200">
-              <button
-                type="button"
-                onClick={() => setActiveTab('COA')}
-                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                  activeTab === 'COA'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Chart of Accounts
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('TRACKING')}
-                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                  activeTab === 'TRACKING'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Tracking Dimensions
-              </button>
-            </div>
-          </div>
-          <p className="text-xs text-slate-500 font-light mt-1">
+          <h1 className="text-xl font-medium text-slate-900 tracking-tight">
+            Chart of Accounts & Cost Dimensions
+          </h1>
+          <p className="text-xs text-slate-500 font-light mt-0.5">
             General Ledger financial architecture, live running balances, cost center tags & decommissioning sweeps
           </p>
         </div>
@@ -515,9 +489,35 @@ export function AccountsPage() {
         )}
       </div>
 
+      {/* Sub-Navigation Tab Bar */}
+      <div className="flex items-center gap-1 border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => setActiveTab('COA')}
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors ${
+            activeTab === 'COA'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          Chart of Accounts
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('TRACKING')}
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors ${
+            activeTab === 'TRACKING'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          Tracking Dimensions
+        </button>
+      </div>
+
       {/* Feedback & Error banners */}
       {feedback && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs flex items-center justify-between">
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-md text-xs flex items-center justify-between">
           <span>{feedback}</span>
           <button
             onClick={() => setFeedback(null)}
@@ -529,14 +529,14 @@ export function AccountsPage() {
       )}
 
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-xs flex items-center gap-2">
+        <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-md text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {catError && (
-        <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-xs flex items-center gap-2">
+        <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-md text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
           <span>{catError}</span>
         </div>
@@ -546,42 +546,42 @@ export function AccountsPage() {
         <>
           {/* Metrics Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-            <div className="bg-white p-3 rounded-lg border border-slate-200/80 shadow-sm">
+            <div className="bg-white p-3 rounded-md border border-slate-200">
               <span className="text-[11px] font-light text-slate-500">Total Accounts</span>
               <p className="text-lg font-mono font-medium text-slate-900 mt-0.5">
                 {metrics.count}
               </p>
             </div>
 
-            <div className="bg-white p-3 rounded-lg border border-slate-200/80 shadow-sm">
+            <div className="bg-white p-3 rounded-md border border-slate-200">
               <span className="text-[11px] font-light text-slate-500">Assets</span>
               <p className="text-lg font-mono font-medium text-emerald-700 mt-0.5">
                 {formatCents(metrics.totalAssetsCents)}
               </p>
             </div>
 
-            <div className="bg-white p-3 rounded-lg border border-slate-200/80 shadow-sm">
+            <div className="bg-white p-3 rounded-md border border-slate-200">
               <span className="text-[11px] font-light text-slate-500">Liabilities</span>
               <p className="text-lg font-mono font-medium text-amber-700 mt-0.5">
                 {formatCents(metrics.totalLiabilitiesCents)}
               </p>
             </div>
 
-            <div className="bg-white p-3 rounded-lg border border-slate-200/80 shadow-sm">
+            <div className="bg-white p-3 rounded-md border border-slate-200">
               <span className="text-[11px] font-light text-slate-500">Equity</span>
               <p className="text-lg font-mono font-medium text-slate-700 mt-0.5">
                 {formatCents(metrics.totalEquityCents)}
               </p>
             </div>
 
-            <div className="bg-white p-3 rounded-lg border border-slate-200/80 shadow-sm">
+            <div className="bg-white p-3 rounded-md border border-slate-200">
               <span className="text-[11px] font-light text-slate-500">Revenue</span>
               <p className="text-lg font-mono font-medium text-forest-800 mt-0.5">
                 {formatCents(metrics.totalRevenueCents)}
               </p>
             </div>
 
-            <div className="bg-white p-3 rounded-lg border border-slate-200/80 shadow-sm">
+            <div className="bg-white p-3 rounded-md border border-slate-200">
               <span className="text-[11px] font-light text-slate-500">Expenses</span>
               <p className="text-lg font-mono font-medium text-rose-700 mt-0.5">
                 {formatCents(metrics.totalExpensesCents)}
@@ -590,7 +590,7 @@ export function AccountsPage() {
           </div>
 
           {/* Main Table Container */}
-          <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
             {/* Controls Toolbar */}
             <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
               {/* Search */}
@@ -830,7 +830,7 @@ export function AccountsPage() {
                 Loading Tracking Dimensions…
               </div>
             ) : categories.length === 0 ? (
-              <div className="col-span-2 p-12 bg-white rounded-xl border border-slate-200/80 text-center">
+              <div className="col-span-2 p-12 bg-white rounded-md border border-slate-200 text-center">
                 <Layers className="w-8 h-8 text-slate-300 mx-auto mb-3" />
                 <p className="text-sm font-medium text-slate-800">
                   No tracking dimensions defined
@@ -851,7 +851,7 @@ export function AccountsPage() {
               categories.map((cat) => (
                 <div
                   key={cat.id}
-                  className="bg-white rounded-xl border border-slate-200/80 p-4 shadow-sm flex flex-col justify-between"
+                  className="bg-white rounded-md border border-slate-200 p-4 flex flex-col justify-between"
                 >
                   <div>
                     <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3">

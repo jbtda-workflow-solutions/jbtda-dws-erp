@@ -207,7 +207,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │   ├── INTEGRATIONS.md        # Async webhook payloads and n8n contracts
 │   ├── PLUGINS.md             # Enterprise Plug-In Module Contract (FLEET, INVENTORY, ATTACHMENTS, N8N)
 │   ├── SECURITY.md            # Auth mechanics, 7-role RBAC matrix, and crypto standards
-│   └── STAGES_ROADMAP.md      # 8-Module Deep-Build Execution Plan & completion checklist
+│   └── STAGES_ROADMAP.md      # 10-Module Deep-Build Execution Plan & completion checklist
 └── frontend/                  # React SPA (Vite + TypeScript + Tailwind)
     ├── index.html             # HTML entry point with Inter & JetBrains Mono font links
     ├── package.json           # Frontend dependencies and scripts

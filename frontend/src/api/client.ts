@@ -1625,12 +1625,19 @@ export type DirectTransactionType = 'SPEND_MONEY' | 'RECEIVE_MONEY';
 export interface DirectTransactionLine {
   id: string;
   directTransactionId: string;
+  organizationId?: string;
   description: string;
   accountId: string;
+  accountCode?: string;
+  accountName?: string;
   account?: Account;
   taxTreatment: TaxTreatment;
   amountCents: number;
-  taxAmountCents: number;
+  gstCents: number;
+  totalCents: number;
+  taxAmountCents?: number;
+  trackingOptionId?: string | null;
+  trackingOptionName?: string | null;
   trackingCategoryOptionId?: string | null;
   trackingCategoryOption?: TrackingOption | null;
   createdAt?: string;
@@ -1640,22 +1647,28 @@ export interface DirectTransaction {
   id: string;
   organizationId: string;
   type: DirectTransactionType;
-  transactionNumber: string;
+  transactionNumber?: string;
   transactionDate: string;
   bankAccountId: string;
+  bankAccountCode?: string;
+  bankAccountName?: string;
   bankAccount?: Account;
   contactId?: string | null;
   contact?: Contact | null;
+  payeeName?: string | null;
   reference?: string | null;
+  notes?: string | null;
   description?: string | null;
   subtotalCents: number;
-  taxTotalCents: number;
-  totalAmountCents: number;
+  gstCents: number;
+  totalCents: number;
+  taxTotalCents?: number;
+  totalAmountCents?: number;
   journalEntryId?: string | null;
   journalEntry?: JournalEntry | null;
   lines: DirectTransactionLine[];
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
 }
 
 export interface CreateDirectTransactionLineInput {
@@ -1672,7 +1685,9 @@ export interface CreateDirectTransactionInput {
   transactionDate: string;
   bankAccountId: string;
   contactId?: string | null;
+  payeeName?: string | null;
   reference?: string | null;
+  notes?: string | null;
   description?: string | null;
   lines: CreateDirectTransactionLineInput[];
 }
@@ -1701,7 +1716,10 @@ export const directTransactionApi = {
   },
 
   get: (id: string) =>
-    request<{ directTransaction: DirectTransaction }>('GET', `/direct-transactions/${id}`),
+    request<{
+      directTransaction: DirectTransaction;
+      journalEntry?: JournalEntry | null;
+    }>('GET', `/direct-transactions/${id}`),
 
   create: (data: CreateDirectTransactionInput) =>
     request<{
@@ -1725,40 +1743,73 @@ export type ExpenseClaimStatus =
 export interface ExpenseClaimItem {
   id: string;
   expenseClaimId: string;
+  organizationId?: string;
   expenseDate: string;
   merchant?: string | null;
   description: string;
   accountId: string;
+  accountCode?: string;
+  accountName?: string;
   account?: Account;
   taxTreatment: TaxTreatment;
   amountCents: number;
-  taxAmountCents: number;
+  gstCents: number;
+  totalCents: number;
+  taxAmountCents?: number;
   receiptUrl?: string | null;
+  trackingOptionId?: string | null;
+  trackingOptionName?: string | null;
   trackingCategoryOptionId?: string | null;
   trackingCategoryOption?: TrackingOption | null;
   createdAt?: string;
+}
+
+export interface ExpenseClaimEmployee {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string | null;
+  jobTitle?: string | null;
+  department?: string | null;
+  bankBsb?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountName?: string | null;
+  hasBankDetails?: boolean;
 }
 
 export interface ExpenseClaim {
   id: string;
   organizationId: string;
   claimNumber: string;
-  memberId: string;
+  employeeUserId: string;
+  employee?: ExpenseClaimEmployee | null;
+  memberId?: string;
   member?: MemberProfile;
   title: string;
+  notes?: string | null;
   description?: string | null;
   status: ExpenseClaimStatus;
-  totalAmountCents: number;
-  taxTotalCents: number;
+  subtotalCents: number;
+  gstCents: number;
+  totalCents: number;
+  totalAmountCents?: number;
+  taxTotalCents?: number;
   submittedAt?: string | null;
   approvedAt?: string | null;
+  approvedByUserId?: string | null;
   approvedById?: string | null;
-  approvedBy?: MemberProfile | null;
+  approvedBy?: {
+    id: string;
+    name?: string;
+    email?: string;
+    user?: { id: string; name: string; email: string };
+  } | null;
   rejectedAt?: string | null;
   rejectedById?: string | null;
   rejectedBy?: MemberProfile | null;
   rejectionReason?: string | null;
   paidAt?: string | null;
+  paidFromBankId?: string | null;
   journalEntryId?: string | null;
   journalEntry?: JournalEntry | null;
   paymentJournalEntryId?: string | null;
@@ -1818,7 +1869,10 @@ export const expenseClaimApi = {
   },
 
   get: (id: string) =>
-    request<{ expenseClaim: ExpenseClaim }>('GET', `/expense-claims/${id}`),
+    request<{
+      expenseClaim: ExpenseClaim;
+      journalEntries?: JournalEntry[];
+    }>('GET', `/expense-claims/${id}`),
 
   create: (data: CreateExpenseClaimInput) =>
     request<{ message: string; expenseClaim: ExpenseClaim }>('POST', '/expense-claims', data),

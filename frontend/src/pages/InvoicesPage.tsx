@@ -219,14 +219,14 @@ export function InvoicesPage() {
   }, [creditNotes, creditNoteSearch]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-200">
         <div>
-          <h1 className="text-2xl font-medium tracking-tight text-slate-900">
+          <h1 className="text-xl font-medium tracking-tight text-slate-900">
             Accounts Receivable
           </h1>
-          <p className="text-sm font-light text-slate-500 mt-1">
+          <p className="text-xs font-light text-slate-500 mt-0.5">
             End-to-end revenue lifecycle: Quotes, Invoices, Credit Notes, and Recurring Billing with automatic double-entry GL posting.
           </p>
         </div>
@@ -235,45 +235,50 @@ export function InvoicesPage() {
             <>
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => setIsDirectPaymentModalOpen(true)}
                 className="inline-flex items-center gap-1.5"
               >
-                <ArrowDownLeft className="w-4 h-4 text-emerald-700" />
+                <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-700" />
                 <span>Receive Payment</span>
               </Button>
               <Button
+                size="sm"
                 onClick={() => setIsCreateInvoiceOpen(true)}
-                className="inline-flex items-center gap-2"
+                className="inline-flex items-center gap-1.5"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3.5 h-3.5" />
                 <span>New Invoice</span>
               </Button>
             </>
           )}
           {activeTab === 'QUOTES' && (
             <Button
+              size="sm"
               onClick={() => setIsCreateQuoteOpen(true)}
-              className="inline-flex items-center gap-2"
+              className="inline-flex items-center gap-1.5"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span>New Quote</span>
             </Button>
           )}
           {activeTab === 'CREDIT_NOTES' && (
             <Button
+              size="sm"
               onClick={() => setIsCreateCreditNoteOpen(true)}
-              className="inline-flex items-center gap-2"
+              className="inline-flex items-center gap-1.5"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span>New Credit Note</span>
             </Button>
           )}
           {activeTab === 'RECURRING' && (
             <Button
+              size="sm"
               onClick={() => setIsCreateRecurringOpen(true)}
-              className="inline-flex items-center gap-2"
+              className="inline-flex items-center gap-1.5"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span>New Recurring Schedule</span>
             </Button>
           )}
@@ -281,60 +286,60 @@ export function InvoicesPage() {
       </div>
 
       {/* AR Navigation Tabs */}
-      <div className="flex items-center border-b border-slate-200 gap-1">
+      <div className="flex items-center border-b border-slate-200 gap-1 overflow-x-auto">
         <button
           onClick={() => setActiveTab('INVOICES')}
-          className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'INVOICES'
-              ? 'border-forest-900 text-forest-950 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <FileText className="w-4 h-4" />
+          <FileText className="w-3.5 h-3.5" />
           <span>Customer Invoices</span>
-          <span className="ml-1 text-[10px] px-1.5 py-0.2 bg-slate-100 rounded-full font-mono text-slate-600">
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-slate-100 rounded font-mono text-slate-600">
             {invoices.length}
           </span>
         </button>
         <button
           onClick={() => setActiveTab('QUOTES')}
-          className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'QUOTES'
-              ? 'border-forest-900 text-forest-950 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <FileSpreadsheet className="w-4 h-4" />
+          <FileSpreadsheet className="w-3.5 h-3.5" />
           <span>Quotes & Estimates</span>
-          <span className="ml-1 text-[10px] px-1.5 py-0.2 bg-slate-100 rounded-full font-mono text-slate-600">
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-slate-100 rounded font-mono text-slate-600">
             {quotes.length}
           </span>
         </button>
         <button
           onClick={() => setActiveTab('CREDIT_NOTES')}
-          className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'CREDIT_NOTES'
-              ? 'border-forest-900 text-forest-950 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <RotateCcw className="w-4 h-4" />
+          <RotateCcw className="w-3.5 h-3.5" />
           <span>Credit Notes</span>
-          <span className="ml-1 text-[10px] px-1.5 py-0.2 bg-slate-100 rounded-full font-mono text-slate-600">
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-slate-100 rounded font-mono text-slate-600">
             {creditNotes.length}
           </span>
         </button>
         <button
           onClick={() => setActiveTab('RECURRING')}
-          className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'RECURRING'
-              ? 'border-forest-900 text-forest-950 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <Calendar className="w-4 h-4" />
+          <Calendar className="w-3.5 h-3.5" />
           <span>Recurring Invoices</span>
-          <span className="ml-1 text-[10px] px-1.5 py-0.2 bg-slate-100 rounded-full font-mono text-slate-600">
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-slate-100 rounded font-mono text-slate-600">
             {recurringSchedules.length}
           </span>
         </button>
@@ -343,7 +348,7 @@ export function InvoicesPage() {
       {/* TAB 1: INVOICES */}
       {activeTab === 'INVOICES' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+          <div className="bg-white rounded-md border border-slate-200 p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-sm">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -351,7 +356,7 @@ export function InvoicesPage() {
                 placeholder="Search by invoice # or customer…"
                 value={invoiceSearch}
                 onChange={(e) => setInvoiceSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-forest-900"
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-forest-900"
               />
             </div>
 
@@ -361,9 +366,9 @@ export function InvoicesPage() {
                   <button
                     key={status}
                     onClick={() => setInvoiceStatusFilter(status)}
-                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
                       invoiceStatusFilter === status
-                        ? 'bg-forest-900 text-white shadow-xs'
+                        ? 'bg-forest-900 text-white'
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
@@ -375,13 +380,13 @@ export function InvoicesPage() {
           </div>
 
           {invoiceError && (
-            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
+            <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
               <span>{invoiceError}</span>
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
             {loadingInvoices ? (
               <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
                 <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />
@@ -389,8 +394,8 @@ export function InvoicesPage() {
               </div>
             ) : filteredInvoices.length === 0 ? (
               <div className="p-12 text-center flex flex-col items-center justify-center">
-                <div className="w-12 h-12 rounded-2xl bg-forest-50 flex items-center justify-center mb-3">
-                  <FileSpreadsheet className="w-6 h-6 text-forest-800" />
+                <div className="w-10 h-10 rounded-md bg-forest-50 flex items-center justify-center mb-3">
+                  <FileSpreadsheet className="w-5 h-5 text-forest-800" />
                 </div>
                 <p className="text-sm font-medium text-slate-800">No customer invoices found</p>
                 <p className="text-xs text-slate-400 mt-1 max-w-sm">
@@ -485,7 +490,7 @@ export function InvoicesPage() {
       {/* TAB 2: QUOTES */}
       {activeTab === 'QUOTES' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+          <div className="bg-white rounded-md border border-slate-200 p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-sm">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -493,7 +498,7 @@ export function InvoicesPage() {
                 placeholder="Search by quote # or customer…"
                 value={quoteSearch}
                 onChange={(e) => setQuoteSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-forest-900"
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-forest-900"
               />
             </div>
             <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
@@ -502,9 +507,9 @@ export function InvoicesPage() {
                   <button
                     key={st}
                     onClick={() => setQuoteStatusFilter(st)}
-                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
                       quoteStatusFilter === st
-                        ? 'bg-forest-900 text-white shadow-xs'
+                        ? 'bg-forest-900 text-white'
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
@@ -516,13 +521,13 @@ export function InvoicesPage() {
           </div>
 
           {quoteError && (
-            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
+            <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
               <span>{quoteError}</span>
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
             {loadingQuotes ? (
               <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
                 <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />
@@ -611,7 +616,7 @@ export function InvoicesPage() {
       {/* TAB 3: CREDIT NOTES */}
       {activeTab === 'CREDIT_NOTES' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+          <div className="bg-white rounded-md border border-slate-200 p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-sm">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -619,19 +624,19 @@ export function InvoicesPage() {
                 placeholder="Search credit notes…"
                 value={creditNoteSearch}
                 onChange={(e) => setCreditNoteSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-forest-900"
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-forest-900"
               />
             </div>
           </div>
 
           {creditNoteError && (
-            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
+            <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
               <span>{creditNoteError}</span>
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
             {loadingCreditNotes ? (
               <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
                 <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />
@@ -728,13 +733,13 @@ export function InvoicesPage() {
       {activeTab === 'RECURRING' && (
         <div className="space-y-4">
           {recurringError && (
-            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
+            <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
               <span>{recurringError}</span>
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
             {loadingRecurring ? (
               <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
                 <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />

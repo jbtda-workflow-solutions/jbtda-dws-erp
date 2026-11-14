@@ -240,60 +240,65 @@ export function BillsPage() {
   }, [vendorCredits, creditSearch]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-200">
         <div>
-          <h1 className="text-2xl font-medium tracking-tight text-slate-900">
+          <h1 className="text-xl font-medium tracking-tight text-slate-900">
             Accounts Payable
           </h1>
-          <p className="text-sm font-light text-slate-500 mt-1">
+          <p className="text-xs font-light text-slate-500 mt-0.5">
             Complete procurement lifecycle: Purchase Orders, Vendor Bills, Vendor Credits, Recurring Schedules, and Australian .ABA Batch Bank Exports.
           </p>
         </div>
         <div className="flex items-center gap-2">
           {activeTab === 'BILLS' && (
             <Button
+              size="sm"
               onClick={() => setIsCreateBillOpen(true)}
-              className="inline-flex items-center gap-2"
+              className="inline-flex items-center gap-1.5"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span>New Bill</span>
             </Button>
           )}
           {activeTab === 'PURCHASE_ORDERS' && (
             <Button
+              size="sm"
               onClick={() => setIsCreatePOOpen(true)}
-              className="inline-flex items-center gap-2"
+              className="inline-flex items-center gap-1.5"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span>New Purchase Order</span>
             </Button>
           )}
           {activeTab === 'VENDOR_CREDITS' && (
             <Button
+              size="sm"
               onClick={() => setIsCreateCreditOpen(true)}
-              className="inline-flex items-center gap-2"
+              className="inline-flex items-center gap-1.5"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span>New Vendor Credit</span>
             </Button>
           )}
           {activeTab === 'BATCH_PAYMENTS' && (
             <Button
+              size="sm"
               onClick={() => setIsCreateBatchOpen(true)}
-              className="inline-flex items-center gap-2"
+              className="inline-flex items-center gap-1.5"
             >
-              <CreditCard className="w-4 h-4" />
+              <CreditCard className="w-3.5 h-3.5" />
               <span>New .ABA Batch Run</span>
             </Button>
           )}
           {activeTab === 'RECURRING' && (
             <Button
+              size="sm"
               onClick={() => setIsCreateRecurringOpen(true)}
-              className="inline-flex items-center gap-2"
+              className="inline-flex items-center gap-1.5"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span>New Recurring Bill</span>
             </Button>
           )}
@@ -304,71 +309,71 @@ export function BillsPage() {
       <div className="flex items-center border-b border-slate-200 gap-1 overflow-x-auto">
         <button
           onClick={() => setActiveTab('BILLS')}
-          className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'BILLS'
-              ? 'border-forest-900 text-forest-950 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <Receipt className="w-4 h-4" />
+          <Receipt className="w-3.5 h-3.5" />
           <span>Vendor Bills</span>
-          <span className="ml-1 text-[10px] px-1.5 py-0.2 bg-slate-100 rounded-full font-mono text-slate-600">
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-slate-100 rounded font-mono text-slate-600">
             {bills.length}
           </span>
         </button>
         <button
           onClick={() => setActiveTab('PURCHASE_ORDERS')}
-          className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'PURCHASE_ORDERS'
-              ? 'border-forest-900 text-forest-950 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <FileCheck2 className="w-4 h-4" />
+          <FileCheck2 className="w-3.5 h-3.5" />
           <span>Purchase Orders</span>
-          <span className="ml-1 text-[10px] px-1.5 py-0.2 bg-slate-100 rounded-full font-mono text-slate-600">
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-slate-100 rounded font-mono text-slate-600">
             {purchaseOrders.length}
           </span>
         </button>
         <button
           onClick={() => setActiveTab('VENDOR_CREDITS')}
-          className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'VENDOR_CREDITS'
-              ? 'border-forest-900 text-forest-950 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <RotateCcw className="w-4 h-4" />
+          <RotateCcw className="w-3.5 h-3.5" />
           <span>Vendor Credits</span>
-          <span className="ml-1 text-[10px] px-1.5 py-0.2 bg-slate-100 rounded-full font-mono text-slate-600">
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-slate-100 rounded font-mono text-slate-600">
             {vendorCredits.length}
           </span>
         </button>
         <button
           onClick={() => setActiveTab('BATCH_PAYMENTS')}
-          className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'BATCH_PAYMENTS'
-              ? 'border-forest-900 text-forest-950 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <Download className="w-4 h-4" />
+          <Download className="w-3.5 h-3.5" />
           <span>.ABA Batch Payments</span>
-          <span className="ml-1 text-[10px] px-1.5 py-0.2 bg-slate-100 rounded-full font-mono text-slate-600">
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-slate-100 rounded font-mono text-slate-600">
             {batchPayments.length}
           </span>
         </button>
         <button
           onClick={() => setActiveTab('RECURRING')}
-          className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 text-xs border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'RECURRING'
-              ? 'border-forest-900 text-forest-950 font-semibold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <Calendar className="w-4 h-4" />
+          <Calendar className="w-3.5 h-3.5" />
           <span>Recurring Bills</span>
-          <span className="ml-1 text-[10px] px-1.5 py-0.2 bg-slate-100 rounded-full font-mono text-slate-600">
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-slate-100 rounded font-mono text-slate-600">
             {recurringBills.length}
           </span>
         </button>
@@ -377,7 +382,7 @@ export function BillsPage() {
       {/* TAB 1: VENDOR BILLS */}
       {activeTab === 'BILLS' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+          <div className="bg-white rounded-md border border-slate-200 p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
@@ -385,19 +390,19 @@ export function BillsPage() {
                 value={billSearch}
                 onChange={(e) => setBillSearch(e.target.value)}
                 placeholder="Search by vendor name or reference…"
-                className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-forest-900 font-light"
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-forest-900 font-light"
               />
             </div>
 
-            <div className="flex items-center bg-slate-100 p-1 rounded-lg text-xs font-medium text-slate-600">
+            <div className="flex items-center bg-slate-100 p-1 rounded text-xs font-medium text-slate-600">
               {(['ALL', 'DRAFT', 'AWAITING_PAYMENT', 'PARTIALLY_PAID', 'PAID'] as const).map(
                 (st) => (
                   <button
                     key={st}
                     onClick={() => setBillStatusFilter(st)}
-                    className={`px-3 py-1.5 rounded-md transition-colors ${
+                    className={`px-2.5 py-1 rounded transition-colors ${
                       billStatusFilter === st
-                        ? 'bg-white text-forest-900 shadow-xs font-medium'
+                        ? 'bg-white text-forest-900 font-medium'
                         : 'hover:text-slate-900'
                     }`}
                   >
@@ -409,13 +414,13 @@ export function BillsPage() {
           </div>
 
           {billError && (
-            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
+            <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
               <span>{billError}</span>
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
             {loadingBills ? (
               <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
                 <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />
@@ -497,7 +502,7 @@ export function BillsPage() {
       {/* TAB 2: PURCHASE ORDERS */}
       {activeTab === 'PURCHASE_ORDERS' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+          <div className="bg-white rounded-md border border-slate-200 p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-sm">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -505,7 +510,7 @@ export function BillsPage() {
                 placeholder="Search PO # or vendor…"
                 value={poSearch}
                 onChange={(e) => setPoSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-forest-900"
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-forest-900"
               />
             </div>
             <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
@@ -514,9 +519,9 @@ export function BillsPage() {
                   <button
                     key={st}
                     onClick={() => setPoStatusFilter(st)}
-                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
                       poStatusFilter === st
-                        ? 'bg-forest-900 text-white shadow-xs'
+                        ? 'bg-forest-900 text-white'
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
@@ -528,13 +533,13 @@ export function BillsPage() {
           </div>
 
           {poError && (
-            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
+            <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
               <span>{poError}</span>
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
             {loadingPOs ? (
               <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
                 <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />
@@ -617,7 +622,7 @@ export function BillsPage() {
       {/* TAB 3: VENDOR CREDITS */}
       {activeTab === 'VENDOR_CREDITS' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+          <div className="bg-white rounded-md border border-slate-200 p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-sm">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -625,19 +630,19 @@ export function BillsPage() {
                 placeholder="Search vendor credits…"
                 value={creditSearch}
                 onChange={(e) => setCreditSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-forest-900"
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-forest-900"
               />
             </div>
           </div>
 
           {creditError && (
-            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
+            <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
               <span>{creditError}</span>
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
             {loadingCredits ? (
               <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
                 <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />
@@ -727,8 +732,8 @@ export function BillsPage() {
       {/* TAB 4: BATCH PAYMENTS (.ABA FILE EXPORT) */}
       {activeTab === 'BATCH_PAYMENTS' && (
         <div className="space-y-4">
-          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-3">
-            <Download className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+          <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-md flex items-start gap-3">
+            <Download className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
             <div className="text-xs text-emerald-950">
               <p className="font-medium">Australian APCA-Compliant .ABA Bank File Engine</p>
               <p className="mt-0.5 text-emerald-800 font-light">
@@ -738,13 +743,13 @@ export function BillsPage() {
           </div>
 
           {batchError && (
-            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
+            <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
               <span>{batchError}</span>
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
             {loadingBatches ? (
               <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
                 <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />
@@ -807,13 +812,13 @@ export function BillsPage() {
       {activeTab === 'RECURRING' && (
         <div className="space-y-4">
           {recurringError && (
-            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
+            <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
               <span>{recurringError}</span>
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
             {loadingRecurring ? (
               <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
                 <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />

@@ -7,17 +7,12 @@ import {
   Mail,
   Phone,
   MapPin,
-  Landmark,
-  FileText,
   Clock,
   Edit2,
   AlertCircle,
   TrendingUp,
   TrendingDown,
-  ExternalLink,
-  ChevronRight,
   ShieldCheck,
-  Receipt,
   CreditCard,
   History,
 } from 'lucide-react';
@@ -28,13 +23,12 @@ import {
   type ContactType,
   type Contact360Response,
   type AccountWithBalance,
-  ApiError,
 } from '@/api/client';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Drawer } from '@/components/ui/Drawer';
-import { StatusTag, resolveStatusTone } from '@/components/ui/StatusTag';
+import { StatusTag } from '@/components/ui/StatusTag';
 
 /**
  * Validate Australian Business Number (11 digits, ATO modulus 89 algorithm).
@@ -311,17 +305,14 @@ export function ContactsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-200">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-              Contacts Directory
-            </h1>
-            <StatusTag label="Master Data" tone="forest" />
-          </div>
-          <p className="text-xs font-light text-slate-500 mt-1">
+          <h1 className="text-xl font-medium tracking-tight text-slate-900">
+            Contacts Directory
+          </h1>
+          <p className="text-xs font-light text-slate-500 mt-0.5">
             Centralized customer and vendor records with Australian ABN, EFT banking, and 360° ledger history.
           </p>
         </div>
@@ -333,25 +324,25 @@ export function ContactsPage() {
 
       {/* KPI Cards Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white border border-slate-200 rounded p-3.5 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-md p-3.5">
           <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Total Contacts</p>
           <p className="text-xl font-semibold text-slate-900 font-mono tabular-nums mt-1">
             {metrics.total}
           </p>
         </div>
-        <div className="bg-white border border-slate-200 rounded p-3.5 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-md p-3.5">
           <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Customers</p>
           <p className="text-xl font-semibold text-forest-900 font-mono tabular-nums mt-1">
             {metrics.customers}
           </p>
         </div>
-        <div className="bg-white border border-slate-200 rounded p-3.5 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-md p-3.5">
           <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Vendors / Suppliers</p>
           <p className="text-xl font-semibold text-amber-700 font-mono tabular-nums mt-1">
             {metrics.vendors}
           </p>
         </div>
-        <div className="bg-white border border-slate-200 rounded p-3.5 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-md p-3.5">
           <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Dual Role (Both)</p>
           <p className="text-xl font-semibold text-emerald-700 font-mono tabular-nums mt-1">
             {metrics.both}
@@ -360,7 +351,7 @@ export function ContactsPage() {
       </div>
 
       {/* Controls Bar */}
-      <div className="bg-white border border-slate-200 rounded p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-sm">
+      <div className="bg-white border border-slate-200 rounded-md p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         {/* Search */}
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
@@ -400,7 +391,7 @@ export function ContactsPage() {
       )}
 
       {/* Contacts Table */}
-      <div className="bg-white border border-slate-200 rounded shadow-sm overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
         {loading ? (
           <div className="py-20 flex flex-col items-center justify-center gap-2">
             <div className="w-6 h-6 rounded-full border-2 border-forest-900 border-t-transparent animate-spin" />

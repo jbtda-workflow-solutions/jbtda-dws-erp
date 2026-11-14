@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { Printer, X, Building2, Landmark, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { StatusTag } from '@/components/ui/StatusTag';
@@ -53,13 +54,13 @@ export function InvoicePreviewModal({
     window.print();
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-obsidian-950/70 backdrop-blur-[2px] overflow-y-auto"
+      className="fixed inset-0 z-50 !mt-0 flex items-center justify-center p-2 sm:p-4 bg-obsidian-950/70 backdrop-blur-[2px] overflow-y-auto"
       role="dialog"
       aria-modal="true"
     >
-      <div className="relative w-full max-w-6xl bg-slate-100 rounded-lg shadow-2xl border border-slate-300 flex flex-col max-h-[96vh] overflow-hidden my-auto">
+      <div className="relative w-full max-w-6xl bg-slate-100 rounded-md shadow-2xl border border-slate-300 flex flex-col max-h-[96vh] overflow-hidden my-auto">
         {/* Top Control Bar (Screen Only - Hidden in Print) */}
         <div className="no-print px-5 py-3 bg-obsidian-950 text-white flex items-center justify-between border-b border-white/10 shrink-0">
           <div className="flex items-center gap-3">
@@ -379,6 +380,7 @@ export function InvoicePreviewModal({
           }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body,
   );
 }

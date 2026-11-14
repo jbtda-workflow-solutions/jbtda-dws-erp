@@ -15,7 +15,6 @@ import {
   DollarSign,
   TrendingUp,
   Receipt,
-  Download,
 } from 'lucide-react';
 import {
   reportsApi,
@@ -27,12 +26,10 @@ import {
   type AgedPayablesReport,
   type BasReport,
   type TrackingCategory,
-  ApiError,
 } from '@/api/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
-import { StatusTag } from '@/components/ui/StatusTag';
 
 type ReportTab = 'PL' | 'BALANCE_SHEET' | 'TRIAL_BALANCE' | 'AGED_AR' | 'AGED_AP' | 'BAS';
 
@@ -204,18 +201,13 @@ export function ReportsPage() {
   const canLockPeriod = role === 'ADMIN' || role === 'ACCOUNTANT';
 
   return (
-    <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="space-y-4">
       {/* Top Header & Export Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200 no-print">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-200 no-print print:hidden">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 font-mono">
-              FINANCIAL REPORTS
-            </h1>
-            <span className="font-mono text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300">
-              Double-Entry Certified
-            </span>
-          </div>
+          <h1 className="text-xl font-medium tracking-tight text-slate-900">
+            Financial Reports
+          </h1>
           <p className="text-xs text-slate-500 font-sans mt-0.5">
             Real-time General Ledger financial statements, statutory ATO BAS engine, and AR/AP aging schedules.
           </p>
@@ -236,88 +228,88 @@ export function ReportsPage() {
       </div>
 
       {/* Report Navigation Tabs */}
-      <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto no-print">
+      <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto no-print print:hidden">
         <button
           type="button"
           onClick={() => setActiveTab('PL')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
+          className={`flex items-center gap-2 px-4 py-2 text-xs border-b-2 transition-colors whitespace-nowrap -mb-px ${
             activeTab === 'PL'
-              ? 'border-emerald-700 text-emerald-950 bg-emerald-50/50'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <TrendingUp className="w-4 h-4 text-emerald-600" />
+          <TrendingUp className="w-3.5 h-3.5" />
           <span>Profit & Loss</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('BALANCE_SHEET')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
+          className={`flex items-center gap-2 px-4 py-2 text-xs border-b-2 transition-colors whitespace-nowrap -mb-px ${
             activeTab === 'BALANCE_SHEET'
-              ? 'border-emerald-700 text-emerald-950 bg-emerald-50/50'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <Scale className="w-4 h-4 text-blue-600" />
+          <Scale className="w-3.5 h-3.5" />
           <span>Balance Sheet</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('TRIAL_BALANCE')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
+          className={`flex items-center gap-2 px-4 py-2 text-xs border-b-2 transition-colors whitespace-nowrap -mb-px ${
             activeTab === 'TRIAL_BALANCE'
-              ? 'border-emerald-700 text-emerald-950 bg-emerald-50/50'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <FileText className="w-4 h-4 text-purple-600" />
+          <FileText className="w-3.5 h-3.5" />
           <span>Trial Balance</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('AGED_AR')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
+          className={`flex items-center gap-2 px-4 py-2 text-xs border-b-2 transition-colors whitespace-nowrap -mb-px ${
             activeTab === 'AGED_AR'
-              ? 'border-emerald-700 text-emerald-950 bg-emerald-50/50'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <DollarSign className="w-4 h-4 text-emerald-600" />
+          <DollarSign className="w-3.5 h-3.5" />
           <span>Aged Receivables (A/R)</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('AGED_AP')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
+          className={`flex items-center gap-2 px-4 py-2 text-xs border-b-2 transition-colors whitespace-nowrap -mb-px ${
             activeTab === 'AGED_AP'
-              ? 'border-emerald-700 text-emerald-950 bg-emerald-50/50'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <Receipt className="w-4 h-4 text-amber-600" />
+          <Receipt className="w-3.5 h-3.5" />
           <span>Aged Payables (A/P)</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('BAS')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
+          className={`flex items-center gap-2 px-4 py-2 text-xs border-b-2 transition-colors whitespace-nowrap -mb-px ${
             activeTab === 'BAS'
-              ? 'border-emerald-700 text-emerald-950 bg-emerald-50/50'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+              ? 'border-forest-900 text-forest-900 font-medium'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <BarChart3 className="w-4 h-4 text-rose-600" />
+          <BarChart3 className="w-3.5 h-3.5" />
           <span>Australian BAS Engine</span>
         </button>
       </div>
 
       {/* Filter Toolbar */}
-      <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs no-print">
+      <div className="bg-white border border-slate-200 rounded-md p-3 flex flex-wrap items-center justify-between gap-3 text-xs no-print print:hidden">
         {activeTab === 'PL' ? (
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1.5">
@@ -476,14 +468,14 @@ export function ReportsPage() {
       </div>
 
       {error && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg flex items-center gap-2 text-xs">
+        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-md flex items-center gap-2 text-xs no-print print:hidden">
           <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
           <span>{error}</span>
         </div>
       )}
 
       {/* Main Report Document Sheet */}
-      <div id="report-print-sheet" className="bg-white border border-slate-200 rounded-lg p-6 sm:p-8 shadow-sm">
+      <div id="report-print-sheet" className="bg-white border border-slate-200 rounded-md p-6 sm:p-8">
         {/* Printable Organization Header */}
         <div className="pb-6 border-b border-slate-200 mb-6 flex items-start justify-between">
           <div>
@@ -1239,7 +1231,7 @@ export function ReportsPage() {
         {activeTab === 'BAS' && basReport && (
           <div className="space-y-6 max-w-4xl mx-auto">
             {/* Status bar & Lock action */}
-            <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-md">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs font-bold text-slate-700">
                   BAS TAX PERIOD: {basReport.startDate} to {basReport.endDate}
@@ -1262,7 +1254,7 @@ export function ReportsPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => setLockModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 text-xs text-amber-800 border-amber-300 hover:bg-amber-50"
+                  className="no-print print:hidden inline-flex items-center gap-1.5 text-xs text-amber-800 border-amber-300 hover:bg-amber-50"
                 >
                   <Lock className="w-3.5 h-3.5" />
                   <span>Lock BAS Period</span>
