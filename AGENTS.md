@@ -42,11 +42,13 @@ by reading:
    duplicating files across directories. Whenever files are added, removed, or
    moved, the agent MUST update this `Directory Layout` section in `AGENTS.md`
    and append an entry to `docs/CHANGELOG.md` to keep the source of truth accurate.
-10. **No Autonomous Git Commits (Provide Commit Messages):** Never run
-    `git commit` or `git push` on behalf of the user. The user manages git
-    staging, commits, and pushes manually. At the conclusion of any task or
-    revision where a commit would typically occur, the agent MUST provide a
-    ready-to-use, conventional git commit message summarizing the changes made.
+10. **Local Git Commits Allowed / Push Requires Explicit Authorization:** Agents
+    MAY stage and create local git commits (`git add` and `git commit`) using
+    concise, conventional commit messages at the conclusion of any logical task
+    or module revision, and SHOULD report the commit hash and message to the
+    user. Agents MUST NOT run `git push` autonomously; every `git push` requires
+    explicit user authorization for that push. Once explicitly authorized by the
+    user, the agent may execute `git push` to the remote repository.
 11. **Local Type Verification Allowed / No Runtime Execution:**
     Agents MAY run `npm install --cache /tmp/.npm-cache`, `npx prisma generate`,
     and non-emitting typecheck commands (`npm run typecheck`, `tsc --noEmit`, or
@@ -66,8 +68,9 @@ by reading:
 13. **Module-Gate Review Protocol:** Development proceeds one module at a time per
     `docs/STAGES_ROADMAP.md`. When a module is completed, the agent MUST mark its
     checklist items `[x]` in `docs/STAGES_ROADMAP.md`, synchronize `AGENTS.md` and
-    `docs/CHANGELOG.md`, provide a ready-to-use conventional git commit message,
-    and STOP for user review before beginning the next module.
+    `docs/CHANGELOG.md`, commit the changes locally with a conventional git commit
+    message (or provide it if uncommitted), and STOP for user review and explicit
+    `git push` authorization before beginning the next module.
 14. **Zero-Ambiguity Entrypoint & Configuration Documentation Protocol:**
     Every network entrypoint, access path, API route, infrastructure probe,
     webhook callback, and client route MUST be explicitly, exhaustively documented

@@ -4,6 +4,14 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.20.1] — 2026-11-14 — Governance Update & Module 9 Roadmap Addition
+
+### Changed
+- `AGENTS.md` (Rules 10 & 13) and `AGENT_SPECIFICATION.md` (Rule 6): Updated git workflow policy so agents may stage and create local `git commit`s, while `git push` remains strictly gated on explicit per-push user authorization.
+- `docs/STAGES_ROADMAP.md`: Added **Module 9: Developer & Agent Context Interface (`/developer`)** to expose agent context files, roadmap progress, changelogs, and safe runtime diagnostics inside the web application.
+
+---
+
 ## [0.20.0] — 2026-11-08 — Module 8: Financial Statements, Australian BAS Engine, Live Dashboard & Plug-In Contract
 
 ### Added

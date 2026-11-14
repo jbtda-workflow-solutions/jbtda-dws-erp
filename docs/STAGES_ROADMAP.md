@@ -368,3 +368,21 @@ Development proceeds strictly **one module at a time**. We complete the backend 
     - **Inventory & Warehouse Module (`INVENTORY`)**: Extends `Item` (`isTrackedInventory: true`) with stock ledger movements, Purchase Order goods receipts, and automated Cost of Goods Sold (COGS) journals on invoice issuance.
     - **Cloud Storage Document Attachments (`ATTACHMENTS`)**: GCS V4 presigned upload pipeline attaching PDFs/receipts to Bills, Expense Claims, Invoices, and Journals.
     - **Outbound Automation (`N8N_WEBHOOKS`)**: Asynchronous signed webhooks to n8n for external notifications and integrations.
+
+---
+
+### Module 9: Developer & Agent Context Interface (`/developer`)
+**Objective:** Provide an in-app, read-only Developer & Governance Console so administrators operating outside an IDE (e.g., Antigravity Agent Studio) can inspect agent context files, architecture specs, roadmaps, changelogs, and runtime diagnostics directly within the web application.
+
+- [ ] **9.1 Backend Documentation & Diagnostics API (`/api/v1/developer/*`)**:
+  - RBAC-restricted to `ADMIN` (and gated by a `DEVELOPER_PORTAL` module flag or org admin permission).
+  - `GET /api/v1/developer/docs`: Whitelisted directory index of repository documentation (`AGENTS.md`, `AGENT_SPECIFICATION.md`, `docs/*.md`), returning file metadata (path, title, last modified timestamp, size). Strictly no arbitrary filesystem traversal outside the allowlisted documentation paths.
+  - `GET /api/v1/developer/docs/content?path=...`: Returns raw Markdown content for a whitelisted documentation file.
+  - `GET /api/v1/developer/roadmap-summary`: Parses `docs/STAGES_ROADMAP.md` into structured module completion progress (completed vs. pending checklist counts per module).
+  - `GET /api/v1/developer/diagnostics`: Safe, non-secret runtime metadata (Node version, `NODE_ENV`, active `enabledModules`, database connectivity status, and sanitized feature flags—strictly redacting all secrets such as `DB_PASSWORD`, `SESSION_SECRET`, `WEBHOOK_SECRET`).
+  - Ensure `Dockerfile` copies `AGENTS.md`, `AGENT_SPECIFICATION.md`, and `docs/` into the runtime image so the documentation endpoints work in Cloud Run.
+- [ ] **9.2 Module 9 Frontend UI (`/developer`)**:
+  - **Context & Docs Viewer Tab**: Split-pane Markdown reader with file sidebar (`AGENTS.md`, `AGENT_SPECIFICATION.md`, `STAGES_ROADMAP.md`, `CHANGELOG.md`, `ARCHITECTURE.md`, `DATABASE_SCHEMA.md`, `SECURITY.md`, `PLUGINS.md`, `DESIGN_SYSTEM.md`, `INTEGRATIONS.md`), full-text search, and clean rendered Markdown + raw view toggle.
+  - **Roadmap Tracker Tab**: Visual progress overview of all modules and checklist items parsed from `STAGES_ROADMAP.md`.
+  - **Changelog & Audit Feed Tab**: Chronological release/changelog viewer paired with recent system audit log events.
+  - **Runtime & Environment Diagnostics Tab**: Read-only view of safe runtime flags, database health, and enabled organization modules.
