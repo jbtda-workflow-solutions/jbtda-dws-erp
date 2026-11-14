@@ -4,6 +4,14 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.20.2] — 2026-11-14 — Agent Studio Context & Verification Alignment
+
+### Changed
+- `AGENTS.md` (Rule 15): Added Chat-First Visibility & Agent Studio Reporting protocol (chat-first change summaries, pre-push review bundles, and Markdown Artifacts for large specs/plans).
+- `AGENT_SPECIFICATION.md` (Rules 5 & 8): Reconciled Rule 5 with `AGENTS.md` Rule 11 to permit local `tsc` / `npm run build` typecheck verification while banning host runtime execution, and added Rule 8 mirroring Agent Studio reporting standards.
+
+---
+
 ## [0.20.1] — 2026-11-14 — Governance Update & Module 9 Roadmap Addition
 
 ### Changed

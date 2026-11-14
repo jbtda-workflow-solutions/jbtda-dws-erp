@@ -88,6 +88,19 @@ by reading:
     No environment variable or secret may be left undocumented, optional without
     an explicit default, or allowed to be an empty string without explicit validation
     and failure handling.
+15. **Chat-First Visibility & Agent Studio Reporting:**
+    Because the user operates primarily in Antigravity Agent Studio rather than
+    a local IDE file tree:
+    - **Chat-First Change Summaries:** Always summarize what changed (new/modified
+      routes, schema fields, UI behavior, and typecheck/build verification results)
+      directly in the chat response—never assume the user will open raw files to
+      inspect edits.
+    - **Pre-Push Review Bundle:** Whenever requesting `git push` authorization,
+      include the unpushed commit list (`git log origin/main..HEAD --oneline`) and
+      the affected file paths so the user can review before authorizing.
+    - **Artifacts for Large Specs & Plans:** Use Markdown Artifacts for extensive
+      module plans, schema proposals, or architecture reviews so tables and
+      diagrams render cleanly in Agent Studio.
 
 ## Tech Stack Quick-Reference
 
