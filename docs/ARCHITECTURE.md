@@ -366,5 +366,5 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `/ledger` | Authenticated | `<LedgerPage />` | General Ledger audit trail and manual journal entry management. |
 | `/reports` | Authenticated | `<ReportsPage />` | Financial Statements (Trial Balance, Dimensional P&L, Balance Sheet, Aged AR/AP) and Australian ATO BAS Engine workbench. |
 | `/settings` | Authenticated | `<SettingsPage />` | Organization profile, lock dates, EFT banking, team members, invites, system audit logs, and Centralized Admin Bulk CSV Import Hub (`ADMIN`). |
-| `/developer` | Authenticated (`ADMIN`) | `<DeveloperPage />` | Read-only Developer & Agent Context Console (allowlisted Markdown docs viewer, roadmap tracker, changelog & audit feed, and sanitized runtime diagnostics). |
+| `/developer` | Authenticated (`ADMIN`) | `<DeveloperPage />` | Developer & Agent Context Console (allowlisted Markdown docs viewer, API catalog, roadmap tracker, changelog & audit feed, runtime diagnostics, and Interactive Database & Table Manager). |
 | `/*` | Authenticated | Navigate to `/` | Client-side catch-all redirect to `/`. |
