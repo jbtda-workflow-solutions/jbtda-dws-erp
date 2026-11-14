@@ -18,6 +18,9 @@ import {
   Eye,
   Lock,
   Network,
+  Trash2,
+  AlertTriangle,
+  Wrench,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -28,14 +31,25 @@ import {
   type RoadmapSummaryResponse,
   type ApiCatalogResponse,
   type DeveloperDiagnosticsResponse,
+  type DeveloperDatabaseTablesResponse,
+  type DatabaseTableDomain,
+  type SchemaSelfHealResponse,
+  type PurgeDatabaseTablesResponse,
   type AuditLogEntry,
 } from '@/api/client';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Modal } from '@/components/ui/Modal';
 import { StatusTag } from '@/components/ui/StatusTag';
 import { cn } from '@/lib/utils';
 
-type DeveloperTab = 'docs' | 'api' | 'roadmap' | 'changelog' | 'diagnostics';
+type DeveloperTab =
+  | 'docs'
+  | 'api'
+  | 'roadmap'
+  | 'changelog'
+  | 'diagnostics'
+  | 'database';
 
 interface ParsedChangelogRelease {
   version: string;
@@ -555,6 +569,23 @@ export function DeveloperPage() {
   const [expandedApiGroups, setExpandedApiGroups] = useState<Record<number, boolean>>({});
   const [copiedEndpointKey, setCopiedEndpointKey] = useState<string | null>(null);
 
+  // Tab 6: Database & Table Manager
+  const [dbTablesData, setDbTablesData] =
+    useState<DeveloperDatabaseTablesResponse | null>(null);
+  const [dbTablesLoading, setDbTablesLoading] = useState<boolean>(false);
+  const [purgeScope, setPurgeScope] = useState<'ORGANIZATION' | 'GLOBAL'>(
+    'ORGANIZATION',
+  );
+  const [selectedTables, setSelectedTables] = useState<string[]>([]);
+  const [confirmPurgeModalOpen, setConfirmPurgeModalOpen] =
+    useState<boolean>(false);
+  const [purgingTables, setPurgingTables] = useState<boolean>(false);
+  const [purgeReceipt, setPurgeReceipt] =
+    useState<PurgeDatabaseTablesResponse | null>(null);
+  const [syncingSchema, setSyncingSchema] = useState<boolean>(false);
+  const [schemaSyncReceipt, setSchemaSyncReceipt] =
+    useState<SchemaSelfHealResponse | null>(null);
+
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   const loadDocsIndex = useCallback(async () => {
@@ -708,6 +739,24 @@ export function DeveloperPage() {
     }
   }, [isAdmin]);
 
+  const loadDatabaseTables = useCallback(async () => {
+    if (!isAdmin) return;
+    setDbTablesLoading(true);
+    setErrorBanner(null);
+    try {
+      const res = await developerApi.getDatabaseTables();
+      setDbTablesData(res);
+    } catch (err) {
+      setErrorBanner(
+        err instanceof Error
+          ? err.message
+          : 'Failed to load database table metrics.',
+      );
+    } finally {
+      setDbTablesLoading(false);
+    }
+  }, [isAdmin]);
+
   useEffect(() => {
     void loadDocsIndex();
     void loadRoadmap();
@@ -723,6 +772,8 @@ export function DeveloperPage() {
       void loadChangelogAndAudit();
     } else if (activeTab === 'diagnostics' && !diagnostics) {
       void loadDiagnostics();
+    } else if (activeTab === 'database' && !dbTablesData) {
+      void loadDatabaseTables();
     }
   }, [
     activeTab,
@@ -734,6 +785,8 @@ export function DeveloperPage() {
     loadChangelogAndAudit,
     diagnostics,
     loadDiagnostics,
+    dbTablesData,
+    loadDatabaseTables,
   ]);
 
   const selectedDocMeta = useMemo(
@@ -875,6 +928,8 @@ export function DeveloperPage() {
       void loadRoadmap();
     } else if (activeTab === 'changelog') {
       void loadChangelogAndAudit();
+    } else if (activeTab === 'database') {
+      void loadDatabaseTables();
     } else {
       void loadDiagnostics();
     }
@@ -1011,6 +1066,20 @@ export function DeveloperPage() {
           >
             <Server className="h-4 w-4" />
             <span>Runtime &amp; Diagnostics</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('database')}
+            className={cn(
+              'flex items-center gap-2 border-b-2 py-2.5 text-sm transition-colors',
+              activeTab === 'database'
+                ? 'border-forest-900 font-medium text-forest-900'
+                : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800',
+            )}
+          >
+            <Database className="h-4 w-4" />
+            <span>Database &amp; Table Manager</span>
           </button>
         </nav>
       </div>
@@ -1991,15 +2060,13 @@ export function DeveloperPage() {
                   </div>
                   <dl className="divide-y divide-slate-100 px-4 py-1 text-xs">
                     <div className="flex items-center justify-between py-2.5">
-                      <dt className="font-mono text-slate-600">AUTO_SCHEMA_PUSH</dt>
-                      <dd className="font-mono font-medium text-slate-900">
-                        {diagnostics.configuration.autoSchemaPush}
-                      </dd>
-                    </div>
-                    <div className="flex items-center justify-between py-2.5">
-                      <dt className="font-mono text-slate-600">DB_FORCE_RESET</dt>
-                      <dd className="font-mono font-medium text-slate-900">
-                        {diagnostics.configuration.dbForceReset}
+                      <dt className="text-slate-600">Schema Management Mode</dt>
+                      <dd>
+                        <StatusTag
+                          variant="emerald"
+                          label={diagnostics.configuration.schemaManagementMode}
+                          mono
+                        />
                       </dd>
                     </div>
                     <div className="flex items-center justify-between py-2.5">
@@ -2146,6 +2213,523 @@ export function DeveloperPage() {
               </div>
             </>
           ) : null}
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* TAB 6: INTERACTIVE DATABASE & TABLE MANAGER (MODULE 13)           */}
+      {/* ================================================================= */}
+      {activeTab === 'database' && (
+        <div className="space-y-6">
+          {/* Prisma Schema Self-Heal & System Account Verifier Card */}
+          <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+            <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <Wrench className="h-4 w-4 text-forest-800" />
+                <div>
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-800">
+                    Prisma-Native Schema Self-Healing &amp; System Account Verifier
+                  </h2>
+                  <p className="text-[11px] text-slate-500">
+                    Synchronizes PostgreSQL tables, columns, enums, and indexes against{' '}
+                    <span className="font-mono text-slate-700">backend/prisma/schema.prisma</span>{' '}
+                    and verifies all 10 Protected System GL Accounts (1000–6000).
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                loading={syncingSchema}
+                onClick={async () => {
+                  setSyncingSchema(true);
+                  setErrorBanner(null);
+                  try {
+                    const res = await developerApi.syncSchema();
+                    setSchemaSyncReceipt(res);
+                    await loadDatabaseTables();
+                  } catch (err) {
+                    setErrorBanner(
+                      err instanceof Error
+                        ? err.message
+                        : 'Failed to execute Prisma schema self-heal.',
+                    );
+                  } finally {
+                    setSyncingSchema(false);
+                  }
+                }}
+              >
+                <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                Run Prisma Schema Self-Heal
+              </Button>
+            </div>
+
+            {schemaSyncReceipt && (
+              <div className="border-b border-slate-200 bg-emerald-50/70 p-4 text-xs text-emerald-950">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 font-semibold">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                    <span>
+                      Prisma Schema Self-Heal Completed ({schemaSyncReceipt.durationMs}ms) ·{' '}
+                      {schemaSyncReceipt.organizationsVerified} Organization(s) Verified
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSchemaSyncReceipt(null)}
+                    className="text-[11px] font-medium underline opacity-75 hover:opacity-100"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+                {schemaSyncReceipt.output && (
+                  <pre className="mt-2 max-h-40 overflow-x-auto rounded bg-obsidian-950 p-3 font-mono text-[11px] text-emerald-300">
+                    {schemaSyncReceipt.output}
+                  </pre>
+                )}
+              </div>
+            )}
+
+            {/* Permanently Protected Identity & System Tables Strip */}
+            {dbTablesData && (
+              <div className="p-4">
+                <div className="mb-2 flex items-center gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-700" />
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    Permanently Protected Identity &amp; Core Control Tables (Never Wiped)
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+                  {dbTablesData.protectedIdentityTables.map((pt) => (
+                    <div
+                      key={pt.tableName}
+                      className="rounded border border-emerald-200 bg-emerald-50/40 p-2.5 text-xs"
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="font-mono text-[11px] font-semibold text-emerald-950">
+                          {pt.tableName}
+                        </span>
+                        <StatusTag tone="emerald" label="PROTECTED" mono />
+                      </div>
+                      <p className="mt-1 font-medium text-slate-800">{pt.label}</p>
+                      <p className="mt-0.5 font-mono text-[11px] text-slate-600">
+                        Org: {pt.orgRowCount} · DB Total: {pt.globalRowCount}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Purge Completion Receipt Banner */}
+          {purgeReceipt && (
+            <div className="rounded-md border border-emerald-300 bg-emerald-50 p-4 text-xs text-emerald-950">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                  <span className="font-semibold">
+                    Purged {purgeReceipt.totalDeletedRows.toLocaleString()} row(s) across{' '}
+                    {purgeReceipt.tablesPurgedCount} table(s) (Scope: {purgeReceipt.scope})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPurgeReceipt(null)}
+                  className="text-[11px] font-medium underline opacity-75 hover:opacity-100"
+                >
+                  Dismiss
+                </button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {Object.entries(purgeReceipt.deletedCounts).map(([tbl, count]) => (
+                  <span
+                    key={tbl}
+                    className="rounded border border-emerald-200 bg-white px-2 py-0.5 font-mono text-[11px] text-emerald-900"
+                  >
+                    {tbl}: {count} deleted
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Selective Table Purge Workbench */}
+          {dbTablesLoading && !dbTablesData ? (
+            <div className="rounded-md border border-slate-200 bg-white p-6 text-xs text-slate-500">
+              Loading PostgreSQL table inventory &amp; live row counts…
+            </div>
+          ) : dbTablesData ? (
+            <div className="overflow-hidden rounded-md border border-slate-200 bg-white divide-y divide-slate-200">
+              {/* Scope Selector & Quick Presets Toolbar */}
+              <div className="p-4 space-y-4 bg-slate-50/70">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Selective Database Table Purge Workbench
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Select specific tables to clear test records. Parent selections automatically include required child line-item tables. Users, Organizations, and RBAC Memberships are always preserved.
+                    </p>
+                  </div>
+
+                  {/* Scope Toggle */}
+                  <div className="flex items-center gap-1 rounded border border-slate-300 bg-white p-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setPurgeScope('ORGANIZATION')}
+                      className={cn(
+                        'rounded px-3 py-1.5 font-medium transition-colors',
+                        purgeScope === 'ORGANIZATION'
+                          ? 'bg-forest-900 text-white'
+                          : 'text-slate-600 hover:text-slate-900',
+                      )}
+                    >
+                      Active Organization Only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPurgeScope('GLOBAL')}
+                      className={cn(
+                        'rounded px-3 py-1.5 font-medium transition-colors',
+                        purgeScope === 'GLOBAL'
+                          ? 'bg-rose-700 text-white'
+                          : 'text-slate-600 hover:text-slate-900',
+                      )}
+                    >
+                      Whole Database (All Orgs)
+                    </button>
+                  </div>
+                </div>
+
+                {/* 1-Click Selection Presets */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mr-1">
+                      Quick Presets:
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const txAndLogTables = dbTablesData.tables
+                          .filter((t) => t.domain !== 'MASTER_DATA')
+                          .map((t) => t.tableName);
+                        setSelectedTables(txAndLogTables);
+                      }}
+                    >
+                      Select All Transactions &amp; Logs (Keep Contacts, Items &amp; CoA)
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const apExpGl = dbTablesData.tables
+                          .filter(
+                            (t) =>
+                              t.domain === 'AP' ||
+                              t.domain === 'EXPENSES' ||
+                              t.domain === 'GL' ||
+                              t.domain === 'AUDIT',
+                          )
+                          .map((t) => t.tableName);
+                        setSelectedTables(apExpGl);
+                      }}
+                    >
+                      Select Bills, Expenses, Journals &amp; Logs
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setSelectedTables(
+                          dbTablesData.tables.map((t) => t.tableName),
+                        )
+                      }
+                    >
+                      Select All Clearable Tables
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedTables([])}
+                    >
+                      Clear Selection
+                    </Button>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    disabled={selectedTables.length === 0}
+                    onClick={() => setConfirmPurgeModalOpen(true)}
+                  >
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    Purge {selectedTables.length} Selected Table
+                    {selectedTables.length === 1 ? '' : 's'}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Domain-Grouped Table Checkboxes */}
+              <div className="p-4 space-y-6">
+                {(
+                  [
+                    {
+                      domain: 'AP' as DatabaseTableDomain,
+                      title: '1. Accounts Payable (Bills, POs, Vendor Credits & Payments Out)',
+                    },
+                    {
+                      domain: 'AR' as DatabaseTableDomain,
+                      title: '2. Accounts Receivable (Invoices, Quotes, Credit Notes & Receipts)',
+                    },
+                    {
+                      domain: 'EXPENSES' as DatabaseTableDomain,
+                      title: '3. Direct Bank Spend & Employee Expense Claims',
+                    },
+                    {
+                      domain: 'BANKING' as DatabaseTableDomain,
+                      title: '4. Bank Statement Feeds, Transfers & Recurring Schedules',
+                    },
+                    {
+                      domain: 'GL' as DatabaseTableDomain,
+                      title: '5. General Ledger Journal Entries & Lines',
+                    },
+                    {
+                      domain: 'MASTER_DATA' as DatabaseTableDomain,
+                      title: '6. Master Data (Contacts, Items, Cost Centres & Custom GL Accounts)',
+                    },
+                    {
+                      domain: 'AUDIT' as DatabaseTableDomain,
+                      title: '7. System Audit Trail Logs',
+                    },
+                  ] as const
+                ).map((group) => {
+                  const groupTables = dbTablesData.tables.filter(
+                    (t) => t.domain === group.domain,
+                  );
+                  if (groupTables.length === 0) return null;
+
+                  const allGroupSelected = groupTables.every((t) =>
+                    selectedTables.includes(t.tableName),
+                  );
+
+                  return (
+                    <div key={group.domain} className="space-y-2.5">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+                          {group.title}
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (allGroupSelected) {
+                              const groupNames = new Set(
+                                groupTables.map((t) => t.tableName),
+                              );
+                              setSelectedTables((prev) =>
+                                prev.filter((name) => !groupNames.has(name)),
+                              );
+                            } else {
+                              const additions = new Set(selectedTables);
+                              for (const t of groupTables) {
+                                additions.add(t.tableName);
+                                t.autoSelectChildren.forEach((c) =>
+                                  additions.add(c),
+                                );
+                              }
+                              setSelectedTables(Array.from(additions));
+                            }
+                          }}
+                          className="text-[11px] font-medium text-forest-800 hover:underline"
+                        >
+                          {allGroupSelected ? 'Deselect Group' : 'Select Group'}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+                        {groupTables.map((tbl) => {
+                          const checked = selectedTables.includes(tbl.tableName);
+                          const activeRowCount =
+                            purgeScope === 'ORGANIZATION'
+                              ? tbl.orgRowCount
+                              : tbl.globalRowCount;
+
+                          return (
+                            <label
+                              key={tbl.tableName}
+                              className={cn(
+                                'flex items-start justify-between gap-3 rounded border p-3 text-xs cursor-pointer transition-colors',
+                                checked
+                                  ? 'border-rose-300 bg-rose-50/40'
+                                  : 'border-slate-200 bg-white hover:bg-slate-50',
+                              )}
+                            >
+                              <div className="flex items-start gap-2.5 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => {
+                                    if (checked) {
+                                      setSelectedTables((prev) =>
+                                        prev.filter((n) => n !== tbl.tableName),
+                                      );
+                                    } else {
+                                      const next = new Set(selectedTables);
+                                      next.add(tbl.tableName);
+                                      tbl.autoSelectChildren.forEach((child) =>
+                                        next.add(child),
+                                      );
+                                      setSelectedTables(Array.from(next));
+                                    }
+                                  }}
+                                  className="mt-0.5 rounded border-slate-300 text-rose-700 focus:ring-rose-600"
+                                />
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="font-semibold text-slate-900">
+                                      {tbl.label}
+                                    </span>
+                                    <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-700">
+                                      {tbl.tableName}
+                                    </span>
+                                  </div>
+                                  <p className="mt-0.5 text-[11px] text-slate-500">
+                                    {tbl.description}
+                                  </p>
+                                  {tbl.autoSelectChildren.length > 0 && (
+                                    <p className="mt-1 font-mono text-[10px] text-amber-800">
+                                      Auto-includes:{' '}
+                                      {tbl.autoSelectChildren.join(', ')}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 text-right font-mono">
+                                <span
+                                  className={cn(
+                                    'inline-block rounded px-2 py-0.5 text-xs font-semibold tabular-nums',
+                                    activeRowCount > 0
+                                      ? 'bg-slate-900 text-white'
+                                      : 'bg-slate-100 text-slate-500',
+                                  )}
+                                >
+                                  {activeRowCount.toLocaleString()} rows
+                                </span>
+                                <span className="mt-0.5 block text-[10px] text-slate-400">
+                                  Org: {tbl.orgRowCount} · DB: {tbl.globalRowCount}
+                                </span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Confirmation Modal for Table Purge */}
+          <Modal
+            open={confirmPurgeModalOpen}
+            onClose={() => setConfirmPurgeModalOpen(false)}
+            title="Confirm Selective Database Table Purge"
+            description={
+              purgeScope === 'GLOBAL'
+                ? 'WARNING: You have selected WHOLE DATABASE (GLOBAL) scope. Rows in the selected tables will be permanently deleted across ALL organizations.'
+                : 'Rows in the selected tables will be permanently deleted for the active organization.'
+            }
+            size="lg"
+          >
+            <div className="space-y-4 text-xs">
+              <div className="rounded border border-amber-200 bg-amber-50 p-3 text-amber-950 flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold">
+                    Scope:{' '}
+                    {purgeScope === 'GLOBAL'
+                      ? 'Whole Database (All Organizations)'
+                      : 'Active Organization Only'}
+                  </p>
+                  <p className="mt-0.5 text-amber-800">
+                    Google OAuth Users (`users`), Organizations (`organizations`), RBAC Team Memberships (`organization_members`), and the 10 System GL Accounts (`1000`–`6000`) are strictly protected and will not be touched.
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Tables Scheduled for Purge ({selectedTables.length})
+                </p>
+                <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-2.5 rounded border border-slate-200 bg-slate-50">
+                  {selectedTables.map((t) => (
+                    <span
+                      key={t}
+                      className="rounded border border-rose-200 bg-white px-2 py-0.5 font-mono text-[11px] font-medium text-rose-900"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={purgingTables}
+                  onClick={() => setConfirmPurgeModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  loading={purgingTables}
+                  onClick={async () => {
+                    setPurgingTables(true);
+                    setErrorBanner(null);
+                    try {
+                      const res = await developerApi.purgeTables({
+                        scope: purgeScope,
+                        tables: selectedTables,
+                      });
+                      setPurgeReceipt(res);
+                      setConfirmPurgeModalOpen(false);
+                      setSelectedTables([]);
+                      await Promise.all([
+                        loadDatabaseTables(),
+                        loadDiagnostics(),
+                      ]);
+                    } catch (err) {
+                      setErrorBanner(
+                        err instanceof Error
+                          ? err.message
+                          : 'Failed to purge selected database tables.',
+                      );
+                      setConfirmPurgeModalOpen(false);
+                    } finally {
+                      setPurgingTables(false);
+                    }
+                  }}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Confirm &amp; Purge {selectedTables.length} Table
+                  {selectedTables.length === 1 ? '' : 's'}
+                </Button>
+              </div>
+            </div>
+          </Modal>
         </div>
       )}
     </div>

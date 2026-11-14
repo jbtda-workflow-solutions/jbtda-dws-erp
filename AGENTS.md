@@ -132,8 +132,6 @@ Every variable and secret must be explicitly defined. **No configuration values 
 | `DB_NAME` | Cloud Run Env | Required | Non-empty string (e.g. `erp`) | Prisma connection fails (database does not exist); `/healthz` returns `503 Service Unavailable` | PostgreSQL database name on the Cloud SQL instance. |
 | `FRONTEND_ORIGIN` | Cloud Run Env | Required if cross-origin | Valid URL string or comma-separated list of URLs (e.g. `https://erp.domain1.com,https://erp.domain2.com`) | CORS preflight checks reject cross-origin requests from unlisted origins | Allowed origin(s) for CORS in development/preview or multi-domain environments. In unified production, frontend and API share the same origin. |
 | `NODE_ENV` | Cloud Run Env | Required | `"production"` \| `"development"` | Defaults to development logging; cookie `Secure` flag may not be strictly enforced | Runtime environment mode. Must be set to `"production"` on Cloud Run. |
-| `AUTO_SCHEMA_PUSH` | Cloud Run Env | Required | `"true"` \| `"false"` (must be explicit) | Server throws error and aborts startup if missing, empty, or not strictly `"true"` or `"false"` | When `"true"`, Fastify startup runs `prisma db push --skip-generate --accept-data-loss` (or with `--force-reset`). Set to `"false"` in production. |
-| `DB_FORCE_RESET` | Cloud Run Env | Required | `"true"` \| `"false"` (must be explicit) | Server throws error and aborts startup if missing, empty, or not strictly `"true"` or `"false"` | When `"true"` alongside `AUTO_SCHEMA_PUSH="true"`, executes `prisma db push --skip-generate --force-reset` to drop and recreate all tables on boot. Set to `"false"` for standard operations. |
 | `PORT` | Cloud Run Env | Optional (Default: `8080`) | Numeric integer string (e.g. `"8080"`) | Container fails Cloud Run health check if not listening on the port Cloud Run expects | Port Fastify binds to. Automatically injected by Cloud Run. |
 | `HOST` | Cloud Run Env | Optional (Default: `"0.0.0.0"`) | IP string (e.g. `"0.0.0.0"`) | Binding to `127.0.0.1` causes container to be unreachable from outside | Host interface Fastify binds to. |
 | `FRONTEND_DIST_PATH` | Cloud Run Env | Optional (Default: auto-discovery) | Valid directory path containing `index.html` (e.g. `"/app/frontend/dist"`) | Fastify logs warning and serves API-only fallback HTML page on root; SPA routes return 404 | Custom filesystem path for compiled frontend SPA assets. |
@@ -162,10 +160,9 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │   │   ├── migrations/
 │   │   │   ├── 001_init/
 │   │   │   │   └── migration.sql # Initial PostgreSQL schema DDL (14 tables, 8 enums)
-│   │   │   ├── 002_enterprise_foundation/
-│   │   │   │   └── migration.sql # Unified 8-Module Enterprise PostgreSQL DDL
-│   │   │   └── rebuild_all_schema.sql # Complete standalone PostgreSQL DDL for clean rebuilds
-│   │   └── schema.prisma      # Unified Enterprise PostgreSQL schema, enums, models
+│   │   │   └── 002_enterprise_foundation/
+│   │   │       └── migration.sql # Unified 8-Module Enterprise PostgreSQL DDL
+│   │   └── schema.prisma      # Unified Enterprise PostgreSQL schema, enums, models (Single Source of Truth)
 │   └── src/
 │       ├── lib/
 │       │   ├── aba.ts             # APCA Cemtex 120-character .ABA batch payment generator
@@ -173,11 +170,11 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │       │   ├── audit.ts           # Append-only immutable system audit log helper
 │       │   ├── gst.ts             # Integer-cent Australian GST calculation utilities
 │       │   ├── ledger-posting.ts  # Double-entry GL posting, anti-double-reversal, bidirectional sub-ledger sync & lock date validation
-│       │   ├── schema-sync.ts     # Idempotent startup DDL & system account synchronizer
+│       │   ├── schema-sync.ts     # Prisma-native schema self-healer (prisma db push) & system account verifier
 │       │   └── system-accounts.ts # 10 Protected System GL Accounts definition & seeder
 │       ├── plugins/
 │       │   ├── auth.ts        # Fastify auth plugin, session cookies, 7-role requireRole hooks
-│       │   └── prisma.ts      # Fastify PrismaClient plugin with Cloud SQL discovery & auto-sync
+│       │   └── prisma.ts      # Fastify PrismaClient plugin with Cloud SQL discovery & Prisma-native self-heal
 │       ├── routes/
 │       │   ├── accounts.ts        # GET/POST/PATCH /api/v1/accounts, decommission sweep, tracking categories
 │       │   ├── auth.ts            # POST /api/v1/auth/google, GET /me, POST /switch-organization, DELETE /logout
@@ -188,7 +185,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │       │   ├── contacts.ts        # GET/POST/PATCH/DELETE /api/v1/contacts, GET /:id/360 (includes Direct Spend/Receive Money)
 │       │   ├── credit-notes.ts    # GET/POST/DELETE /api/v1/credit-notes, /:id/issue (contra-AR GL), /:id/allocate, /:id/void
 │       │   ├── dashboard.ts       # GET /api/v1/dashboard/summary (100% live PostgreSQL KPI aggregations)
-│       │   ├── developer.ts       # GET /api/v1/developer/* (Allowlisted docs index/content, API catalog, roadmap parser, safe diagnostics)
+│       │   ├── developer.ts       # GET/POST /api/v1/developer/* (Allowlisted docs, API catalog, roadmap, diagnostics, Prisma self-heal & table purge)
 │       │   ├── direct-transactions.ts # GET/POST/PATCH/DELETE /api/v1/direct-transactions (Spend/Receive Money, atomic GL sync/reversal)
 │       │   ├── expense-claims.ts  # GET/POST/PATCH/DELETE /api/v1/expense-claims, approve GL, void/revert, pay & reverse-payment
 │       │   ├── invoices.ts        # GET/POST/PATCH/DELETE /api/v1/invoices, edit & re-post, revert-to-draft, void, payment reversal & recurring
@@ -208,7 +205,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │   ├── INTEGRATIONS.md        # Async webhook payloads and n8n contracts
 │   ├── PLUGINS.md             # Enterprise Plug-In Module Contract (FLEET, INVENTORY, ATTACHMENTS, N8N)
 │   ├── SECURITY.md            # Auth mechanics, 7-role RBAC matrix, and crypto standards
-│   └── STAGES_ROADMAP.md      # 12-Module Deep-Build Execution Plan & completion checklist
+│   └── STAGES_ROADMAP.md      # 13-Module Deep-Build Execution Plan & completion checklist
 └── frontend/                  # React SPA (Vite + TypeScript + Tailwind)
     ├── index.html             # HTML entry point with Inter & JetBrains Mono font links
     ├── package.json           # Frontend dependencies and scripts
@@ -247,7 +244,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
             ├── BillsPage.tsx         # Accounts Payable bills (list, line items, payments out, GL modal)
             ├── ContactsPage.tsx      # Contacts directory (list, filter, create, edit modal)
             ├── DashboardPage.tsx     # Executive dashboard with live working capital KPIs & actionable approvals queue
-            ├── DeveloperPage.tsx     # Module 9 Developer & Agent Context Console (docs viewer, roadmap, changelog, diagnostics)
+            ├── DeveloperPage.tsx     # Module 9 & 13 Developer Console (docs viewer, API catalog, roadmap, diagnostics & Database/Table Manager)
             ├── ExpensesPage.tsx      # Module 6 Direct spend money, expense claims & reimbursement payouts
             ├── InvoicesPage.tsx      # Customer Invoices (list, draft, issue with GL posting, payments in)
             ├── ItemsPage.tsx         # Products & Services catalog workbench (list, filter, create, edit, drawer)

@@ -2653,8 +2653,7 @@ export interface DeveloperDiagnosticsResponse {
     serverTimestamp: string;
   };
   configuration: {
-    autoSchemaPush: string;
-    dbForceReset: string;
+    schemaManagementMode: string;
     frontendDistBundled: boolean;
     docsAllowlistCount: number;
     cloudSqlSocketConfigured: boolean;
@@ -2695,6 +2694,54 @@ export interface DeveloperDiagnosticsResponse {
   };
 }
 
+export interface ProtectedDatabaseTableInfo {
+  tableName: string;
+  label: string;
+  orgRowCount: number;
+  globalRowCount: number;
+  reason: string;
+}
+
+export type DatabaseTableDomain =
+  | 'AP'
+  | 'AR'
+  | 'EXPENSES'
+  | 'BANKING'
+  | 'GL'
+  | 'MASTER_DATA'
+  | 'AUDIT';
+
+export interface ClearableDatabaseTableInfo {
+  tableName: string;
+  label: string;
+  domain: DatabaseTableDomain;
+  description: string;
+  orgRowCount: number;
+  globalRowCount: number;
+  autoSelectChildren: string[];
+  recommendedCompanions: string[];
+}
+
+export interface DeveloperDatabaseTablesResponse {
+  protectedIdentityTables: ProtectedDatabaseTableInfo[];
+  tables: ClearableDatabaseTableInfo[];
+}
+
+export interface SchemaSelfHealResponse {
+  success: boolean;
+  durationMs: number;
+  organizationsVerified: number;
+  output: string;
+}
+
+export interface PurgeDatabaseTablesResponse {
+  success: boolean;
+  scope: 'ORGANIZATION' | 'GLOBAL';
+  tablesPurgedCount: number;
+  totalDeletedRows: number;
+  deletedCounts: Record<string, number>;
+}
+
 export const developerApi = {
   listDocs: () =>
     request<{ files: DeveloperDocMeta[] }>('GET', '/developer/docs'),
@@ -2713,6 +2760,22 @@ export const developerApi = {
 
   getDiagnostics: () =>
     request<DeveloperDiagnosticsResponse>('GET', '/developer/diagnostics'),
+
+  getDatabaseTables: () =>
+    request<DeveloperDatabaseTablesResponse>('GET', '/developer/database/tables'),
+
+  syncSchema: () =>
+    request<SchemaSelfHealResponse>('POST', '/developer/database/sync-schema'),
+
+  purgeTables: (data: {
+    scope: 'ORGANIZATION' | 'GLOBAL';
+    tables: string[];
+  }) =>
+    request<PurgeDatabaseTablesResponse>(
+      'POST',
+      '/developer/database/purge-tables',
+      data,
+    ),
 };
 
 // ---------------------------------------------------------------------------

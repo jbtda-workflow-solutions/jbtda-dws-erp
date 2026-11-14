@@ -531,3 +531,33 @@ Development proceeds strictly **one module at a time**. We complete the backend 
       - Resolved entity badges (matched Contact, GL Account, Cost Centre, Tax Treatment, and calculated AUD cent totals).
       - Exact row/column error messages for any unrecognized Contact, Account, Cost Centre, unbalanced journal, or lock-date violation.
     - **Step 2 — Commit Valid Records:** Action buttons to either **Re-Upload Corrected CSV** or **Commit Valid Records ($N$)** via `POST /api/v1/bulk-import/commit`, displaying a completion receipt with links to inspect the newly imported records.
+
+---
+
+### Module 13: Prisma-Native Schema Self-Healing & Interactive Developer Database Management Workbench (✅ COMPLETED)
+**Objective:** Retire legacy raw-SQL rebuild scripts (`rebuild_all_schema.sql`, raw DDL statements in `schema-sync.ts`) and mandatory database-reset environment variables (`AUTO_SCHEMA_PUSH`, `DB_FORCE_RESET`) in favor of automatic Prisma-native schema self-healing (`prisma db push --skip-generate --accept-data-loss` + system GL account seeding); and build an interactive, dependency-aware **Database & Table Manager** inside the `/developer` console (`ADMIN` only) supporting both Organization-scoped and Global database table purges while permanently protecting user identities and workspace memberships.
+
+- [x] **13.1 Prisma-Native Schema Self-Healing & Retirement of Raw SQL / Reset Env Vars (`prisma.ts`, `schema-sync.ts`, `Dockerfile`, `AGENTS.md`, `docs/ARCHITECTURE.md`)**:
+  - Remove mandatory `AUTO_SCHEMA_PUSH` and `DB_FORCE_RESET` startup validation checks from `backend/src/plugins/prisma.ts`, `AGENTS.md`, and `docs/ARCHITECTURE.md` so container startup never fails due to missing reset flags.
+  - Ensure `backend/prisma/schema.prisma` is the single canonical source of truth: on container startup, `prisma.ts` automatically runs `npx prisma db push --skip-generate --accept-data-loss` to self-heal tables, columns, enums, and indexes, followed by `verifyAllOrganizationSystemAccounts(prisma)` to verify the 10 protected system GL accounts (`1000`–`6000`).
+  - Delete `backend/prisma/migrations/rebuild_all_schema.sql` and replace the 500+ lines of raw `ALTER TABLE` / `CREATE TABLE` SQL in `backend/src/lib/schema-sync.ts` with a clean Prisma schema-sync & system-account verifier callable both at boot and on-demand via API.
+- [x] **13.2 Backend Developer Database Inspection, On-Demand Schema Sync & Selective Table Purge API (`backend/src/routes/developer.ts`)**:
+  - RBAC-restricted to `ADMIN` (`requireRole('ADMIN')`).
+  - `GET /api/v1/developer/database/tables`: Returns live row counts for all clearable ERP PostgreSQL tables across both scopes (`orgRowCount` for the active `organizationId` and `globalRowCount` across the entire database), grouped by domain (`AP`, `AR`, `EXPENSES`, `BANKING`, `GL`, `MASTER_DATA`, `AUDIT`) along with explicit parent/child dependency metadata and a list of permanently protected identity tables (`users`, `organizations`, `organization_members`, `organization_invites`).
+  - `POST /api/v1/developer/database/sync-schema`: Triggers an on-demand Prisma schema self-heal (`npx prisma db push --skip-generate --accept-data-loss`) and re-seeds any missing protected system GL accounts (`1000`–`6000`), returning execution status, duration, and output logs.
+  - `POST /api/v1/developer/database/purge-tables`: Accepts `{ scope: 'ORGANIZATION' | 'GLOBAL', tables: string[] }`:
+    - **Hard Identity Guard:** Rejects or strips any attempt to target `users`, `organizations`, `organization_members`, or `organization_invites` so logins and workspace memberships are never affected.
+    - **System Account Guard:** When `accounts` is selected, deletes only custom non-system accounts (`isSystem: false`), preserving the 10 protected system GL accounts (`1000`–`6000`).
+    - **Safe Relational Unlinking & Cascade Ordering:** Executes inside an atomic Prisma transaction in strict child-to-parent topological order. Automatically unlinks foreign keys where needed (e.g., if `journal_entries` is wiped while `bank_statement_lines` is kept, resets `bank_statement_lines.is_reconciled = false` and `matched_journal_id = null`; if `bills` is wiped while `purchase_orders` is kept, unlinks `bills.purchase_order_id`).
+    - Writes an immutable `AuditLog` event (`action: 'DATABASE_TABLE_PURGE'`) unless `audit_logs` itself was selected for purge after execution.
+- [x] **13.3 Interactive Database & Table Manager UI in Developer Console (`frontend/src/pages/DeveloperPage.tsx` & `frontend/src/api/client.ts`)**:
+  - Add a dedicated **Database & Table Manager** tab in `/developer` (`DeveloperPage.tsx`):
+    - **Prisma Schema Self-Heal Card:** Displays schema sync status and a 1-click **"Run Prisma Schema Self-Heal & Verify System Accounts"** button.
+    - **Purge Scope Toggle:** Switch between **Active Organization Only** (`where: { organizationId }`) and **Whole Database (All Organizations)** (`GLOBAL`), with a prominent badge confirming `users`, `organizations`, and `organization_members` are permanently protected.
+    - **1-Click Selection Presets:**
+      - *Select All Transactional & Log Tables (Keep Contacts, Items & CoA)*
+      - *Select AP, Expenses & Journals Only*
+      - *Select All Clearable Tables*
+      - *Clear Selection*
+    - **Dependency-Aware Table Grid:** Checkboxes for every table showing live `Org Rows` and `Total DB Rows`. Selecting a parent table (e.g., `bills`, `invoices`, `journal_entries`, `direct_transactions`, `expense_claims`, `contacts`) automatically selects required child/line tables and displays clear dependency notices.
+    - **Confirmation Modal & Execution Receipt:** Requires explicit confirmation before executing the purge, then displays per-table deleted row counts and refreshes live diagnostics.

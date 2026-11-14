@@ -4,6 +4,25 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.25.0] — 2026-11-15 — Module 13: Prisma-Native Schema Self-Healing & Interactive Developer Database Management Workbench
+
+### Changed
+- **Prisma-Native Schema Self-Healing & Retirement of Raw SQL / Reset Env Vars (`13.1` — `backend/src/plugins/prisma.ts`, `backend/src/lib/schema-sync.ts`, `AGENTS.md`, `docs/ARCHITECTURE.md`)**:
+  - Removed mandatory `AUTO_SCHEMA_PUSH` and `DB_FORCE_RESET` startup validation checks from `backend/src/plugins/prisma.ts`, `AGENTS.md`, and `docs/ARCHITECTURE.md` so container startup never fails if those variables are omitted.
+  - Replaced the 500+ lines of raw `ALTER TABLE` / `CREATE TABLE` SQL in `backend/src/lib/schema-sync.ts` with `runStartupSchemaSync()` (`npx prisma db push --skip-generate --accept-data-loss` + `verifyAllOrganizationSystemAccounts()`), making `backend/prisma/schema.prisma` the single canonical source of truth.
+- **Removed Legacy Raw Rebuild Script (`13.1`)**:
+  - Deleted `backend/prisma/migrations/rebuild_all_schema.sql`.
+
+### Added
+- **Developer Database Inspection, On-Demand Schema Self-Heal & Selective Table Purge API (`13.2` — `backend/src/routes/developer.ts`)**:
+  - `GET /api/v1/developer/database/tables` (`ADMIN` only): Returns live row counts (`orgRowCount` for the active organization and `globalRowCount` across the entire database) and parent/child dependency metadata for all 26 clearable ERP PostgreSQL tables, alongside the 5 permanently protected identity/system tables (`users`, `organizations`, `organization_members`, `organization_invites`, and `accounts (is_system = true)`).
+  - `POST /api/v1/developer/database/sync-schema` (`ADMIN` only): Triggers an on-demand Prisma schema self-heal (`prisma db push --skip-generate --accept-data-loss`) and re-verifies the 10 protected system GL accounts (`1000`–`6000`).
+  - `POST /api/v1/developer/database/purge-tables` (`ADMIN` only): Executes an atomic, dependency-aware selective table purge (`scope: 'ORGANIZATION' | 'GLOBAL'`) in strict child-to-parent topological order, safely unlinking kept bank statement lines or invoices/bills while permanently protecting user logins, organizations, RBAC memberships, and system GL accounts.
+- **Interactive Database & Table Manager Tab in Developer Console (`13.3` — `frontend/src/pages/DeveloperPage.tsx`, `frontend/src/api/client.ts`)**:
+  - Added the **Database & Table Manager** tab in `/developer` featuring an on-demand Prisma Schema Self-Heal card, permanently protected identity table badges, a scope toggle (`Active Organization Only` vs. `Whole Database (All Orgs)`), 1-click selection presets (*Select All Transactions & Logs (Keep Contacts, Items & CoA)*, *Select Bills, Expenses, Journals & Logs*, *Select All Clearable Tables*), dependency-aware table checkboxes with live row counts, and a confirmation modal with execution receipts.
+
+---
+
 ## [0.24.0] — 2026-11-14 — Module 12: Centralized Admin Bulk CSV Import Engine, Context-Aware Bank Statement Upload & Multi-Mode Contact-Linked Reconciliation
 
 ### Added
