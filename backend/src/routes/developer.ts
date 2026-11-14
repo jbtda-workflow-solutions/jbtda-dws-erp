@@ -42,6 +42,21 @@ export interface RoadmapModuleSummary {
   items: RoadmapChecklistItem[];
 }
 
+export interface ApiEndpointItem {
+  verb: string;
+  path: string;
+  authRequired: string;
+  rbacScope: string;
+  purpose: string;
+}
+
+export interface ApiEndpointGroup {
+  sectionNumber: number;
+  title: string;
+  basePath: string;
+  endpoints: ApiEndpointItem[];
+}
+
 const ROOT_ALLOWLIST = ['AGENTS.md', 'AGENT_SPECIFICATION.md'] as const;
 
 const DOCS_PRIORITY_ORDER: string[] = [
@@ -247,6 +262,117 @@ function parseStagesRoadmap(markdown: string): RoadmapModuleSummary[] {
   return modules;
 }
 
+function parseArchitectureApiCatalog(markdown: string): ApiEndpointGroup[] {
+  const lines = markdown.split(/\r?\n/);
+  const groups: ApiEndpointGroup[] = [];
+
+  let inDirectory = false;
+  let currentGroup: ApiEndpointGroup | null = null;
+  let isInfraTable = false;
+  let headerSeen = false;
+  let separatorSeen = false;
+
+  const stripBackticks = (s: string) => s.replace(/`/g, '').trim();
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+
+    if (trimmed === '## Master Monolith Entrypoint Directory') {
+      inDirectory = true;
+      continue;
+    }
+
+    if (!inDirectory) continue;
+
+    // Stop if another top-level H2 section begins
+    if (/^##\s+/.test(trimmed)) {
+      break;
+    }
+
+    const sectionMatch = /^###\s+(\d+)\.\s+(.+)$/.exec(trimmed);
+    if (sectionMatch && sectionMatch[1] && sectionMatch[2]) {
+      const sectionNumber = Number(sectionMatch[1]);
+      const rawTitle = sectionMatch[2].trim();
+
+      // Skip Frontend Client Routes table (non-API SPA routes)
+      if (/Frontend Client Routes/i.test(rawTitle)) {
+        currentGroup = null;
+        continue;
+      }
+
+      const pathMatch = /\(([^)]+)\)\s*$/.exec(rawTitle);
+      const basePath = pathMatch && pathMatch[1]
+        ? stripBackticks(pathMatch[1])
+        : 'System / Root';
+      const cleanTitle = rawTitle.replace(/\s*\([^)]+\)\s*$/, '').trim();
+
+      currentGroup = {
+        sectionNumber,
+        title: cleanTitle,
+        basePath,
+        endpoints: [],
+      };
+      groups.push(currentGroup);
+      isInfraTable = sectionNumber === 1;
+      headerSeen = false;
+      separatorSeen = false;
+      continue;
+    }
+
+    if (!currentGroup) continue;
+
+    if (!trimmed.startsWith('|')) {
+      continue;
+    }
+
+    if (!headerSeen) {
+      headerSeen = true;
+      continue;
+    }
+
+    if (!separatorSeen) {
+      separatorSeen = true;
+      continue;
+    }
+
+    const cells = trimmed
+      .replace(/^\|/, '')
+      .replace(/\|$/, '')
+      .split('|')
+      .map((c) => c.trim());
+
+    if (cells.length < 5) continue;
+
+    const verb = stripBackticks(cells[0] ?? '');
+    const endpointPath = stripBackticks(cells[1] ?? '');
+    const authRequired = stripBackticks(cells[2] ?? '');
+
+    if (isInfraTable) {
+      const purpose = (cells[3] ?? '').replace(/<br\s*\/?>/gi, ' · ');
+      const responseInfo = stripBackticks((cells[4] ?? '').replace(/<br\s*\/?>/gi, ' | '));
+      currentGroup.endpoints.push({
+        verb,
+        path: endpointPath,
+        authRequired,
+        rbacScope: 'Public / Infra',
+        purpose: responseInfo ? `${purpose} (${responseInfo})` : purpose,
+      });
+    } else {
+      const rbacScope = stripBackticks(cells[3] ?? '');
+      const purpose = (cells[4] ?? '').replace(/<br\s*\/?>/gi, ' · ');
+      currentGroup.endpoints.push({
+        verb,
+        path: endpointPath,
+        authRequired,
+        rbacScope,
+        purpose,
+      });
+    }
+  }
+
+  return groups;
+}
+
 function hasFrontendDistBundle(): boolean {
   const repoRoot = resolveRepoRoot();
   const candidates = [
@@ -365,6 +491,56 @@ export const developerRoutes: FastifyPluginAsync = async (fastify) => {
         pendingChecklistItems,
         overallCompletionPercent,
         modules,
+      };
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // GET /api/v1/developer/api-catalog
+  // Parses docs/ARCHITECTURE.md into a structured API endpoint reference catalog
+  // -------------------------------------------------------------------------
+  fastify.get(
+    '/api/v1/developer/api-catalog',
+    { preHandler: [requireRole('ADMIN')] },
+    async (_request, reply) => {
+      const allowlist = buildAllowlistedDocsMap();
+      const archPath = allowlist.get('docs/ARCHITECTURE.md');
+
+      if (!archPath) {
+        return reply.code(404).send({
+          error: 'docs/ARCHITECTURE.md is not available in the runtime bundle.',
+        });
+      }
+
+      const stat = fs.statSync(archPath);
+      const markdown = fs.readFileSync(archPath, 'utf8');
+      const groups = parseArchitectureApiCatalog(markdown);
+
+      const allEndpoints = groups.flatMap((g) => g.endpoints);
+      const verbCounts: Record<string, number> = {};
+      let publicCount = 0;
+      let adminOnlyCount = 0;
+
+      for (const ep of allEndpoints) {
+        const v = ep.verb.toUpperCase();
+        verbCounts[v] = (verbCounts[v] ?? 0) + 1;
+        if (/public|no\s*\(public\)/i.test(ep.authRequired)) {
+          publicCount += 1;
+        }
+        if (ep.rbacScope.trim() === 'ADMIN') {
+          adminOnlyCount += 1;
+        }
+      }
+
+      return {
+        sourcePath: 'docs/ARCHITECTURE.md',
+        lastModified: stat.mtime.toISOString(),
+        totalGroups: groups.length,
+        totalEndpoints: allEndpoints.length,
+        publicEndpointsCount: publicCount,
+        adminOnlyEndpointsCount: adminOnlyCount,
+        verbCounts,
+        groups,
       };
     },
   );

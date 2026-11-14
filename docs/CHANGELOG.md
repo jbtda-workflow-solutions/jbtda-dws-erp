@@ -4,6 +4,19 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.21.1] — 2026-11-14 — Module 9 API Reference & Endpoint Catalog
+
+### Added
+- **Backend API Catalog Endpoint (`backend/src/routes/developer.ts`)**:
+  - Added `GET /api/v1/developer/api-catalog` (`ADMIN` only), deterministically parsing `docs/ARCHITECTURE.md` (`Master Monolith Entrypoint Directory`) into structured domain groups, HTTP verb counts, public/admin counts, auth requirements, RBAC scopes, and endpoint descriptions.
+- **Frontend API Reference Tab (`frontend/src/pages/DeveloperPage.tsx`, `frontend/src/api/client.ts`)**:
+  - Added `developerApi.getApiCatalog()` and the **API Reference** tab in `/developer` featuring KPI summaries, HTTP verb (`GET`/`POST`/`PATCH`/`DELETE`) and access scope (`PUBLIC`/`ADMIN`) filters, full-text search, collapsible domain tables, and 1-click endpoint path copy.
+
+### Changed
+- `docs/ARCHITECTURE.md` (Section 20) and `docs/STAGES_ROADMAP.md` (Module 9): Documented `GET /api/v1/developer/api-catalog` and the API Reference tab.
+
+---
+
 ## [0.21.0] — 2026-11-14 — Module 9: Developer & Agent Context Interface (`/developer`)
 
 ### Added

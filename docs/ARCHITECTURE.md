@@ -319,6 +319,7 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `GET` | `/api/v1/developer/docs` | Cookie Session | `ADMIN` | Returns the strictly allowlisted index of repository governance and technical Markdown documentation (`AGENTS.md`, `AGENT_SPECIFICATION.md`, `docs/*.md`) with file size, line count, category, and modification metadata. Zero arbitrary directory traversal. |
 | `GET` | `/api/v1/developer/docs/content` | Cookie Session | `ADMIN` | Returns raw Markdown content and metadata for a whitelisted documentation key (`?path=AGENTS.md` or `?path=docs/ARCHITECTURE.md`). Rejects any unindexed path with `404 Not Found`. |
 | `GET` | `/api/v1/developer/roadmap-summary` | Cookie Session | `ADMIN` | Deterministically parses `docs/STAGES_ROADMAP.md` into structured module progress metrics and completed/pending checklist gates. |
+| `GET` | `/api/v1/developer/api-catalog` | Cookie Session | `ADMIN` | Deterministically parses `docs/ARCHITECTURE.md` (`Master Monolith Entrypoint Directory`) into structured domain groups, HTTP verbs, paths, auth requirements, RBAC scopes, and endpoint descriptions. |
 | `GET` | `/api/v1/developer/diagnostics` | Cookie Session | `ADMIN` | Returns safe, non-secret container runtime telemetry, `SELECT 1` PostgreSQL latency, multi-tenant entity counts (`where: { organizationId }`), active workspace governance flags, and boolean-only secret presence checks (strictly redacting `DB_PASSWORD`, `SESSION_SECRET`, and `WEBHOOK_SECRET` values). |
 
 ### 21. Frontend Client Routes (`frontend/src/App.tsx`)

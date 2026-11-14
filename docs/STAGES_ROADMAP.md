@@ -379,10 +379,12 @@ Development proceeds strictly **one module at a time**. We complete the backend 
   - `GET /api/v1/developer/docs`: Whitelisted directory index of repository documentation (`AGENTS.md`, `AGENT_SPECIFICATION.md`, `docs/*.md`), returning file metadata (path, title, last modified timestamp, size). Strictly no arbitrary filesystem traversal outside the allowlisted documentation paths.
   - `GET /api/v1/developer/docs/content?path=...`: Returns raw Markdown content for a whitelisted documentation file.
   - `GET /api/v1/developer/roadmap-summary`: Parses `docs/STAGES_ROADMAP.md` into structured module completion progress (completed vs. pending checklist counts per module).
+  - `GET /api/v1/developer/api-catalog`: Deterministically parses `docs/ARCHITECTURE.md` into a structured, searchable API endpoint reference catalog grouped by service domain with HTTP verb, path, auth, RBAC scope, and side-effect metadata.
   - `GET /api/v1/developer/diagnostics`: Safe, non-secret runtime metadata (Node version, `NODE_ENV`, active `enabledModules`, database connectivity status, and sanitized feature flags—strictly redacting all secrets such as `DB_PASSWORD`, `SESSION_SECRET`, `WEBHOOK_SECRET`).
   - Ensure `Dockerfile` copies `AGENTS.md`, `AGENT_SPECIFICATION.md`, and `docs/` into the runtime image so the documentation endpoints work in Cloud Run.
 - [x] **9.2 Module 9 Frontend UI (`/developer`)**:
   - **Context & Docs Viewer Tab**: Split-pane Markdown reader with file sidebar (`AGENTS.md`, `AGENT_SPECIFICATION.md`, `STAGES_ROADMAP.md`, `CHANGELOG.md`, `ARCHITECTURE.md`, `DATABASE_SCHEMA.md`, `SECURITY.md`, `PLUGINS.md`, `DESIGN_SYSTEM.md`, `INTEGRATIONS.md`), full-text search, and clean rendered Markdown + raw view toggle.
+  - **API Reference Tab**: Searchable, filterable API endpoint catalog (`GET`/`POST`/`PATCH`/`DELETE`, Public/`ADMIN` scope filters, domain collapsible groups, and 1-click path copy) powered by `GET /api/v1/developer/api-catalog`.
   - **Roadmap Tracker Tab**: Visual progress overview of all modules and checklist items parsed from `STAGES_ROADMAP.md`.
   - **Changelog & Audit Feed Tab**: Chronological release/changelog viewer paired with recent system audit log events.
   - **Runtime & Environment Diagnostics Tab**: Read-only view of safe runtime flags, database health, and enabled organization modules.

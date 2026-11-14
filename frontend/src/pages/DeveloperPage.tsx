@@ -17,6 +17,7 @@ import {
   Code2,
   Eye,
   Lock,
+  Network,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -25,6 +26,7 @@ import {
   type DeveloperDocMeta,
   type DocCategory,
   type RoadmapSummaryResponse,
+  type ApiCatalogResponse,
   type DeveloperDiagnosticsResponse,
   type AuditLogEntry,
 } from '@/api/client';
@@ -33,7 +35,7 @@ import { Input } from '@/components/ui/Input';
 import { StatusTag } from '@/components/ui/StatusTag';
 import { cn } from '@/lib/utils';
 
-type DeveloperTab = 'docs' | 'roadmap' | 'changelog' | 'diagnostics';
+type DeveloperTab = 'docs' | 'api' | 'roadmap' | 'changelog' | 'diagnostics';
 
 interface ParsedChangelogRelease {
   version: string;
@@ -544,6 +546,15 @@ export function DeveloperPage() {
   const [diagnostics, setDiagnostics] = useState<DeveloperDiagnosticsResponse | null>(null);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState<boolean>(false);
 
+  // API Reference tab state
+  const [apiCatalog, setApiCatalog] = useState<ApiCatalogResponse | null>(null);
+  const [apiCatalogLoading, setApiCatalogLoading] = useState<boolean>(false);
+  const [apiSearch, setApiSearch] = useState<string>('');
+  const [apiVerbFilter, setApiVerbFilter] = useState<'ALL' | 'GET' | 'POST' | 'PATCH' | 'DELETE'>('ALL');
+  const [apiAccessFilter, setApiAccessFilter] = useState<'ALL' | 'PUBLIC' | 'ADMIN'>('ALL');
+  const [expandedApiGroups, setExpandedApiGroups] = useState<Record<number, boolean>>({});
+  const [copiedEndpointKey, setCopiedEndpointKey] = useState<string | null>(null);
+
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   const loadDocsIndex = useCallback(async () => {
@@ -675,14 +686,39 @@ export function DeveloperPage() {
     }
   }, [isAdmin]);
 
+  const loadApiCatalog = useCallback(async () => {
+    if (!isAdmin) return;
+    setApiCatalogLoading(true);
+    setErrorBanner(null);
+    try {
+      const res = await developerApi.getApiCatalog();
+      setApiCatalog(res);
+      setExpandedApiGroups((prev) => {
+        if (Object.keys(prev).length > 0) return prev;
+        const initial: Record<number, boolean> = {};
+        for (const g of res.groups) {
+          initial[g.sectionNumber] = true;
+        }
+        return initial;
+      });
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : 'Failed to load API catalog.');
+    } finally {
+      setApiCatalogLoading(false);
+    }
+  }, [isAdmin]);
+
   useEffect(() => {
     void loadDocsIndex();
     void loadRoadmap();
-  }, [loadDocsIndex, loadRoadmap]);
+    void loadApiCatalog();
+  }, [loadDocsIndex, loadRoadmap, loadApiCatalog]);
 
   useEffect(() => {
     if (activeTab === 'docs' && selectedDocPath) {
       void loadDocContent(selectedDocPath);
+    } else if (activeTab === 'api' && !apiCatalog) {
+      void loadApiCatalog();
     } else if (activeTab === 'changelog' && !changelogContent) {
       void loadChangelogAndAudit();
     } else if (activeTab === 'diagnostics' && !diagnostics) {
@@ -692,6 +728,8 @@ export function DeveloperPage() {
     activeTab,
     selectedDocPath,
     loadDocContent,
+    apiCatalog,
+    loadApiCatalog,
     changelogContent,
     loadChangelogAndAudit,
     diagnostics,
@@ -772,6 +810,54 @@ export function DeveloperPage() {
     return roadmap.modules;
   }, [roadmap, roadmapFilter]);
 
+  const filteredApiGroups = useMemo(() => {
+    if (!apiCatalog) return [];
+    const q = apiSearch.trim().toLowerCase();
+
+    return apiCatalog.groups
+      .map((group) => {
+        const matchingEndpoints = group.endpoints.filter((ep) => {
+          if (apiVerbFilter !== 'ALL' && ep.verb.toUpperCase() !== apiVerbFilter) {
+            return false;
+          }
+          if (
+            apiAccessFilter === 'PUBLIC' &&
+            !/public|no\s*\(public\)/i.test(ep.authRequired)
+          ) {
+            return false;
+          }
+          if (apiAccessFilter === 'ADMIN' && ep.rbacScope.trim() !== 'ADMIN') {
+            return false;
+          }
+          if (!q) return true;
+          return (
+            ep.path.toLowerCase().includes(q) ||
+            ep.verb.toLowerCase().includes(q) ||
+            ep.rbacScope.toLowerCase().includes(q) ||
+            ep.purpose.toLowerCase().includes(q) ||
+            group.title.toLowerCase().includes(q) ||
+            group.basePath.toLowerCase().includes(q)
+          );
+        });
+        return { ...group, endpoints: matchingEndpoints };
+      })
+      .filter((group) => group.endpoints.length > 0);
+  }, [apiCatalog, apiSearch, apiVerbFilter, apiAccessFilter]);
+
+  const filteredEndpointCount = useMemo(
+    () => filteredApiGroups.reduce((sum, g) => sum + g.endpoints.length, 0),
+    [filteredApiGroups],
+  );
+
+  const handleCopyEndpointPath = async (verb: string, endpointPath: string) => {
+    await navigator.clipboard.writeText(endpointPath);
+    const key = `${verb}:${endpointPath}`;
+    setCopiedEndpointKey(key);
+    setTimeout(() => {
+      setCopiedEndpointKey((prev) => (prev === key ? null : prev));
+    }, 1800);
+  };
+
   const handleCopyMarkdown = async () => {
     if (!activeDocMarkdown) return;
     await navigator.clipboard.writeText(activeDocMarkdown);
@@ -783,6 +869,8 @@ export function DeveloperPage() {
     if (activeTab === 'docs') {
       void loadDocsIndex();
       if (selectedDocPath) void loadDocContent(selectedDocPath, true);
+    } else if (activeTab === 'api') {
+      void loadApiCatalog();
     } else if (activeTab === 'roadmap') {
       void loadRoadmap();
     } else if (activeTab === 'changelog') {
@@ -857,6 +945,25 @@ export function DeveloperPage() {
             <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-slate-600">
               {docsList.length}
             </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('api')}
+            className={cn(
+              'flex items-center gap-2 border-b-2 py-2.5 text-sm transition-colors',
+              activeTab === 'api'
+                ? 'border-forest-900 font-medium text-forest-900'
+                : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800',
+            )}
+          >
+            <Network className="h-4 w-4" />
+            <span>API Reference</span>
+            {apiCatalog && (
+              <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-slate-600">
+                {apiCatalog.totalEndpoints}
+              </span>
+            )}
           </button>
 
           <button
@@ -1088,6 +1195,295 @@ export function DeveloperPage() {
               </div>
             </div>
           </section>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* TAB: API REFERENCE & ENDPOINT CATALOG                             */}
+      {/* ================================================================= */}
+      {activeTab === 'api' && (
+        <div className="space-y-6">
+          {apiCatalogLoading && !apiCatalog ? (
+            <div className="rounded-md border border-slate-200 bg-white p-6 text-xs text-slate-500">
+              Parsing docs/ARCHITECTURE.md endpoint catalog…
+            </div>
+          ) : apiCatalog ? (
+            <>
+              {/* KPI Strip */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-md border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                    Total API Endpoints
+                  </p>
+                  <p className="mt-1.5 font-mono text-2xl font-semibold tabular-nums text-slate-900">
+                    {apiCatalog.totalEndpoints}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Across <span className="font-mono">{apiCatalog.totalGroups}</span> service domains
+                  </p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                    Read / Write Breakdown
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5 font-mono text-[11px] tabular-nums">
+                    <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-emerald-800">
+                      GET {apiCatalog.verbCounts['GET'] ?? 0}
+                    </span>
+                    <span className="rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-sky-800">
+                      POST {apiCatalog.verbCounts['POST'] ?? 0}
+                    </span>
+                    <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800">
+                      PATCH {apiCatalog.verbCounts['PATCH'] ?? 0}
+                    </span>
+                    <span className="rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-rose-800">
+                      DELETE {apiCatalog.verbCounts['DELETE'] ?? 0}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                    Public Entrypoints
+                  </p>
+                  <p className="mt-1.5 font-mono text-2xl font-semibold tabular-nums text-slate-900">
+                    {apiCatalog.publicEndpointsCount}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Health probe, SPA, &amp; OIDC login
+                  </p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                    Strict ADMIN-Only Routes
+                  </p>
+                  <p className="mt-1.5 font-mono text-2xl font-semibold tabular-nums text-forest-900">
+                    {apiCatalog.adminOnlyEndpointsCount}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Governance, RBAC &amp; Developer Console
+                  </p>
+                </div>
+              </div>
+
+              {/* Filter & Controls Toolbar */}
+              <div className="flex flex-col gap-3 rounded-md border border-slate-200 bg-white p-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="relative flex-1 sm:max-w-sm">
+                    <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      value={apiSearch}
+                      onChange={(e) => setApiSearch(e.target.value)}
+                      placeholder="Filter by path, role, domain, or description..."
+                      className="pl-8 text-xs"
+                    />
+                  </div>
+
+                  <div className="inline-flex flex-wrap rounded border border-slate-200 bg-slate-50 p-0.5">
+                    {(['ALL', 'GET', 'POST', 'PATCH', 'DELETE'] as const).map((verb) => (
+                      <button
+                        key={verb}
+                        type="button"
+                        onClick={() => setApiVerbFilter(verb)}
+                        className={cn(
+                          'rounded px-2.5 py-1 font-mono text-[11px] font-medium transition-colors',
+                          apiVerbFilter === verb
+                            ? 'bg-forest-900 text-white'
+                            : 'text-slate-600 hover:text-slate-900',
+                        )}
+                      >
+                        {verb}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="inline-flex rounded border border-slate-200 bg-slate-50 p-0.5">
+                    {(['ALL', 'PUBLIC', 'ADMIN'] as const).map((acc) => (
+                      <button
+                        key={acc}
+                        type="button"
+                        onClick={() => setApiAccessFilter(acc)}
+                        className={cn(
+                          'rounded px-2.5 py-1 text-[11px] font-medium transition-colors',
+                          apiAccessFilter === acc
+                            ? 'bg-forest-900 text-white'
+                            : 'text-slate-600 hover:text-slate-900',
+                        )}
+                      >
+                        {acc === 'ALL'
+                          ? 'All Scopes'
+                          : acc === 'PUBLIC'
+                            ? 'Public'
+                            : 'ADMIN Only'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs tabular-nums text-slate-500">
+                    {filteredEndpointCount} / {apiCatalog.totalEndpoints} shown
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const next: Record<number, boolean> = {};
+                      for (const g of apiCatalog.groups) next[g.sectionNumber] = true;
+                      setExpandedApiGroups(next);
+                    }}
+                  >
+                    Expand All
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setExpandedApiGroups({})}
+                  >
+                    Collapse All
+                  </Button>
+                </div>
+              </div>
+
+              {/* Domain Endpoint Groups */}
+              {filteredApiGroups.length === 0 ? (
+                <div className="rounded-md border border-slate-200 bg-white p-6 text-xs text-slate-500">
+                  No API endpoints matched your current search or filter criteria.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {filteredApiGroups.map((group) => {
+                    const isExpanded = Boolean(expandedApiGroups[group.sectionNumber]);
+                    return (
+                      <div
+                        key={group.sectionNumber}
+                        className="overflow-hidden rounded-md border border-slate-200 bg-white"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedApiGroups((prev) => ({
+                              ...prev,
+                              [group.sectionNumber]: !prev[group.sectionNumber],
+                            }))
+                          }
+                          className="flex w-full items-center justify-between gap-4 bg-slate-50 px-4 py-3 text-left hover:bg-slate-100/70"
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            {isExpanded ? (
+                              <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
+                            )}
+                            <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[11px] font-medium tabular-nums text-slate-600">
+                              {String(group.sectionNumber).padStart(2, '0')}
+                            </span>
+                            <span className="text-sm font-semibold text-slate-900">
+                              {group.title}
+                            </span>
+                            <span className="hidden rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-[11px] text-slate-600 sm:inline-block">
+                              {group.basePath}
+                            </span>
+                          </div>
+                          <span className="shrink-0 font-mono text-xs tabular-nums text-slate-500">
+                            {group.endpoints.length} endpoint
+                            {group.endpoints.length === 1 ? '' : 's'}
+                          </span>
+                        </button>
+
+                        {isExpanded && (
+                          <div className="overflow-x-auto border-t border-slate-200">
+                            <table className="w-full border-collapse text-left text-xs">
+                              <thead>
+                                <tr className="border-b border-slate-200 bg-white text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                                  <th className="w-24 px-4 py-2.5">Method</th>
+                                  <th className="w-80 px-4 py-2.5">Endpoint Path</th>
+                                  <th className="w-40 px-4 py-2.5">Auth</th>
+                                  <th className="w-52 px-4 py-2.5">RBAC Scope</th>
+                                  <th className="px-4 py-2.5">Purpose / Side Effects</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200">
+                                {group.endpoints.map((ep, idx) => {
+                                  const upperVerb = ep.verb.toUpperCase();
+                                  const verbStyle =
+                                    upperVerb === 'GET'
+                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                      : upperVerb === 'POST'
+                                        ? 'border-sky-200 bg-sky-50 text-sky-800'
+                                        : upperVerb === 'PATCH' || upperVerb === 'PUT'
+                                          ? 'border-amber-200 bg-amber-50 text-amber-800'
+                                          : upperVerb === 'DELETE'
+                                            ? 'border-rose-200 bg-rose-50 text-rose-800'
+                                            : 'border-slate-200 bg-slate-100 text-slate-700';
+                                  const epKey = `${ep.verb}:${ep.path}`;
+                                  const isCopied = copiedEndpointKey === epKey;
+
+                                  return (
+                                    <tr
+                                      key={`${epKey}-${idx}`}
+                                      className="hover:bg-slate-50/80"
+                                    >
+                                      <td className="px-4 py-2.5 align-top">
+                                        <span
+                                          className={cn(
+                                            'inline-block rounded border px-2 py-0.5 font-mono text-[11px] font-semibold',
+                                            verbStyle,
+                                          )}
+                                        >
+                                          {upperVerb}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-2.5 align-top">
+                                        <div className="flex items-center gap-1.5">
+                                          <code className="font-mono text-xs font-medium text-slate-900">
+                                            {ep.path}
+                                          </code>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void handleCopyEndpointPath(ep.verb, ep.path)
+                                            }
+                                            title="Copy endpoint path"
+                                            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                          >
+                                            {isCopied ? (
+                                              <Check className="h-3 w-3 text-emerald-700" />
+                                            ) : (
+                                              <Copy className="h-3 w-3" />
+                                            )}
+                                          </button>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-2.5 align-top text-slate-600">
+                                        <span className="font-mono text-[11px]">
+                                          {ep.authRequired}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-2.5 align-top">
+                                        <span className="font-mono text-[11px] text-slate-700">
+                                          {ep.rbacScope}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-2.5 align-top leading-relaxed text-slate-700">
+                                        {renderInlineTokens(ep.purpose, apiSearch)}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          ) : null}
         </div>
       )}
 

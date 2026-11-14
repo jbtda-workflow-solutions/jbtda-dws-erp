@@ -2431,6 +2431,32 @@ export interface RoadmapSummaryResponse {
   modules: RoadmapModuleSummary[];
 }
 
+export interface ApiEndpointItem {
+  verb: string;
+  path: string;
+  authRequired: string;
+  rbacScope: string;
+  purpose: string;
+}
+
+export interface ApiEndpointGroup {
+  sectionNumber: number;
+  title: string;
+  basePath: string;
+  endpoints: ApiEndpointItem[];
+}
+
+export interface ApiCatalogResponse {
+  sourcePath: string;
+  lastModified: string;
+  totalGroups: number;
+  totalEndpoints: number;
+  publicEndpointsCount: number;
+  adminOnlyEndpointsCount: number;
+  verbCounts: Record<string, number>;
+  groups: ApiEndpointGroup[];
+}
+
 export interface DeveloperDiagnosticsResponse {
   runtime: {
     nodeVersion: string;
@@ -2498,6 +2524,9 @@ export const developerApi = {
 
   getRoadmapSummary: () =>
     request<RoadmapSummaryResponse>('GET', '/developer/roadmap-summary'),
+
+  getApiCatalog: () =>
+    request<ApiCatalogResponse>('GET', '/developer/api-catalog'),
 
   getDiagnostics: () =>
     request<DeveloperDiagnosticsResponse>('GET', '/developer/diagnostics'),
