@@ -19,7 +19,12 @@ import { z } from 'zod';
 import { requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
-import { checkOrganizationLockDate, postJournalEntry } from '../lib/ledger-posting.js';
+import {
+  checkOrganizationLockDate,
+  postJournalEntry,
+  reverseJournalEntry,
+  syncOrReplaceJournalEntry,
+} from '../lib/ledger-posting.js';
 import { EntryType, ExpenseClaimStatus, Role, TaxTreatment } from '@prisma/client';
 
 const TaxTreatmentEnum = z.nativeEnum(TaxTreatment);
@@ -487,7 +492,7 @@ export const expenseClaimRoutes: FastifyPluginAsync = async (fastify) => {
 
       const existing = await fastify.prisma.expenseClaim.findFirst({
         where: { id, organizationId },
-        include: { items: true },
+        include: { items: true, employee: true },
       });
 
       if (!existing) {
@@ -498,9 +503,21 @@ export const expenseClaimRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(403).send({ error: 'Forbidden: You can only edit your own claims' });
       }
 
-      if (existing.status !== ExpenseClaimStatus.DRAFT && existing.status !== ExpenseClaimStatus.REJECTED) {
+      const isAdminOrAccountant = userRole === Role.ADMIN || userRole === Role.ACCOUNTANT;
+
+      if (existing.status === ExpenseClaimStatus.PAID) {
         return reply.code(400).send({
-          error: `Cannot edit claim with status ${existing.status}. Only DRAFT or REJECTED claims can be modified.`,
+          error: 'Cannot edit a PAID expense claim. Reverse the reimbursement payout first.',
+        });
+      }
+
+      if (
+        existing.status !== ExpenseClaimStatus.DRAFT &&
+        existing.status !== ExpenseClaimStatus.REJECTED &&
+        !isAdminOrAccountant
+      ) {
+        return reply.code(403).send({
+          error: `Only ADMIN or ACCOUNTANT users can edit a claim in ${existing.status} status.`,
         });
       }
 
@@ -561,7 +578,10 @@ export const expenseClaimRoutes: FastifyPluginAsync = async (fastify) => {
           updateData.totalCents = totalResult.totalCents;
         }
 
-        if (submitNow) {
+        if (
+          submitNow &&
+          (existing.status === ExpenseClaimStatus.DRAFT || existing.status === ExpenseClaimStatus.REJECTED)
+        ) {
           updateData.status = ExpenseClaimStatus.SUBMITTED;
           updateData.submittedAt = new Date();
           updateData.rejectionReason = null;
@@ -570,8 +590,73 @@ export const expenseClaimRoutes: FastifyPluginAsync = async (fastify) => {
         const claim = await tx.expenseClaim.update({
           where: { id },
           data: updateData,
-          include: { items: true },
+          include: { items: true, employee: true },
         });
+
+        // If the claim is APPROVED, synchronize its active EXPENSE_CLAIM GL journal in place
+        if (claim.status === ExpenseClaimStatus.APPROVED) {
+          const accounts = await tx.account.findMany({
+            where: {
+              organizationId,
+              code: { in: ['2050', '2200'] },
+              isActive: true,
+            },
+          });
+          const reimbursementsAccount = accounts.find((a) => a.code === '2050');
+          const gstPaidAccount = accounts.find((a) => a.code === '2200');
+
+          if (reimbursementsAccount && gstPaidAccount) {
+            const journalLines: Array<{
+              accountId: string;
+              trackingOptionId?: string | null;
+              entryType: EntryType;
+              amountCents: bigint;
+              description?: string | null;
+            }> = [];
+
+            for (const it of claim.items) {
+              if (it.amountCents > 0n) {
+                journalLines.push({
+                  accountId: it.accountId,
+                  trackingOptionId: it.trackingOptionId,
+                  entryType: EntryType.DEBIT,
+                  amountCents: it.amountCents,
+                  description: `${it.merchant}: ${it.description}`,
+                });
+              }
+            }
+
+            if (claim.gstCents > 0n) {
+              journalLines.push({
+                accountId: gstPaidAccount.id,
+                entryType: EntryType.DEBIT,
+                amountCents: claim.gstCents,
+                description: 'GST Paid (Purchases)',
+              });
+            }
+
+            if (claim.totalCents > 0n) {
+              journalLines.push({
+                accountId: reimbursementsAccount.id,
+                entryType: EntryType.CREDIT,
+                amountCents: claim.totalCents,
+                description: `Expense Reimbursement Payable - ${claim.employee.name} (${claim.claimNumber})`,
+              });
+            }
+
+            if (journalLines.length >= 2) {
+              await syncOrReplaceJournalEntry(tx, {
+                organizationId,
+                actorUserId: userId,
+                description: `Expense Claim Approval: ${claim.claimNumber} - ${claim.title} (${claim.employee.name})`,
+                referenceType: 'EXPENSE_CLAIM',
+                referenceId: claim.id,
+                postedAt: claim.approvedAt || new Date(),
+                lines: journalLines,
+              });
+            }
+          }
+        }
 
         await recordAuditLog(tx, {
           organizationId,
@@ -579,7 +664,7 @@ export const expenseClaimRoutes: FastifyPluginAsync = async (fastify) => {
           action: submitNow ? 'EXPENSE_CLAIM_SUBMITTED' : 'EXPENSE_CLAIM_UPDATED',
           entityType: 'EXPENSE_CLAIM',
           entityId: id,
-          summary: `Updated expense claim ${existing.claimNumber} (${claim.status})`,
+          summary: `Updated expense claim ${existing.claimNumber} (${claim.status}, $${(Number(claim.totalCents) / 100).toFixed(2)})`,
         });
 
         return claim;
@@ -625,13 +710,47 @@ export const expenseClaimRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(403).send({ error: 'Forbidden: You can only delete your own claims' });
       }
 
-      if (existing.status !== ExpenseClaimStatus.DRAFT) {
+      if (existing.status === ExpenseClaimStatus.PAID) {
         return reply.code(400).send({
-          error: `Cannot delete claim with status ${existing.status}. Only DRAFT claims can be deleted.`,
+          error: 'Cannot delete a PAID expense claim. Reverse the reimbursement payout first.',
+        });
+      }
+
+      const isAdmin = userRole === Role.ADMIN;
+
+      if (
+        existing.status !== ExpenseClaimStatus.DRAFT &&
+        existing.status !== ExpenseClaimStatus.REJECTED &&
+        !isAdmin
+      ) {
+        return reply.code(400).send({
+          error: `Cannot delete claim with status ${existing.status}. Revert the claim to DRAFT first, or contact an ADMIN.`,
         });
       }
 
       await fastify.prisma.$transaction(async (tx) => {
+        const linkedJournals = await tx.journalEntry.findMany({
+          where: {
+            organizationId,
+            referenceType: { in: ['EXPENSE_CLAIM', 'EXPENSE_CLAIM_VOID'] },
+            referenceId: id,
+          },
+          select: { id: true },
+        });
+        const jIds = linkedJournals.map((j) => j.id);
+        if (jIds.length > 0) {
+          await tx.journalEntry.updateMany({
+            where: {
+              organizationId,
+              OR: [{ id: { in: jIds } }, { reversedById: { in: jIds } }, { reversesEntryId: { in: jIds } }],
+            },
+            data: { reversedById: null, reversesEntryId: null },
+          });
+          await tx.journalEntry.deleteMany({
+            where: { id: { in: jIds }, organizationId },
+          });
+        }
+
         await tx.expenseClaim.delete({ where: { id } });
 
         await recordAuditLog(tx, {
@@ -640,11 +759,191 @@ export const expenseClaimRoutes: FastifyPluginAsync = async (fastify) => {
           action: 'EXPENSE_CLAIM_DELETED',
           entityType: 'EXPENSE_CLAIM',
           entityId: id,
-          summary: `Deleted draft expense claim ${existing.claimNumber} "${existing.title}"`,
+          summary: `Deleted expense claim ${existing.claimNumber} "${existing.title}" (was ${existing.status})`,
         });
       });
 
-      return reply.code(200).send({ message: 'Draft expense claim deleted successfully' });
+      return reply.code(200).send({ message: 'Expense claim deleted successfully' });
+    },
+  );
+
+  // POST /api/v1/expense-claims/:id/void — Revert/Void an APPROVED or SUBMITTED claim back to DRAFT
+  fastify.post(
+    '/api/v1/expense-claims/:id/void',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT),
+      ],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+      const userId = request.user.userId;
+
+      const claim = await fastify.prisma.expenseClaim.findFirst({
+        where: { id, organizationId },
+        include: { employee: true },
+      });
+
+      if (!claim) {
+        return reply.code(404).send({ error: 'Expense claim not found' });
+      }
+
+      if (claim.status === ExpenseClaimStatus.PAID) {
+        return reply.code(400).send({
+          error: 'Cannot revert a PAID expense claim to DRAFT. Reverse the reimbursement payout first.',
+        });
+      }
+
+      if (claim.status === ExpenseClaimStatus.DRAFT) {
+        return reply.code(400).send({ error: 'Expense claim is already in DRAFT status.' });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(
+        fastify.prisma,
+        organizationId,
+        claim.approvedAt || new Date(),
+      );
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      const activeJournal = await fastify.prisma.journalEntry.findFirst({
+        where: {
+          organizationId,
+          referenceType: 'EXPENSE_CLAIM',
+          referenceId: claim.id,
+          status: 'POSTED',
+          reversedById: null,
+        },
+      });
+
+      const updated = await fastify.prisma.$transaction(async (tx) => {
+        if (activeJournal) {
+          await reverseJournalEntry(tx, {
+            organizationId,
+            actorUserId: userId,
+            journalEntryId: activeJournal.id,
+            reversalDate: new Date(),
+            reason: `Reverted Expense Claim ${claim.claimNumber} to DRAFT`,
+            skipSubledgerCascade: true,
+          });
+        }
+
+        const res = await tx.expenseClaim.update({
+          where: { id },
+          data: {
+            status: ExpenseClaimStatus.DRAFT,
+            approvedAt: null,
+            approvedByUserId: null,
+          },
+          include: { items: true, employee: true },
+        });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: userId,
+          action: 'EXPENSE_CLAIM_REVERTED',
+          entityType: 'EXPENSE_CLAIM',
+          entityId: id,
+          summary: `Reverted expense claim ${claim.claimNumber} (${claim.employee.name}) to DRAFT and reversed GL liability`,
+        });
+
+        return res;
+      });
+
+      return reply.code(200).send({
+        message: 'Expense claim reverted to DRAFT and GL liability reversed',
+        expenseClaim: serializeData(updated),
+      });
+    },
+  );
+
+  // POST /api/v1/expense-claims/:id/reverse-payment — Reverse reimbursement payout on a PAID claim
+  fastify.post(
+    '/api/v1/expense-claims/:id/reverse-payment',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT),
+      ],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+      const userId = request.user.userId;
+
+      const claim = await fastify.prisma.expenseClaim.findFirst({
+        where: { id, organizationId },
+        include: { employee: true },
+      });
+
+      if (!claim) {
+        return reply.code(404).send({ error: 'Expense claim not found' });
+      }
+
+      if (claim.status !== ExpenseClaimStatus.PAID) {
+        return reply.code(400).send({
+          error: `Only PAID expense claims can have their payout reversed (current status: ${claim.status}).`,
+        });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(
+        fastify.prisma,
+        organizationId,
+        claim.paidAt || new Date(),
+      );
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      const payoutJournal = await fastify.prisma.journalEntry.findFirst({
+        where: {
+          organizationId,
+          referenceType: { in: ['EXPENSE_CLAIM_PAYOUT', 'EXPENSE_REIMBURSEMENT', 'EXPENSE_CLAIM_PAYMENT'] },
+          referenceId: claim.id,
+          status: 'POSTED',
+          reversedById: null,
+        },
+      });
+
+      const updated = await fastify.prisma.$transaction(async (tx) => {
+        if (payoutJournal) {
+          await reverseJournalEntry(tx, {
+            organizationId,
+            actorUserId: userId,
+            journalEntryId: payoutJournal.id,
+            reversalDate: new Date(),
+            reason: `Reversed reimbursement payout for Expense Claim ${claim.claimNumber}`,
+            skipSubledgerCascade: true,
+          });
+        }
+
+        const res = await tx.expenseClaim.update({
+          where: { id },
+          data: {
+            status: ExpenseClaimStatus.APPROVED,
+            paidAt: null,
+            paidFromBankId: null,
+          },
+          include: { items: true, employee: true },
+        });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: userId,
+          action: 'EXPENSE_REIMBURSEMENT_REVERSED',
+          entityType: 'EXPENSE_CLAIM',
+          entityId: id,
+          summary: `Reversed reimbursement payout for expense claim ${claim.claimNumber}; claim restored to APPROVED`,
+        });
+
+        return res;
+      });
+
+      return reply.code(200).send({
+        message: 'Reimbursement payout reversed; claim returned to APPROVED status',
+        expenseClaim: serializeData(updated),
+      });
     },
   );
 

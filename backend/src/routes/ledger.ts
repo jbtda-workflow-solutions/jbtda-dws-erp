@@ -23,13 +23,16 @@ import { requireOrgAuth, requireRole } from '../plugins/auth.js';
 import { recordAuditLog } from '../lib/audit.js';
 import { ensureOrganizationSystemAccounts } from '../lib/system-accounts.js';
 import {
+  checkOrganizationLockDate,
   postJournalEntry,
   reverseJournalEntry,
   approveJournalEntry,
   validateJournalLines,
 } from '../lib/ledger-posting.js';
 import {
+  BillStatus,
   EntryType,
+  InvoiceStatus,
   JournalStatus,
   NormalBalance,
   RecurrenceFrequency,
@@ -114,6 +117,93 @@ function calculateNextRunDate(currentDate: Date, frequency: RecurrenceFrequency)
   return next;
 }
 
+const UpdateManualJournalEntryBody = z.object({
+  description: z.string().trim().min(1).max(500).optional(),
+  postedAt: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
+  lines: z.array(ManualJournalLineInput).min(2).optional(),
+});
+
+/**
+ * Self-healing normalization for legacy contra-reversals and sub-ledger sync:
+ *  - Ensures any contra-reversal journal (`reversesEntryId !== null`) has `status = REVERSED`.
+ *  - Ensures any Bill/Invoice whose journal was reversed (and has no other active POSTED journal or payments) is marked `VOID`.
+ */
+async function reconcileLegacyReversals(prisma: any, organizationId: string) {
+  try {
+    await prisma.journalEntry.updateMany({
+      where: {
+        organizationId,
+        status: JournalStatus.POSTED,
+        OR: [
+          { reversesEntryId: { not: null } },
+          { referenceType: 'MANUAL_REVERSAL' },
+          { referenceType: 'INVOICE_VOID' },
+        ],
+      },
+      data: {
+        status: JournalStatus.REVERSED,
+      },
+    });
+
+    const reversedSubledgerEntries = await prisma.journalEntry.findMany({
+      where: {
+        organizationId,
+        status: JournalStatus.REVERSED,
+        referenceType: { in: ['BILL', 'INVOICE'] },
+      },
+      select: { referenceType: true, referenceId: true },
+    });
+
+    for (const item of reversedSubledgerEntries) {
+      if (item.referenceType === 'BILL') {
+        const activeBillJournal = await prisma.journalEntry.findFirst({
+          where: {
+            organizationId,
+            referenceType: 'BILL',
+            referenceId: item.referenceId,
+            status: JournalStatus.POSTED,
+          },
+          select: { id: true },
+        });
+        if (!activeBillJournal) {
+          await prisma.bill.updateMany({
+            where: {
+              id: item.referenceId,
+              organizationId,
+              status: BillStatus.AWAITING_PAYMENT,
+              amountPaidCents: 0n,
+            },
+            data: { status: BillStatus.VOID },
+          });
+        }
+      } else if (item.referenceType === 'INVOICE') {
+        const activeInvJournal = await prisma.journalEntry.findFirst({
+          where: {
+            organizationId,
+            referenceType: 'INVOICE',
+            referenceId: item.referenceId,
+            status: JournalStatus.POSTED,
+          },
+          select: { id: true },
+        });
+        if (!activeInvJournal) {
+          await prisma.invoice.updateMany({
+            where: {
+              id: item.referenceId,
+              organizationId,
+              status: InvoiceStatus.ISSUED,
+              amountPaidCents: 0n,
+            },
+            data: { status: InvoiceStatus.VOID },
+          });
+        }
+      }
+    }
+  } catch {
+    // Non-fatal background self-heal
+  }
+}
+
 const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
   // -------------------------------------------------------------------------
   // GET /api/v1/ledger — List double-entry journal entries with status tabs
@@ -147,6 +237,8 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
       } = parse.data;
 
       const organizationId = request.user.organizationId!;
+
+      await reconcileLegacyReversals(fastify.prisma, organizationId);
 
       const whereClause: any = { organizationId };
 
@@ -468,7 +560,127 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // -------------------------------------------------------------------------
-  // DELETE /api/v1/ledger/:id — Delete DRAFT or PENDING_APPROVAL entry
+  // PATCH /api/v1/ledger/:id — Edit DRAFT, PENDING_APPROVAL, or MANUAL POSTED entry
+  // -------------------------------------------------------------------------
+  fastify.patch<{ Params: { id: string } }>(
+    '/api/v1/ledger/:id',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+    },
+    async (request, reply) => {
+      const organizationId = request.user.organizationId!;
+      const { id } = request.params;
+
+      const bodyParse = UpdateManualJournalEntryBody.safeParse(request.body ?? {});
+      if (!bodyParse.success) {
+        return reply.code(400).send({
+          error: 'Validation failed',
+          details: bodyParse.error.flatten().fieldErrors,
+        });
+      }
+
+      const existing = await fastify.prisma.journalEntry.findFirst({
+        where: { id, organizationId },
+      });
+
+      if (!existing) {
+        return reply.code(404).send({ error: 'Journal entry not found.' });
+      }
+
+      if (existing.status === JournalStatus.REVERSED) {
+        return reply.code(400).send({
+          error: 'Reversed journal entries cannot be edited.',
+        });
+      }
+
+      if (
+        existing.status === JournalStatus.POSTED &&
+        existing.referenceType !== 'MANUAL' &&
+        request.user.role !== Role.ADMIN
+      ) {
+        return reply.code(400).send({
+          error: `This journal entry is controlled by sub-ledger module "${existing.referenceType}". Edit the source document in its module or use an ADMIN account.`,
+        });
+      }
+
+      const targetDate = bodyParse.data.postedAt ? new Date(bodyParse.data.postedAt) : existing.postedAt;
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, targetDate);
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      try {
+        const updated = await fastify.prisma.$transaction(async (tx) => {
+          if (bodyParse.data.lines) {
+            const { lines: validatedLines } = await validateJournalLines(
+              tx,
+              organizationId,
+              bodyParse.data.lines,
+            );
+            await tx.journalLine.deleteMany({
+              where: { journalEntryId: existing.id, organizationId },
+            });
+            await tx.journalLine.createMany({
+              data: validatedLines.map((l) => ({
+                journalEntryId: existing.id,
+                organizationId,
+                accountId: l.accountId,
+                trackingOptionId: l.trackingOptionId,
+                entryType: l.entryType,
+                amountCents: l.amountCents,
+                description: l.description,
+              })),
+            });
+          }
+
+          const entry = await tx.journalEntry.update({
+            where: { id: existing.id },
+            data: {
+              description: bodyParse.data.description ?? existing.description,
+              postedAt: targetDate,
+            },
+            include: {
+              lines: {
+                include: {
+                  account: {
+                    select: { id: true, code: true, name: true, type: true, normalBalance: true },
+                  },
+                  trackingOption: {
+                    select: {
+                      id: true,
+                      name: true,
+                      trackingCategory: { select: { id: true, name: true } },
+                    },
+                  },
+                },
+                orderBy: [{ entryType: 'asc' }, { amountCents: 'desc' }],
+              },
+            },
+          });
+
+          await recordAuditLog(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            action: 'JOURNAL_UPDATED',
+            entityType: 'JOURNAL_ENTRY',
+            entityId: entry.id,
+            summary: `Updated journal ${entry.entryNumber || entry.id}: "${entry.description}"`,
+          });
+
+          return entry;
+        });
+
+        return reply.send({ entry: serializeLedger(updated) });
+      } catch (err: any) {
+        return reply.code(400).send({
+          error: err.message || 'Failed to update journal entry.',
+        });
+      }
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // DELETE /api/v1/ledger/:id — Delete DRAFT/PENDING_APPROVAL entry or ADMIN Force-Delete
   // -------------------------------------------------------------------------
   fastify.delete<{ Params: { id: string } }>(
     '/api/v1/ledger/:id',
@@ -478,6 +690,7 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const organizationId = request.user.organizationId!;
       const { id } = request.params;
+      const isAdmin = request.user.role === Role.ADMIN;
 
       const entry = await fastify.prisma.journalEntry.findFirst({
         where: { id, organizationId },
@@ -487,13 +700,42 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(404).send({ error: 'Journal entry not found.' });
       }
 
-      if (entry.status === JournalStatus.POSTED || entry.status === JournalStatus.REVERSED) {
+      if (
+        (entry.status === JournalStatus.POSTED || entry.status === JournalStatus.REVERSED) &&
+        !isAdmin
+      ) {
         return reply.code(400).send({
-          error: 'Posted or reversed journal entries cannot be deleted. Use 1-Click Reversal to void an active posted journal.',
+          error: 'Posted or reversed journal entries can only be force-deleted by an ADMIN, or voided via 1-Click Reversal.',
         });
       }
 
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, entry.postedAt);
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
       await fastify.prisma.$transaction(async (tx) => {
+        // Un-match any bank statement line pointing to this journal
+        await tx.bankStatementLine.updateMany({
+          where: { organizationId, matchedJournalId: entry.id },
+          data: {
+            isReconciled: false,
+            matchedJournalId: null,
+            reconciledAt: null,
+            reconciledByUserId: null,
+          },
+        });
+
+        // Clear any cross-references from other journal entries
+        await tx.journalEntry.updateMany({
+          where: { organizationId, reversedById: entry.id },
+          data: { reversedById: null },
+        });
+        await tx.journalEntry.updateMany({
+          where: { organizationId, reversesEntryId: entry.id },
+          data: { reversesEntryId: null },
+        });
+
         await tx.journalEntry.delete({ where: { id: entry.id } });
 
         await recordAuditLog(tx, {
@@ -506,7 +748,7 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
         });
       });
 
-      return reply.send({ ok: true, message: 'Draft journal deleted successfully.' });
+      return reply.send({ ok: true, message: 'Journal entry deleted successfully.' });
     },
   );
 
@@ -518,6 +760,8 @@ const ledgerRoutes: FastifyPluginAsync = async (fastify) => {
     { preHandler: [requireOrgAuth] },
     async (request, reply) => {
       const organizationId = request.user.organizationId!;
+
+      await reconcileLegacyReversals(fastify.prisma, organizationId);
 
       const accountCount = await fastify.prisma.account.count({ where: { organizationId } });
       if (accountCount === 0) {

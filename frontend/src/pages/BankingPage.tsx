@@ -916,6 +916,7 @@ export function BankingPage() {
                       <th className="py-2.5 px-3 text-right">Amount</th>
                       <th className="py-2.5 px-3">Reference / Description</th>
                       <th className="py-2.5 px-4 text-center">GL Journal</th>
+                      <th className="py-2.5 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -959,6 +960,29 @@ export function BankingPage() {
                           ) : (
                             <span className="text-slate-400">—</span>
                           )}
+                        </td>
+
+                        <td className="py-3 px-4 text-right">
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            onClick={async () => {
+                              if (!window.confirm('Reverse and delete this inter-account transfer? Its General Ledger journal will be automatically reversed.')) return;
+                              try {
+                                await bankingApi.deleteTransfer(t.id);
+                                setBannerSuccess('Inter-account transfer reversed and deleted.');
+                                await loadTransfers();
+                                await loadBankAccounts();
+                              } catch (err: any) {
+                                setBannerError(err.message || 'Failed to delete transfer.');
+                              }
+                            }}
+                            className="text-rose-600 hover:text-rose-800 hover:bg-rose-50 inline-flex items-center gap-1"
+                            title="Reverse & Delete Transfer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Reverse</span>
+                          </Button>
                         </td>
                       </tr>
                     ))}

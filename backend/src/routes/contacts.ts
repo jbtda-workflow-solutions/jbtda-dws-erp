@@ -766,6 +766,69 @@ const contactRoutes: FastifyPluginAsync = async (fastify) => {
       });
     },
   );
+
+  // -------------------------------------------------------------------------
+  // DELETE /api/v1/contacts/:id — Hard-delete unused contact (ADMIN only)
+  // -------------------------------------------------------------------------
+  fastify.delete(
+    '/api/v1/contacts/:id',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN),
+      ],
+    },
+    async (request, reply) => {
+      const paramParse = ParamsWithId.safeParse(request.params);
+      if (!paramParse.success) {
+        return reply.code(400).send({ error: 'Invalid contact ID format' });
+      }
+
+      const { id } = paramParse.data;
+      const organizationId = request.user.organizationId!;
+
+      const contact = await fastify.prisma.contact.findFirst({
+        where: { id, organizationId },
+      });
+
+      if (!contact) {
+        return reply.code(404).send({ error: 'Contact not found' });
+      }
+
+      const [invCount, billCount, quoteCount, poCount, cnCount, vcCount, dtCount] =
+        await Promise.all([
+          fastify.prisma.invoice.count({ where: { contactId: id, organizationId } }),
+          fastify.prisma.bill.count({ where: { contactId: id, organizationId } }),
+          fastify.prisma.quote.count({ where: { contactId: id, organizationId } }),
+          fastify.prisma.purchaseOrder.count({ where: { contactId: id, organizationId } }),
+          fastify.prisma.creditNote.count({ where: { contactId: id, organizationId } }),
+          fastify.prisma.vendorCredit.count({ where: { contactId: id, organizationId } }),
+          fastify.prisma.directTransaction.count({ where: { contactId: id, organizationId } }),
+        ]);
+
+      const totalLinks = invCount + billCount + quoteCount + poCount + cnCount + vcCount + dtCount;
+      if (totalLinks > 0) {
+        return reply.code(400).send({
+          error: `Contact "${contact.name}" is referenced by ${totalLinks} transaction(s) (invoices, bills, quotes, purchase orders, or credits). Archive the contact instead of deleting, or delete linked documents first.`,
+        });
+      }
+
+      await fastify.prisma.contact.delete({ where: { id } });
+
+      await recordAuditLog(fastify.prisma, {
+        organizationId,
+        actorUserId: request.user.userId,
+        action: 'CONTACT_DELETED',
+        entityType: 'CONTACT',
+        entityId: id,
+        summary: `Deleted unused contact "${contact.name}"`,
+      });
+
+      return reply.code(200).send({
+        success: true,
+        message: `Contact "${contact.name}" deleted permanently.`,
+      });
+    },
+  );
 };
 
 export default contactRoutes;

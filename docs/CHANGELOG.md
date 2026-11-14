@@ -4,6 +4,36 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.23.0] — 2026-11-14 — Module 11: Transactional Integrity, Bidirectional Sub-Ledger/GL Synchronization & Full Record Lifecycle Control
+
+### Fixed
+- **General Ledger Reversal Math & Anti-Double-Reversal Guard (`11.1` — `backend/src/lib/ledger-posting.ts`, `backend/src/routes/ledger.ts`, `frontend/src/pages/LedgerPage.tsx`)**:
+  - Updated `reverseJournalEntry()` so both the original `JournalEntry` (`JNL-xxxx`) and the contra-reversal `JournalEntry` (`REV-xxxx`) are marked `status: JournalStatus.REVERSED` (mutually linked via `reversedById` and `reversesEntryId`), preserving both entries in the GL audit trail while preventing contra entries from inverting `POSTED` Trial Balance, P&L, and Balance Sheet sums.
+  - Added strict anti-double-reversal guard: rejects reversing any journal where `reversesEntryId !== null`, `reversedById !== null`, `status !== 'POSTED'`, `referenceType === 'MANUAL_REVERSAL'`, or `referenceType.endsWith('_VOID')`, and hid the Reverse action in `LedgerPage.tsx` on contra-reversal entries.
+  - Added automatic un-matching of any linked `BankStatementLine` reconciliation when a journal is reversed or deleted.
+  - Added `reconcileLegacyReversals()` on `GET /api/v1/ledger` and `GET /api/v1/ledger/accounts` to self-heal any legacy contra-reversal entries (`reversesEntryId !== null`) to `REVERSED` and mark any unpaid `AWAITING_PAYMENT` Bill or `ISSUED` Invoice whose journal was reversed as `VOID`.
+- **Bidirectional Sub-Ledger $\leftrightarrow$ General Ledger Cascade Synchronization (`11.2` — `backend/src/lib/ledger-posting.ts`)**:
+  - Reversing a sub-ledger journal in `/ledger` now atomically cascades to the source sub-ledger record in the same Prisma transaction: marks unpaid `BILL` / `INVOICE` / `CREDIT_NOTE` / `VENDOR_CREDIT` records as `VOID`, reverses `PAYMENT_OUT` / `PAYMENT_IN` records and restores parent Bill/Invoice balances, reverts unpaid `EXPENSE_CLAIM` records to `DRAFT` (or reverses `EXPENSE_REIMBURSEMENT` payouts back to `APPROVED`), and deletes reversed `DIRECT_TRANSACTION` and `BANK_TRANSFER` records.
+
+### Added
+- **Full Record Lifecycle Controls — Edit & Re-Post, Revert to Draft, Void, Payment Reversal & Admin Force-Delete (`11.3`–`11.6`)**:
+  - **General Ledger (`backend/src/routes/ledger.ts`, `frontend/src/pages/LedgerPage.tsx`)**: Added `PATCH /api/v1/ledger/:id` (`ADMIN`, `ACCOUNTANT`) and updated `DELETE /api/v1/ledger/:id` to allow `ADMIN` Force-Delete on unreconciled journals.
+  - **Accounts Payable (`backend/src/routes/bills.ts`, `backend/src/routes/vendor-credits.ts`, `frontend/src/pages/BillsPage.tsx`)**:
+    - Updated `PATCH /api/v1/bills/:id` to support **Edit & Re-Post** on unpaid `AWAITING_PAYMENT` bills (`syncOrReplaceJournalEntry`).
+    - Added `POST /api/v1/bills/:id/revert-to-draft`, `DELETE /api/v1/bills/:id/payments/:paymentId` (supplier payment reversal), `POST /api/v1/vendor-credits/:id/void`, and `DELETE /api/v1/vendor-credits/:id`, plus `ADMIN` Force-Delete on `DELETE /api/v1/bills/:id`.
+    - Surfaced **Edit Bill / Edit & Re-Post**, **Approve & Post GL**, **Revert to Draft**, **Void Bill**, **Delete Draft / Force Delete**, and per-payment **Reverse** buttons in `BillsPage.tsx`.
+  - **Accounts Receivable (`backend/src/routes/invoices.ts`, `backend/src/routes/credit-notes.ts`, `frontend/src/pages/InvoicesPage.tsx`)**:
+    - Updated `PATCH /api/v1/invoices/:id` to support **Edit & Re-Post** on unpaid `ISSUED` invoices (`syncOrReplaceJournalEntry`).
+    - Added `POST /api/v1/invoices/:id/revert-to-draft`, `DELETE /api/v1/invoices/:id/payments/:paymentId` (customer receipt reversal), `POST /api/v1/credit-notes/:id/void`, and `DELETE /api/v1/credit-notes/:id`, plus `ADMIN` Force-Delete on `DELETE /api/v1/invoices/:id`.
+    - Surfaced **Edit Invoice / Edit & Re-Post**, **Revert to Draft**, **Void Invoice**, **Delete Draft / Force Delete**, and per-payment **Reverse** buttons in `InvoicesPage.tsx`.
+  - **Expenses & Direct Transactions (`backend/src/routes/expense-claims.ts`, `backend/src/routes/direct-transactions.ts`, `frontend/src/pages/ExpensesPage.tsx`)**:
+    - Added `POST /api/v1/expense-claims/:id/void`, `POST /api/v1/expense-claims/:id/reverse-payment`, `PATCH /api/v1/direct-transactions/:id`, and `DELETE /api/v1/direct-transactions/:id`, and updated `PATCH`/`DELETE /api/v1/expense-claims/:id` for `ADMIN`/`ACCOUNTANT` lifecycle control.
+    - Surfaced **Edit & Re-Post**, **Revert to Draft**, **Reverse Payout**, **Delete / Force Delete**, and **Delete & Reverse GL** buttons in `ExpensesPage.tsx`.
+  - **Banking & Contacts (`backend/src/routes/banking.ts`, `backend/src/routes/contacts.ts`, `frontend/src/pages/BankingPage.tsx`, `frontend/src/pages/ContactsPage.tsx`)**:
+    - Added `DELETE /api/v1/banking/transfers/:id` (inter-account transfer reversal) and `DELETE /api/v1/contacts/:id` (`ADMIN` hard-delete of unused contacts).
+
+---
+
 ## [0.22.0] — 2026-11-14 — Module 10: Corporate Precision UI/UX Alignment, Overlay Architecture, Expenses Remediation & A4 Report Print Engine
 
 ### Fixed

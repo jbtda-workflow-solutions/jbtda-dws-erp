@@ -26,7 +26,11 @@ import { z } from 'zod';
 import { requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
-import { checkOrganizationLockDate } from '../lib/ledger-posting.js';
+import {
+  checkOrganizationLockDate,
+  reverseJournalEntry,
+  syncOrReplaceJournalEntry,
+} from '../lib/ledger-posting.js';
 import {
   EntryType,
   InvoiceStatus,
@@ -380,6 +384,7 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
           referenceType: 'INVOICE',
           referenceId: invoice.id,
         },
+        orderBy: { createdAt: 'desc' },
         include: {
           lines: {
             include: { account: true, trackingOption: true },
@@ -395,7 +400,7 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // -------------------------------------------------------------------------
-  // PATCH /api/v1/invoices/:id — Update draft/pending approval invoice
+  // PATCH /api/v1/invoices/:id — Update draft/pending approval or unpaid ISSUED invoice
   // -------------------------------------------------------------------------
   fastify.patch(
     '/api/v1/invoices/:id',
@@ -420,23 +425,48 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
 
       const { id } = paramParse.data;
       const organizationId = request.user.organizationId!;
+      const userRole = request.user.role;
 
       const invoice = await fastify.prisma.invoice.findFirst({
         where: { id, organizationId },
+        include: { contact: true, lineItems: true },
       });
       if (!invoice) {
         return reply.code(404).send({ error: 'Invoice not found' });
       }
 
-      if (invoice.status === InvoiceStatus.ISSUED || invoice.status === InvoiceStatus.PAID || invoice.status === InvoiceStatus.PARTIALLY_PAID) {
+      const isAdminOrAccountant = userRole === Role.ADMIN || userRole === Role.ACCOUNTANT;
+
+      if (invoice.status === InvoiceStatus.VOID) {
         return reply.code(400).send({
-          error: `Cannot modify an invoice in '${invoice.status}' status. Only DRAFT or PENDING_APPROVAL invoices can be edited.`,
+          error: 'Cannot modify a VOID invoice.',
         });
+      }
+
+      if (invoice.amountPaidCents > 0n) {
+        return reply.code(400).send({
+          error: 'Cannot modify an invoice with recorded payments or credit allocations. Reverse the receipt first.',
+        });
+      }
+
+      if (
+        invoice.status === InvoiceStatus.ISSUED &&
+        !isAdminOrAccountant
+      ) {
+        return reply.code(403).send({
+          error: 'Only ADMIN or ACCOUNTANT users can edit and re-post an ISSUED invoice.',
+        });
+      }
+
+      const targetIssueDate = bodyParse.data.issueDate ? new Date(bodyParse.data.issueDate) : invoice.issueDate;
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, targetIssueDate);
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
       }
 
       const dataToUpdate: any = {};
       if (bodyParse.data.contactId) dataToUpdate.contactId = bodyParse.data.contactId;
-      if (bodyParse.data.issueDate) dataToUpdate.issueDate = new Date(bodyParse.data.issueDate);
+      if (bodyParse.data.issueDate) dataToUpdate.issueDate = targetIssueDate;
       if (bodyParse.data.dueDate) dataToUpdate.dueDate = new Date(bodyParse.data.dueDate);
       if (bodyParse.data.status) dataToUpdate.status = bodyParse.data.status;
       if (bodyParse.data.notes !== undefined) dataToUpdate.notes = bodyParse.data.notes;
@@ -499,11 +529,83 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
           });
         }
 
-        return tx.invoice.update({
+        const updatedInv = await tx.invoice.update({
           where: { id: invoice.id },
           data: dataToUpdate,
           include: { contact: true, lineItems: true },
         });
+
+        // If the invoice is ISSUED, synchronize its active GL journal entry in place
+        if (updatedInv.status === InvoiceStatus.ISSUED) {
+          const accounts = await tx.account.findMany({
+            where: {
+              organizationId,
+              code: { in: ['1200', '4000', '2100'] },
+              isActive: true,
+            },
+          });
+          const arAccount = accounts.find((a) => a.code === '1200');
+          const gstCollectedAccount = accounts.find((a) => a.code === '2100');
+          const defaultRevenueAccount = accounts.find((a) => a.code === '4000');
+
+          if (!arAccount || !gstCollectedAccount || !defaultRevenueAccount) {
+            throw new Error(
+              'Required Chart of Accounts entries (1200, 2100, 4000) are missing for this organization.',
+            );
+          }
+
+          const journalLines: Array<{
+            accountId: string;
+            trackingOptionId?: string | null;
+            entryType: EntryType;
+            amountCents: bigint;
+            description?: string | null;
+          }> = [];
+
+          if (updatedInv.totalCents > 0n) {
+            journalLines.push({
+              accountId: arAccount.id,
+              entryType: EntryType.DEBIT,
+              amountCents: updatedInv.totalCents,
+              description: `Accounts Receivable - ${updatedInv.contact.name}`,
+            });
+          }
+
+          for (const li of updatedInv.lineItems) {
+            if (li.amountCents > 0n) {
+              journalLines.push({
+                accountId: li.accountId || defaultRevenueAccount.id,
+                trackingOptionId: li.trackingOptionId || null,
+                entryType: EntryType.CREDIT,
+                amountCents: li.amountCents,
+                description: li.description,
+              });
+            }
+          }
+
+          if (updatedInv.gstCents > 0n) {
+            journalLines.push({
+              accountId: gstCollectedAccount.id,
+              entryType: EntryType.CREDIT,
+              amountCents: updatedInv.gstCents,
+              description: 'GST Collected (Sales)',
+            });
+          }
+
+          if (journalLines.length >= 2) {
+            await syncOrReplaceJournalEntry(tx, {
+              organizationId,
+              actorUserId: request.user.userId,
+              description: `Invoice ${updatedInv.invoiceNumber} to ${updatedInv.contact.name}`,
+              referenceType: 'INVOICE',
+              referenceId: updatedInv.id,
+              postedAt: updatedInv.issueDate,
+              lines: journalLines,
+            });
+          }
+        }
+
+        return updatedInv;
       });
 
       await recordAuditLog(fastify.prisma, {
@@ -512,7 +614,7 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
         action: 'INVOICE_UPDATED',
         entityType: 'INVOICE',
         entityId: invoice.id,
-        summary: `Updated invoice ${invoice.invoiceNumber} (status: ${updated.status})`,
+        summary: `Updated invoice ${invoice.invoiceNumber} (status: ${updated.status}, total: $${(Number(updated.totalCents) / 100).toFixed(2)})`,
       });
 
       return reply.code(200).send({ invoice: serializeInvoice(updated) });
@@ -520,7 +622,7 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // -------------------------------------------------------------------------
-  // DELETE /api/v1/invoices/:id — Delete draft invoice
+  // DELETE /api/v1/invoices/:id — Delete draft/pending or ADMIN force-delete unpaid invoice
   // -------------------------------------------------------------------------
   fastify.delete(
     '/api/v1/invoices/:id',
@@ -537,6 +639,7 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
 
       const { id } = paramParse.data;
       const organizationId = request.user.organizationId!;
+      const isAdmin = request.user.role === Role.ADMIN;
 
       const invoice = await fastify.prisma.invoice.findFirst({
         where: { id, organizationId },
@@ -545,24 +648,153 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(404).send({ error: 'Invoice not found' });
       }
 
-      if (invoice.status !== InvoiceStatus.DRAFT) {
+      if (invoice.amountPaidCents > 0n) {
         return reply.code(400).send({
-          error: `Cannot delete an invoice in '${invoice.status}' status. Only DRAFT invoices can be deleted.`,
+          error: 'Cannot delete an invoice that has recorded payments or credit allocations. Reverse the receipt first.',
         });
       }
 
-      await fastify.prisma.invoice.delete({ where: { id: invoice.id } });
+      if (
+        invoice.status !== InvoiceStatus.DRAFT &&
+        invoice.status !== InvoiceStatus.PENDING_APPROVAL &&
+        !isAdmin
+      ) {
+        return reply.code(400).send({
+          error: `Cannot delete an invoice in '${invoice.status}' status. Void the invoice instead, or contact an ADMIN.`,
+        });
+      }
 
-      await recordAuditLog(fastify.prisma, {
-        organizationId,
-        actorUserId: request.user.userId,
-        action: 'INVOICE_DELETED',
-        entityType: 'INVOICE',
-        entityId: invoice.id,
-        summary: `Deleted draft invoice ${invoice.invoiceNumber}`,
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, invoice.issueDate);
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      await fastify.prisma.$transaction(async (tx) => {
+        const linkedJournals = await tx.journalEntry.findMany({
+          where: {
+            organizationId,
+            referenceType: { in: ['INVOICE', 'INVOICE_VOID'] },
+            referenceId: invoice.id,
+          },
+          select: { id: true },
+        });
+        const jIds = linkedJournals.map((j) => j.id);
+        if (jIds.length > 0) {
+          await tx.journalEntry.updateMany({
+            where: {
+              organizationId,
+              OR: [{ id: { in: jIds } }, { reversedById: { in: jIds } }, { reversesEntryId: { in: jIds } }],
+            },
+            data: { reversedById: null, reversesEntryId: null },
+          });
+          await tx.journalEntry.deleteMany({
+            where: { id: { in: jIds }, organizationId },
+          });
+        }
+
+        await tx.invoice.delete({ where: { id: invoice.id } });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'INVOICE_DELETED',
+          entityType: 'INVOICE',
+          entityId: invoice.id,
+          summary: `Deleted invoice ${invoice.invoiceNumber} (was ${invoice.status})`,
+        });
       });
 
       return reply.code(200).send({ success: true, message: 'Invoice deleted successfully' });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // POST /api/v1/invoices/:id/revert-to-draft — Revert unpaid ISSUED/PENDING_APPROVAL invoice to DRAFT
+  // -------------------------------------------------------------------------
+  fastify.post(
+    '/api/v1/invoices/:id/revert-to-draft',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT),
+      ],
+    },
+    async (request, reply) => {
+      const paramParse = ParamsWithId.safeParse(request.params);
+      if (!paramParse.success) {
+        return reply.code(400).send({ error: 'Invalid invoice ID format' });
+      }
+
+      const { id } = paramParse.data;
+      const organizationId = request.user.organizationId!;
+
+      const invoice = await fastify.prisma.invoice.findFirst({
+        where: { id, organizationId },
+        include: { contact: true },
+      });
+
+      if (!invoice) {
+        return reply.code(404).send({ error: 'Invoice not found' });
+      }
+
+      if (invoice.status === InvoiceStatus.DRAFT) {
+        return reply.code(400).send({ error: 'Invoice is already in DRAFT status.' });
+      }
+
+      if (invoice.amountPaidCents > 0n) {
+        return reply.code(400).send({
+          error: 'Cannot revert an invoice to DRAFT while payments or credit allocations exist. Reverse the receipt first.',
+        });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, invoice.issueDate);
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      const activeEntry = await fastify.prisma.journalEntry.findFirst({
+        where: {
+          organizationId,
+          referenceType: 'INVOICE',
+          referenceId: invoice.id,
+          status: 'POSTED',
+          reversedById: null,
+        },
+      });
+
+      const updated = await fastify.prisma.$transaction(async (tx) => {
+        if (activeEntry) {
+          await reverseJournalEntry(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            journalEntryId: activeEntry.id,
+            reversalDate: new Date(),
+            reason: `Reverted Invoice ${invoice.invoiceNumber} to DRAFT`,
+            skipSubledgerCascade: true,
+          });
+        }
+
+        const inv = await tx.invoice.update({
+          where: { id: invoice.id },
+          data: {
+            status: InvoiceStatus.DRAFT,
+            approvedByUserId: null,
+          },
+          include: { contact: true, lineItems: true, paymentsIn: true },
+        });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'INVOICE_REVERTED_TO_DRAFT',
+          entityType: 'INVOICE',
+          entityId: invoice.id,
+          summary: `Reverted invoice ${invoice.invoiceNumber} (${invoice.contact.name}) to DRAFT and reversed GL posting`,
+        });
+
+        return inv;
+      });
+
+      return reply.code(200).send({ invoice: serializeInvoice(updated) });
     },
   );
 
@@ -787,6 +1019,8 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
           organizationId,
           referenceType: 'INVOICE',
           referenceId: invoice.id,
+          status: 'POSTED',
+          reversedById: null,
         },
         include: { lines: true },
       });
@@ -799,34 +1033,13 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
 
         let reversingEntry = null;
         if (originalEntry && originalEntry.lines.length > 0) {
-          // Post exact reversing contra-lines: invert DEBIT to CREDIT and vice versa
-          const reversingLines = originalEntry.lines.map((l) => ({
+          reversingEntry = await reverseJournalEntry(tx, {
             organizationId,
-            accountId: l.accountId,
-            trackingOptionId: l.trackingOptionId,
-            entryType: l.entryType === EntryType.DEBIT ? EntryType.CREDIT : EntryType.DEBIT,
-            amountCents: l.amountCents,
-          }));
-
-          reversingEntry = await tx.journalEntry.create({
-            data: {
-              organizationId,
-              description: `Void reversal for Invoice ${invoice.invoiceNumber} (${invoice.contact.name})`,
-              referenceType: 'INVOICE_VOID',
-              referenceId: invoice.id,
-              reversesEntryId: originalEntry.id,
-              postedAt: new Date(),
-              createdByUserId: request.user.userId,
-              approvedByUserId: request.user.userId,
-              lines: {
-                create: reversingLines,
-              },
-            },
-          });
-
-          await tx.journalEntry.update({
-            where: { id: originalEntry.id },
-            data: { reversedById: reversingEntry.id },
+            actorUserId: request.user.userId,
+            journalEntryId: originalEntry.id,
+            reversalDate: new Date(),
+            reason: `Void reversal for Invoice ${invoice.invoiceNumber} (${invoice.contact.name})`,
+            skipSubledgerCascade: true,
           });
         }
 
@@ -1049,6 +1262,99 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       return reply.code(200).send({ payments: serializeInvoice(payments) });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // DELETE /api/v1/invoices/:id/payments/:paymentId — Reverse/delete a PaymentIn
+  // -------------------------------------------------------------------------
+  fastify.delete<{ Params: { id: string; paymentId: string } }>(
+    '/api/v1/invoices/:id/payments/:paymentId',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT),
+      ],
+    },
+    async (request, reply) => {
+      const { id: invoiceId, paymentId } = request.params;
+      const organizationId = request.user.organizationId!;
+
+      const paymentIn = await fastify.prisma.paymentIn.findFirst({
+        where: { id: paymentId, invoiceId, organizationId },
+        include: { invoice: true },
+      });
+
+      if (!paymentIn || !paymentIn.invoice) {
+        return reply.code(404).send({ error: 'Payment receipt not found on this invoice.' });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(
+        fastify.prisma,
+        organizationId,
+        paymentIn.paymentDate,
+      );
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      const paymentJournal = await fastify.prisma.journalEntry.findFirst({
+        where: {
+          organizationId,
+          referenceType: 'PAYMENT_IN',
+          referenceId: paymentIn.id,
+          status: 'POSTED',
+          reversedById: null,
+        },
+      });
+
+      const updatedInvoice = await fastify.prisma.$transaction(async (tx) => {
+        if (paymentJournal) {
+          await reverseJournalEntry(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            journalEntryId: paymentJournal.id,
+            reversalDate: new Date(),
+            reason: `Reversed receipt on Invoice ${paymentIn.invoice!.invoiceNumber}`,
+            skipSubledgerCascade: true,
+          });
+        }
+
+        const currentPaid = paymentIn.invoice!.amountPaidCents;
+        const newPaid = currentPaid > paymentIn.amountCents ? currentPaid - paymentIn.amountCents : 0n;
+        const newStatus =
+          paymentIn.invoice!.status === InvoiceStatus.VOID
+            ? InvoiceStatus.VOID
+            : newPaid === 0n
+            ? InvoiceStatus.ISSUED
+            : InvoiceStatus.PARTIALLY_PAID;
+
+        const inv = await tx.invoice.update({
+          where: { id: invoiceId },
+          data: {
+            amountPaidCents: newPaid,
+            status: newStatus,
+          },
+          include: { contact: true, lineItems: true, paymentsIn: true },
+        });
+
+        await tx.paymentIn.delete({ where: { id: paymentIn.id } });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'PAYMENT_IN_REVERSED',
+          entityType: 'INVOICE',
+          entityId: invoiceId,
+          summary: `Reversed receipt of $${(Number(paymentIn.amountCents) / 100).toFixed(2)} on Invoice ${inv.invoiceNumber}; invoice status restored to ${newStatus}`,
+        });
+
+        return inv;
+      });
+
+      return reply.code(200).send({
+        message: 'Receipt reversed and invoice balance restored',
+        invoice: serializeInvoice(updatedInvoice),
+      });
     },
   );
 

@@ -828,7 +828,11 @@ export function LedgerPage() {
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
 
-                              {entry.status === 'POSTED' && !entry.reversedById && (
+                              {entry.status === 'POSTED' &&
+                                !entry.reversedById &&
+                                !entry.reversesEntryId &&
+                                entry.referenceType !== 'MANUAL_REVERSAL' &&
+                                !entry.referenceType.endsWith('_VOID') && (
                                 <button
                                   type="button"
                                   onClick={() => openReversalModal(entry)}
@@ -855,14 +859,19 @@ export function LedgerPage() {
                                 </button>
                               )}
 
-                              {(entry.status === 'DRAFT' ||
+                              {(((entry.status === 'DRAFT' ||
                                 entry.status === 'PENDING_APPROVAL') &&
-                                canApproveOrPost && (
+                                canApproveOrPost) ||
+                                role === 'ADMIN') && (
                                   <button
                                     type="button"
                                     onClick={() => void handleDeleteEntry(entry.id)}
                                     className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 transition-colors"
-                                    title="Delete Draft"
+                                    title={
+                                      entry.status === 'DRAFT' || entry.status === 'PENDING_APPROVAL'
+                                        ? 'Delete Draft'
+                                        : 'Admin Force-Delete Journal Entry'
+                                    }
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
@@ -1127,7 +1136,11 @@ export function LedgerPage() {
                 Ref: {selectedEntry.referenceType} ({selectedEntry.referenceId})
               </div>
               <div className="flex items-center gap-2">
-                {selectedEntry.status === 'POSTED' && !selectedEntry.reversedById && (
+                {selectedEntry.status === 'POSTED' &&
+                  !selectedEntry.reversedById &&
+                  !selectedEntry.reversesEntryId &&
+                  selectedEntry.referenceType !== 'MANUAL_REVERSAL' &&
+                  !selectedEntry.referenceType.endsWith('_VOID') && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -1151,9 +1164,10 @@ export function LedgerPage() {
                   </Button>
                 )}
 
-                {(selectedEntry.status === 'DRAFT' ||
+                {(((selectedEntry.status === 'DRAFT' ||
                   selectedEntry.status === 'PENDING_APPROVAL') &&
-                  canApproveOrPost && (
+                  canApproveOrPost) ||
+                  role === 'ADMIN') && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -1161,7 +1175,11 @@ export function LedgerPage() {
                       className="text-xs h-7 text-rose-700 hover:bg-rose-50 border-rose-200"
                     >
                       <Trash2 className="w-3.5 h-3.5 mr-1" />
-                      <span>Delete</span>
+                      <span>
+                        {selectedEntry.status === 'DRAFT' || selectedEntry.status === 'PENDING_APPROVAL'
+                          ? 'Delete'
+                          : 'Force Delete'}
+                      </span>
                     </Button>
                   )}
               </div>
@@ -1340,8 +1358,13 @@ export function LedgerPage() {
                 {reversalTarget.entryNumber || reversalTarget.id} — {reversalTarget.description}
               </p>
               <p className="text-[11px] text-slate-500">
-                Original Date: {formatDate(reversalTarget.postedAt)}
+                Original Date: {formatDate(reversalTarget.postedAt)} · Event: {reversalTarget.referenceType}
               </p>
+              {reversalTarget.referenceType !== 'MANUAL' && (
+                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
+                  Bidirectional Sub-Ledger Cascade: Reversing this journal will also void or revert the linked {reversalTarget.referenceType} record in its module.
+                </p>
+              )}
             </div>
 
             <div>

@@ -13,7 +13,12 @@ import { z } from 'zod';
 import { requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
-import { checkOrganizationLockDate, postJournalEntry } from '../lib/ledger-posting.js';
+import {
+  checkOrganizationLockDate,
+  postJournalEntry,
+  reverseJournalEntry,
+  syncOrReplaceJournalEntry,
+} from '../lib/ledger-posting.js';
 import { DirectTransactionType, EntryType, Role, TaxTreatment } from '@prisma/client';
 
 const TaxTreatmentEnum = z.nativeEnum(TaxTreatment);
@@ -484,6 +489,278 @@ export const directTransactionRoutes: FastifyPluginAsync = async (fastify) => {
         message: 'Direct transaction created and posted to General Ledger successfully',
         directTransaction: serializeData(result.directTx),
         journalEntry: serializeData(result.journalEntry),
+      });
+    },
+  );
+
+  // PATCH /api/v1/direct-transactions/:id — Edit direct transaction and synchronize GL journal
+  fastify.patch(
+    '/api/v1/direct-transactions/:id',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT),
+      ],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const parse = CreateDirectTransactionBody.partial().safeParse(request.body);
+      if (!parse.success) {
+        return reply.code(400).send({
+          error: 'Validation failed',
+          details: parse.error.flatten().fieldErrors,
+        });
+      }
+
+      const organizationId = request.user.organizationId!;
+      const existing = await fastify.prisma.directTransaction.findFirst({
+        where: { id, organizationId },
+        include: { lines: true },
+      });
+
+      if (!existing) {
+        return reply.code(404).send({ error: 'Direct transaction not found' });
+      }
+
+      const targetDate = parse.data.transactionDate ? new Date(parse.data.transactionDate) : existing.transactionDate;
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, targetDate);
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      const targetBankAccountId = parse.data.bankAccountId || existing.bankAccountId;
+      const bankAccount = await fastify.prisma.account.findFirst({
+        where: { id: targetBankAccountId, organizationId, isActive: true },
+      });
+      if (!bankAccount) {
+        return reply.code(400).send({ error: 'Selected bank or card account is invalid or inactive.' });
+      }
+
+      const targetType = parse.data.type || existing.type;
+      const gstCode = targetType === DirectTransactionType.SPEND_MONEY ? '2200' : '2100';
+      const gstAccount = await fastify.prisma.account.findFirst({
+        where: { organizationId, code: gstCode, isActive: true },
+      });
+      if (!gstAccount) {
+        return reply.code(500).send({ error: `Required GST account (${gstCode}) is missing.` });
+      }
+
+      const updated = await fastify.prisma.$transaction(async (tx) => {
+        let subtotalCents = existing.subtotalCents;
+        let gstCents = existing.gstCents;
+        let totalCents = existing.totalCents;
+
+        if (parse.data.lines && parse.data.lines.length > 0) {
+          await tx.directTransactionLine.deleteMany({
+            where: { directTransactionId: id, organizationId },
+          });
+
+          const processedLines = parse.data.lines.map((line) => {
+            const rawAmount = BigInt(line.amountCents);
+            const gstResult = calculateGST(rawAmount, line.taxTreatment);
+            return {
+              organizationId,
+              directTransactionId: id,
+              accountId: line.accountId,
+              trackingOptionId: line.trackingOptionId || null,
+              description: line.description,
+              taxTreatment: line.taxTreatment,
+              amountCents: gstResult.subtotalCents,
+              gstCents: gstResult.gstCents,
+              totalCents: gstResult.totalCents,
+            };
+          });
+
+          const totalResult = sumGSTResults(
+            processedLines.map((l) => ({
+              subtotalCents: l.amountCents,
+              gstCents: l.gstCents,
+              totalCents: l.totalCents,
+            })),
+          );
+
+          subtotalCents = totalResult.subtotalCents;
+          gstCents = totalResult.gstCents;
+          totalCents = totalResult.totalCents;
+
+          await tx.directTransactionLine.createMany({ data: processedLines });
+        }
+
+        const directTx = await tx.directTransaction.update({
+          where: { id },
+          data: {
+            type: targetType,
+            bankAccountId: targetBankAccountId,
+            contactId: parse.data.contactId !== undefined ? parse.data.contactId : existing.contactId,
+            payeeName: parse.data.payeeName !== undefined ? parse.data.payeeName : existing.payeeName,
+            transactionDate: targetDate,
+            reference: parse.data.reference !== undefined ? parse.data.reference : existing.reference,
+            notes: parse.data.notes !== undefined ? parse.data.notes : existing.notes,
+            subtotalCents,
+            gstCents,
+            totalCents,
+          },
+          include: { lines: true, contact: true },
+        });
+
+        const journalLines: Array<{
+          accountId: string;
+          trackingOptionId?: string | null;
+          entryType: EntryType;
+          amountCents: bigint;
+          description?: string | null;
+        }> = [];
+
+        if (directTx.type === DirectTransactionType.SPEND_MONEY) {
+          for (const l of directTx.lines) {
+            if (l.amountCents > 0n) {
+              journalLines.push({
+                accountId: l.accountId,
+                trackingOptionId: l.trackingOptionId,
+                entryType: EntryType.DEBIT,
+                amountCents: l.amountCents,
+                description: l.description,
+              });
+            }
+          }
+          if (directTx.gstCents > 0n) {
+            journalLines.push({
+              accountId: gstAccount.id,
+              entryType: EntryType.DEBIT,
+              amountCents: directTx.gstCents,
+              description: 'GST Paid (Purchases)',
+            });
+          }
+          journalLines.push({
+            accountId: bankAccount.id,
+            entryType: EntryType.CREDIT,
+            amountCents: directTx.totalCents,
+            description: `Direct Spend Money - ${directTx.payeeName || directTx.reference || 'Payment'}`,
+          });
+        } else {
+          journalLines.push({
+            accountId: bankAccount.id,
+            entryType: EntryType.DEBIT,
+            amountCents: directTx.totalCents,
+            description: `Direct Receive Money - ${directTx.payeeName || directTx.reference || 'Receipt'}`,
+          });
+          for (const l of directTx.lines) {
+            if (l.amountCents > 0n) {
+              journalLines.push({
+                accountId: l.accountId,
+                trackingOptionId: l.trackingOptionId,
+                entryType: EntryType.CREDIT,
+                amountCents: l.amountCents,
+                description: l.description,
+              });
+            }
+          }
+          if (directTx.gstCents > 0n) {
+            journalLines.push({
+              accountId: gstAccount.id,
+              entryType: EntryType.CREDIT,
+              amountCents: directTx.gstCents,
+              description: 'GST Collected (Sales)',
+            });
+          }
+        }
+
+        if (journalLines.length >= 2) {
+          await syncOrReplaceJournalEntry(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            description: `${directTx.type === DirectTransactionType.SPEND_MONEY ? 'Direct Spend Money' : 'Direct Receive Money'}: ${directTx.payeeName || directTx.reference || 'Transaction'}`,
+            referenceType: 'DIRECT_TRANSACTION',
+            referenceId: directTx.id,
+            postedAt: directTx.transactionDate,
+            lines: journalLines,
+          });
+        }
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'DIRECT_TRANSACTION_UPDATED',
+          entityType: 'DIRECT_TRANSACTION',
+          entityId: directTx.id,
+          summary: `Updated ${directTx.type} ($${(Number(directTx.totalCents) / 100).toFixed(2)})`,
+        });
+
+        return directTx;
+      });
+
+      return reply.code(200).send({
+        message: 'Direct transaction updated and GL synchronized',
+        directTransaction: serializeData(updated),
+      });
+    },
+  );
+
+  // DELETE /api/v1/direct-transactions/:id — Void/delete direct transaction and reverse/delete GL journal
+  fastify.delete(
+    '/api/v1/direct-transactions/:id',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT),
+      ],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      const existing = await fastify.prisma.directTransaction.findFirst({
+        where: { id, organizationId },
+      });
+
+      if (!existing) {
+        return reply.code(404).send({ error: 'Direct transaction not found' });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(
+        fastify.prisma,
+        organizationId,
+        existing.transactionDate,
+      );
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      const activeJournal = await fastify.prisma.journalEntry.findFirst({
+        where: {
+          organizationId,
+          referenceType: 'DIRECT_TRANSACTION',
+          referenceId: id,
+          status: 'POSTED',
+          reversedById: null,
+        },
+      });
+
+      await fastify.prisma.$transaction(async (tx) => {
+        if (activeJournal) {
+          await reverseJournalEntry(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            journalEntryId: activeJournal.id,
+            reversalDate: new Date(),
+            reason: `Deleted Direct Transaction ${existing.reference || existing.payeeName || existing.id}`,
+            skipSubledgerCascade: true,
+          });
+        }
+
+        await tx.directTransaction.delete({ where: { id } });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'DIRECT_TRANSACTION_DELETED',
+          entityType: 'DIRECT_TRANSACTION',
+          entityId: id,
+          summary: `Deleted ${existing.type} ($${(Number(existing.totalCents) / 100).toFixed(2)}) and reversed GL posting`,
+        });
+      });
+
+      return reply.code(200).send({
+        success: true,
+        message: 'Direct transaction deleted and GL posting reversed',
       });
     },
   );

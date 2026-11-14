@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
-import { checkOrganizationLockDate } from '../lib/ledger-posting.js';
+import { checkOrganizationLockDate, reverseJournalEntry } from '../lib/ledger-posting.js';
 import { CreditNoteStatus, EntryType, Role, TaxTreatment, BillStatus } from '@prisma/client';
 
 const TaxTreatmentEnum = z.nativeEnum(TaxTreatment);
@@ -509,6 +509,155 @@ export const vendorCreditRoutes: FastifyPluginAsync = async (fastify) => {
         bill: serializeVC(result.updatedBill),
         allocatedCents: Number(result.allocatedCents),
       });
+    },
+  );
+
+  // POST /api/v1/vendor-credits/:id/void — Void an unallocated vendor credit
+  fastify.post(
+    '/api/v1/vendor-credits/:id/void',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST),
+      ],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      const vc = await fastify.prisma.vendorCredit.findFirst({
+        where: { id, organizationId },
+        include: { contact: true },
+      });
+      if (!vc) return reply.code(404).send({ error: 'Vendor credit not found' });
+      if (vc.status === CreditNoteStatus.VOID) {
+        return reply.code(400).send({ error: 'Vendor credit is already void.' });
+      }
+      if (vc.amountAppliedCents > 0n) {
+        return reply.code(400).send({
+          error: 'Cannot void a vendor credit that has already been allocated to a bill.',
+        });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, new Date());
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      const originalEntry = await fastify.prisma.journalEntry.findFirst({
+        where: {
+          organizationId,
+          referenceType: 'VENDOR_CREDIT',
+          referenceId: vc.id,
+          status: 'POSTED',
+          reversedById: null,
+        },
+      });
+
+      const updated = await fastify.prisma.$transaction(async (tx) => {
+        if (originalEntry) {
+          await reverseJournalEntry(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            journalEntryId: originalEntry.id,
+            reversalDate: new Date(),
+            reason: `Void Vendor Credit ${vc.reference || vc.id}`,
+            skipSubledgerCascade: true,
+          });
+        }
+
+        const res = await tx.vendorCredit.update({
+          where: { id: vc.id },
+          data: { status: CreditNoteStatus.VOID },
+          include: { contact: true, lineItems: true },
+        });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'VENDOR_CREDIT_VOIDED',
+          entityType: 'VENDOR_CREDIT',
+          entityId: vc.id,
+          summary: `Voided vendor credit ${vc.reference || vc.id} (${vc.contact.name})`,
+        });
+
+        return res;
+      });
+
+      return reply.code(200).send({ vendorCredit: serializeVC(updated) });
+    },
+  );
+
+  // DELETE /api/v1/vendor-credits/:id — Delete draft or ADMIN force-delete unallocated vendor credit
+  fastify.delete(
+    '/api/v1/vendor-credits/:id',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST),
+      ],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+      const isAdmin = request.user.role === Role.ADMIN;
+
+      const vc = await fastify.prisma.vendorCredit.findFirst({
+        where: { id, organizationId },
+      });
+      if (!vc) return reply.code(404).send({ error: 'Vendor credit not found' });
+
+      if (vc.amountAppliedCents > 0n) {
+        return reply.code(400).send({
+          error: 'Cannot delete a vendor credit that has already been allocated to a bill.',
+        });
+      }
+
+      if (vc.status !== CreditNoteStatus.DRAFT && !isAdmin) {
+        return reply.code(400).send({
+          error: `Only DRAFT vendor credits can be deleted by non-ADMIN users. Void the vendor credit instead.`,
+        });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, vc.issueDate);
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      await fastify.prisma.$transaction(async (tx) => {
+        const linkedJournals = await tx.journalEntry.findMany({
+          where: {
+            organizationId,
+            referenceType: { in: ['VENDOR_CREDIT', 'VENDOR_CREDIT_VOID'] },
+            referenceId: vc.id,
+          },
+          select: { id: true },
+        });
+        const jIds = linkedJournals.map((j) => j.id);
+        if (jIds.length > 0) {
+          await tx.journalEntry.updateMany({
+            where: {
+              organizationId,
+              OR: [{ id: { in: jIds } }, { reversedById: { in: jIds } }, { reversesEntryId: { in: jIds } }],
+            },
+            data: { reversedById: null, reversesEntryId: null },
+          });
+          await tx.journalEntry.deleteMany({
+            where: { id: { in: jIds }, organizationId },
+          });
+        }
+
+        await tx.vendorCredit.delete({ where: { id: vc.id } });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'VENDOR_CREDIT_DELETED',
+          entityType: 'VENDOR_CREDIT',
+          entityId: vc.id,
+          summary: `Deleted vendor credit ${vc.reference || vc.id}`,
+        });
+      });
+
+      return reply.code(200).send({ success: true, message: 'Vendor credit deleted successfully' });
     },
   );
 };

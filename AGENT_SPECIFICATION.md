@@ -211,9 +211,9 @@ Contacts represent Customers (AR), Vendors/Suppliers (AP), or Both:
 
 ---
 
-## 6. 10-Module Enterprise Architecture Scope
+## 6. 11-Module Enterprise Architecture Scope
 
-The platform is organized into **10 cohesive, deep-built modules** (see `docs/STAGES_ROADMAP.md` for full specifications):
+The platform is organized into **11 cohesive, deep-built modules** (see `docs/STAGES_ROADMAP.md` for full specifications):
 
 1. **Module 1 — Enterprise Workspace, RBAC, Governance & Unified Schema:** Multi-company switcher, 7-tier domain-isolated RBAC, Organization remittance profile (BSB/Account #/APCA ID), Period Lock Dates, `enabledModules` feature flags (`['CORE_FINANCE', 'EXPENSES', 'FLEET', 'INVENTORY', 'DEVELOPER_PORTAL']`), and Immutable System Audit Log.
 2. **Module 2 — The Financial Spine (CoA, Dimensions & GL Engine):** Full CRUD Chart of Accounts (`/accounts`), 10 protected system accounts, sub-account balance sweep decommissioning, Tracking Categories/Cost Centers, Manual & Recurring Adjusting Journals, and 1-click Journal Reversals.
@@ -225,6 +225,7 @@ The platform is organized into **10 cohesive, deep-built modules** (see `docs/ST
 8. **Module 8 — Financial Statements, Australian BAS Engine, Live Dashboard & Plug-Ins (`/reports` & `/`):** Trial Balance, Dimensional Profit & Loss, Balance Sheet, AR/AP Aging (Current, 1–30, 31–60, 61–90, 90+ days), ATO BAS Worksheet (G1, 1A, 1B), 100% live database Dashboard, and plug-in hooks for Fleet Management, Inventory, and GCS Attachments.
 9. **Module 9 — Developer & Agent Context Interface (`/developer`):** `ADMIN`-gated governance console providing an allowlisted Markdown documentation reader (`AGENTS.md`, `AGENT_SPECIFICATION.md`, `docs/*.md`), deterministic API Reference catalog (`GET /api/v1/developer/api-catalog`), live Roadmap Tracker, Changelog & Audit Feed, and secret-redacted Runtime Diagnostics.
 10. **Module 10 — Corporate Precision UI/UX Alignment, Overlay Architecture, Expenses Remediation & A4 Report Print Engine:** Universal `createPortal(..., document.body)` overlay architecture (`!mt-0`), `/expenses` data contract alignment and GL inspector integration, dedicated `@media print` A4 financial statement isolation (`#report-print-sheet`), and platform-wide geometry/typography standardization.
+11. **Module 11 — Transactional Integrity, Bidirectional Sub-Ledger/GL Synchronization & Full Record Lifecycle Control:** Mutual `REVERSED` journal status with strict anti-double-reversal guard, bidirectional cascade between `/ledger` reversals and sub-ledger records (`Bill`, `Invoice`, `PaymentOut`, `PaymentIn`, `CreditNote`, `VendorCredit`, `ExpenseClaim`, `DirectTransaction`, `BankTransfer`), in-place `Edit & Re-Post` (`syncOrReplaceJournalEntry`), `Revert to Draft`, `Void`, `Payment Reversal`, and `ADMIN` `Force Delete` across all modules.
 
 ---
 

@@ -172,7 +172,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │       │   ├── abn.ts             # ATO ABN checksum validation algorithm
 │       │   ├── audit.ts           # Append-only immutable system audit log helper
 │       │   ├── gst.ts             # Integer-cent Australian GST calculation utilities
-│       │   ├── ledger-posting.ts  # Accounting period lock date validation helper
+│       │   ├── ledger-posting.ts  # Double-entry GL posting, anti-double-reversal, bidirectional sub-ledger sync & lock date validation
 │       │   ├── schema-sync.ts     # Idempotent startup DDL & system account synchronizer
 │       │   └── system-accounts.ts # 10 Protected System GL Accounts definition & seeder
 │       ├── plugins/
@@ -181,23 +181,23 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │       ├── routes/
 │       │   ├── accounts.ts        # GET/POST/PATCH /api/v1/accounts, decommission sweep, tracking categories
 │       │   ├── auth.ts            # POST /api/v1/auth/google, GET /me, POST /switch-organization, DELETE /logout
-│       │   ├── banking.ts         # Multi-account banking, inter-account transfers, statement import & smart reconciliation
+│       │   ├── banking.ts         # Multi-account banking, inter-account transfers (+ reversal), statement import & smart reconciliation
 │       │   ├── batch-payments.ts  # GET/POST /api/v1/batch-payments, GET /:id/aba (APCA CEMTEX file download)
-│       │   ├── bills.ts           # GET/POST /api/v1/bills, recurring schedules, approval GL & payments out
-│       │   ├── contacts.ts        # GET/api/v1/contacts, POST, GET /:id, PATCH /:id, GET /:id/360
-│       │   ├── credit-notes.ts    # GET/POST /api/v1/credit-notes, /:id/issue (contra-AR GL), /:id/allocate
+│       │   ├── bills.ts           # GET/POST/PATCH/DELETE /api/v1/bills, edit & re-post, revert-to-draft, void, payment reversal & recurring
+│       │   ├── contacts.ts        # GET/POST/PATCH/DELETE /api/v1/contacts, GET /:id/360
+│       │   ├── credit-notes.ts    # GET/POST/DELETE /api/v1/credit-notes, /:id/issue (contra-AR GL), /:id/allocate, /:id/void
 │       │   ├── dashboard.ts       # GET /api/v1/dashboard/summary (100% live PostgreSQL KPI aggregations)
-│       │   ├── developer.ts       # GET /api/v1/developer/* (Allowlisted docs index/content, roadmap parser, safe diagnostics)
-│       │   ├── direct-transactions.ts # GET/POST /api/v1/direct-transactions (Spend/Receive Money, atomic GL)
-│       │   ├── expense-claims.ts  # GET/POST/PATCH/DELETE /api/v1/expense-claims, approve GL, pay
-│       │   ├── invoices.ts        # GET/POST /api/v1/invoices, recurring schedules, GL issuance & payments in
+│       │   ├── developer.ts       # GET /api/v1/developer/* (Allowlisted docs index/content, API catalog, roadmap parser, safe diagnostics)
+│       │   ├── direct-transactions.ts # GET/POST/PATCH/DELETE /api/v1/direct-transactions (Spend/Receive Money, atomic GL sync/reversal)
+│       │   ├── expense-claims.ts  # GET/POST/PATCH/DELETE /api/v1/expense-claims, approve GL, void/revert, pay & reverse-payment
+│       │   ├── invoices.ts        # GET/POST/PATCH/DELETE /api/v1/invoices, edit & re-post, revert-to-draft, void, payment reversal & recurring
 │       │   ├── items.ts           # GET/POST/PATCH/DELETE /api/v1/items (Products & Services catalog)
-│       │   ├── ledger.ts          # GET /api/v1/ledger, GET /api/v1/ledger/accounts, POST /api/v1/ledger/entries
+│       │   ├── ledger.ts          # GET/POST/PATCH/DELETE /api/v1/ledger, /accounts, /entries, /:id/reverse (bidirectional cascade)
 │       │   ├── organizations.ts   # Organization profile, multi-company list, members, invites, & audit logs
-│       │   ├── purchase-orders.ts # GET/POST /api/v1/purchase-orders, approval workflow, 1-click bill convert
-│       │   ├── quotes.ts          # GET/POST /api/v1/quotes, 1-click convert-to-invoice
+│       │   ├── purchase-orders.ts # GET/POST/PATCH/DELETE /api/v1/purchase-orders, approval workflow, 1-click bill convert
+│       │   ├── quotes.ts          # GET/POST/PATCH/DELETE /api/v1/quotes, 1-click convert-to-invoice
 │       │   ├── reports.ts         # GET /api/v1/reports/* (Trial Balance, P&L, Balance Sheet, Aged AR/AP, ATO BAS Engine)
-│       │   └── vendor-credits.ts  # GET/POST /api/v1/vendor-credits, /:id/issue (contra-AP GL), /:id/allocate
+│       │   └── vendor-credits.ts  # GET/POST/DELETE /api/v1/vendor-credits, /:id/issue (contra-AP GL), /:id/allocate, /:id/void
 │       └── server.ts          # Fastify server entry point, static serving, plugins
 ├── docs/                      # Technical Documentation
 │   ├── ARCHITECTURE.md        # Topology, service boundaries, and Cloud Run configuration
@@ -207,7 +207,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │   ├── INTEGRATIONS.md        # Async webhook payloads and n8n contracts
 │   ├── PLUGINS.md             # Enterprise Plug-In Module Contract (FLEET, INVENTORY, ATTACHMENTS, N8N)
 │   ├── SECURITY.md            # Auth mechanics, 7-role RBAC matrix, and crypto standards
-│   └── STAGES_ROADMAP.md      # 10-Module Deep-Build Execution Plan & completion checklist
+│   └── STAGES_ROADMAP.md      # 11-Module Deep-Build Execution Plan & completion checklist
 └── frontend/                  # React SPA (Vite + TypeScript + Tailwind)
     ├── index.html             # HTML entry point with Inter & JetBrains Mono font links
     ├── package.json           # Frontend dependencies and scripts

@@ -1,4 +1,4 @@
-# Master Architecture & 8-Module Deep-Build Roadmap
+# Master Architecture & 11-Module Deep-Build Roadmap
 
 This document is the authoritative architectural blueprint and execution plan for the **JBTDA-DWS Enterprise Ledger & Business Services Platform**.
 
@@ -421,3 +421,49 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 - [x] **10.8 Page Header Typography & Sub-Navigation Tab Bar Unification (All Pages)**:
   - Standardize all page headers to `Inter` (`font-sans`) `text-xl font-medium tracking-tight text-slate-900` (replacing `font-mono uppercase font-bold` on `ReportsPage.tsx` and decorative header icon boxes on `BankingPage.tsx`).
   - Unify horizontal sub-navigation tab bar active indicators across all modules to `border-b-2 border-forest-900 text-forest-900 font-medium`.
+
+---
+
+### Module 11: Transactional Integrity, Bidirectional Sub-Ledger/GL Synchronization & Full Record Lifecycle Control (Edit / Void / Delete)
+**Objective:** Ensure 100% bidirectional consistency between the General Ledger (`/ledger`) and all sub-ledger modules (`/bills`, `/invoices`, `/expenses`, `/banking`), prevent double-reversal ledger corruption, and empower `ADMIN` / `ACCOUNTANT` users with complete Edit & Re-Post, Revert-to-Draft, Void, Payment Reversal, and Force-Delete lifecycle controls gated by the Accounting Period Lock Date.
+
+- [x] **11.1 General Ledger Reversal Math, Anti-Double-Reversal Guard & Admin Force-Delete (`ledger-posting.ts`, `ledger.ts`, `LedgerPage.tsx`)**:
+  - Mark both the original journal (`JNL-xxxx`) and the contra-reversal journal (`REV-xxxx`) as `status: JournalStatus.REVERSED` (mutually linked via `reversedById` and `reversesEntryId`) so both entries remain permanently in the GL audit trail with offsetting lines while netting to `$0.00` in `POSTED` Trial Balance, P&L, and Balance Sheet aggregations.
+  - Strictly block "reversing a reversal": reject `reverseJournalEntry` when `original.reversesEntryId !== null`, `original.reversedById !== null`, `original.status !== 'POSTED'`, or `original.referenceType === 'MANUAL_REVERSAL'`, and hide the Reverse button in `LedgerPage.tsx` on contra-entries.
+  - Automatically un-match any linked `BankStatementLine` reconciliation when a journal is reversed or deleted.
+  - Allow `ADMIN` Force-Delete (`DELETE /api/v1/ledger/:id`) on unreconciled journals with an immutable `AuditLog` tombstone.
+- [x] **11.2 Bidirectional Sub-Ledger $\leftrightarrow$ General Ledger Cascade Synchronization (`ledger-posting.ts`)**:
+  - When a sub-ledger journal is reversed in `/ledger`, atomically cascade the reversal to the source sub-ledger record inside the same `prisma.$transaction(...)`:
+    - `BILL` $\rightarrow$ marks `Bill` as `VOID` (rejects if `amountPaidCents > 0n`).
+    - `INVOICE` $\rightarrow$ marks `Invoice` as `VOID` (rejects if `amountPaidCents > 0n`).
+    - `PAYMENT_OUT` $\rightarrow$ deletes `PaymentOut` and recalculates parent `Bill.amountPaidCents` & status (`AWAITING_PAYMENT` / `PARTIALLY_PAID`).
+    - `PAYMENT_IN` $\rightarrow$ deletes `PaymentIn` and recalculates parent `Invoice.amountPaidCents` & status (`ISSUED` / `PARTIALLY_PAID`).
+    - `CREDIT_NOTE` / `VENDOR_CREDIT` $\rightarrow$ marks Credit Note / Vendor Credit as `VOID` (rejects if `amountAppliedCents > 0n`).
+    - `EXPENSE_CLAIM` $\rightarrow$ reverts unpaid `APPROVED` `ExpenseClaim` to `DRAFT` (or if `EXPENSE_REIMBURSEMENT`, reverses payout and restores claim to `APPROVED`).
+    - `DIRECT_TRANSACTION` $\rightarrow$ deletes `DirectTransaction` (`Spend Money` / `Receive Money`).
+    - `BANK_TRANSFER` $\rightarrow$ deletes `BankTransfer`.
+- [x] **11.3 Accounts Payable (`bills.ts`, `vendor-credits.ts`, `purchase-orders.ts`, `BillsPage.tsx`) — Edit & Re-Post, Revert to Draft, Void, Payment Reversal & Admin Delete**:
+  - `PATCH /api/v1/bills/:id`: Allow editing `DRAFT`, `PENDING_APPROVAL`, and unpaid `AWAITING_PAYMENT` bills (`amountPaidCents === 0n`), atomically updating `BillLineItem` records (`quantity`, `unitPriceCents`, `accountId`, `trackingOptionId`) and synchronizing the active `BILL` `JournalEntry` lines in place.
+  - `POST /api/v1/bills/:id/approve`: Allow approving both `DRAFT` and `PENDING_APPROVAL` bills while preserving line-level `accountId` and `trackingOptionId` in the GL posting.
+  - `POST /api/v1/bills/:id/revert-to-draft`: Revert an unpaid `AWAITING_PAYMENT` or `PENDING_APPROVAL` bill to `DRAFT` and reverse/remove its active GL journal.
+  - `DELETE /api/v1/bills/:id/payments/:paymentId`: Reverse a recorded `PaymentOut`, reverse its `PAYMENT_OUT` GL journal, and restore the `Bill` balance and status.
+  - `DELETE /api/v1/bills/:id`: Allow deleting `DRAFT`/`PENDING_APPROVAL` bills and `ADMIN` Force-Delete on unpaid/void bills.
+  - `POST /api/v1/vendor-credits/:id/void` & `DELETE /api/v1/vendor-credits/:id`: Void or delete unallocated vendor credits with GL journal reversal.
+  - Surface **Edit Bill**, **Approve & Post**, **Revert to Draft**, **Void Bill**, **Delete**, and **Reverse Payment** actions in `BillsPage.tsx`.
+- [x] **11.4 Accounts Receivable (`invoices.ts`, `credit-notes.ts`, `quotes.ts`, `InvoicesPage.tsx`) — Edit & Re-Post, Revert to Draft, Void, Payment Reversal & Admin Delete**:
+  - `PATCH /api/v1/invoices/:id`: Allow editing `DRAFT`, `PENDING_APPROVAL`, and unpaid `ISSUED` invoices (`amountPaidCents === 0n`), atomically updating `InvoiceLineItem` records and synchronizing the active `INVOICE` `JournalEntry` lines in place.
+  - `POST /api/v1/invoices/:id/revert-to-draft`: Revert an unpaid `ISSUED` or `PENDING_APPROVAL` invoice to `DRAFT` and reverse/remove its active GL journal.
+  - `POST /api/v1/invoices/:id/void`: Standardize voiding through `reverseJournalEntry` so original and contra journals are marked `REVERSED`.
+  - `DELETE /api/v1/invoices/:id/payments/:paymentId`: Reverse a recorded `PaymentIn`, reverse its `PAYMENT_IN` GL journal, and restore the `Invoice` balance and status.
+  - `DELETE /api/v1/invoices/:id`: Allow deleting `DRAFT`/`PENDING_APPROVAL` invoices and `ADMIN` Force-Delete on unpaid/void invoices.
+  - `POST /api/v1/credit-notes/:id/void` & `DELETE /api/v1/credit-notes/:id`: Void or delete unallocated customer credit notes with GL journal reversal.
+  - Surface **Edit Invoice**, **Revert to Draft**, **Void Invoice**, **Delete**, and **Reverse Receipt** actions in `InvoicesPage.tsx`.
+- [x] **11.5 Enterprise Expenses & Direct Transactions (`expense-claims.ts`, `direct-transactions.ts`, `ExpensesPage.tsx`) — Edit, Void/Unapprove, Payout Reversal & Delete**:
+  - `POST /api/v1/expense-claims/:id/void`: Unapprove/void an `APPROVED` (unpaid) claim back to `DRAFT` and reverse its `EXPENSE_CLAIM` GL journal.
+  - `POST /api/v1/expense-claims/:id/reverse-payment`: Reverse a paid reimbursement (`EXPENSE_REIMBURSEMENT` GL journal) and restore the claim to `APPROVED`.
+  - `PATCH /api/v1/expense-claims/:id` & `DELETE /api/v1/expense-claims/:id`: Allow `ADMIN`/`ACCOUNTANT` to edit unpaid `APPROVED` claims (synchronizing the `2050` GL journal) and allow `ADMIN` Force-Delete on unpaid claims.
+  - `PATCH /api/v1/direct-transactions/:id` & `DELETE /api/v1/direct-transactions/:id`: Allow `ADMIN`/`ACCOUNTANT` to edit or void/delete a `DirectTransaction` (`Spend Money` / `Receive Money`) and synchronize/reverse its GL journal.
+  - Surface **Edit**, **Revert to Draft / Void**, **Reverse Payout**, and **Delete** controls in `ExpensesPage.tsx`.
+- [x] **11.6 Banking Transfers & Master Data Lifecycle Controls (`banking.ts`, `contacts.ts`, `BankingPage.tsx`, `ContactsPage.tsx`)**:
+  - `DELETE /api/v1/banking/transfers/:id`: Allow `ADMIN`/`ACCOUNTANT` to reverse/delete an inter-account `BankTransfer` and its linked `BANK_TRANSFER` GL journal.
+  - `DELETE /api/v1/contacts/:id`: Allow `ADMIN` to delete contacts with no linked transactions (or deactivate contacts with historical activity).

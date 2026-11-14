@@ -11,10 +11,13 @@
  */
 
 import {
+  BillStatus,
+  CreditNoteStatus,
   EntryType,
+  ExpenseClaimStatus,
+  InvoiceStatus,
   JournalStatus,
   type Prisma,
-  type JournalEntry,
 } from '@prisma/client';
 import { recordAuditLog } from './audit.js';
 
@@ -296,13 +299,18 @@ export interface ReverseJournalParams {
   journalEntryId: string;
   reversalDate?: Date;
   reason?: string;
+  /** When true, skips cascading status changes back to the source sub-ledger document (used when the sub-ledger void handler itself initiated the reversal). */
+  skipSubledgerCascade?: boolean;
 }
 
 /**
- * 1-Click Journal Reversal:
+ * 1-Click Journal Reversal (with Bidirectional Sub-Ledger Cascade):
  * Creates an immutable contra-journal entry with inverted debits/credits,
- * mutually cross-references `reversesEntryId` and `reversedById`, and
- * marks the original entry as `REVERSED`.
+ * mutually cross-references `reversesEntryId` and `reversedById`,
+ * marks both the original entry and contra-reversal entry as `REVERSED`
+ * so active `POSTED` Trial Balance / P&L / Balance Sheet totals net to $0.00,
+ * blocks reversing a reversal, un-matches any reconciled bank statement line,
+ * and cascades void/reversal state to the linked sub-ledger document.
  */
 export async function reverseJournalEntry(
   tx: Prisma.TransactionClient,
@@ -314,6 +322,7 @@ export async function reverseJournalEntry(
     journalEntryId,
     reversalDate = new Date(),
     reason,
+    skipSubledgerCascade = false,
   } = params;
 
   // Check period lock date for the reversal date
@@ -331,12 +340,275 @@ export async function reverseJournalEntry(
     throw new Error('Journal entry not found in this organization.');
   }
 
+  // Strictly block reversing a contra-reversal entry ("reverse of a reverse")
+  if (
+    original.reversesEntryId ||
+    original.referenceType === 'MANUAL_REVERSAL' ||
+    original.referenceType.endsWith('_VOID')
+  ) {
+    throw new Error(
+      `Journal entry ${original.entryNumber || original.id} is a reversal contra-journal and cannot itself be reversed.`,
+    );
+  }
+
+  if (original.reversedById || original.status === JournalStatus.REVERSED) {
+    throw new Error(`Journal entry ${original.entryNumber || original.id} has already been reversed.`);
+  }
+
   if (original.status !== JournalStatus.POSTED) {
     throw new Error(`Cannot reverse journal with status "${original.status}". Only POSTED journals can be reversed.`);
   }
 
-  if (original.reversedById) {
-    throw new Error(`Journal entry ${original.entryNumber || original.id} has already been reversed.`);
+  // Check period lock date on the original entry's posting date as well
+  const origLockCheck = await checkOrganizationLockDate(tx, organizationId, original.postedAt);
+  if (origLockCheck.locked) {
+    throw new Error(origLockCheck.message);
+  }
+
+  // If reconciled against a bank statement line, un-match the bank statement line
+  if (original.isReconciled) {
+    await tx.bankStatementLine.updateMany({
+      where: { organizationId, matchedJournalId: original.id },
+      data: {
+        isReconciled: false,
+        matchedJournalId: null,
+        reconciledAt: null,
+        reconciledByUserId: null,
+      },
+    });
+  }
+
+  // Bidirectional Sub-Ledger Cascade when reversal is triggered from /ledger
+  if (!skipSubledgerCascade && original.referenceId && original.referenceId !== 'manual') {
+    const refType = original.referenceType;
+    const refId = original.referenceId;
+
+    if (refType === 'BILL') {
+      const bill = await tx.bill.findFirst({
+        where: { id: refId, organizationId },
+      });
+      if (bill && bill.status !== BillStatus.VOID) {
+        if (bill.amountPaidCents > 0n) {
+          throw new Error(
+            `Cannot reverse journal for Bill ${bill.reference || bill.id} because it has recorded payments or credit allocations ($${(Number(bill.amountPaidCents) / 100).toFixed(2)}). Reverse the payment first.`,
+          );
+        }
+        await tx.bill.update({
+          where: { id: bill.id },
+          data: { status: BillStatus.VOID },
+        });
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId,
+          action: 'BILL_VOIDED',
+          entityType: 'BILL',
+          entityId: bill.id,
+          summary: `Bill ${bill.reference || bill.id} automatically voided via General Ledger journal reversal (${original.entryNumber || original.id})`,
+        });
+      }
+    } else if (refType === 'INVOICE') {
+      const invoice = await tx.invoice.findFirst({
+        where: { id: refId, organizationId },
+      });
+      if (invoice && invoice.status !== InvoiceStatus.VOID) {
+        if (invoice.amountPaidCents > 0n) {
+          throw new Error(
+            `Cannot reverse journal for Invoice ${invoice.invoiceNumber} because it has recorded payments or credit allocations ($${(Number(invoice.amountPaidCents) / 100).toFixed(2)}). Reverse the receipt first.`,
+          );
+        }
+        await tx.invoice.update({
+          where: { id: invoice.id },
+          data: { status: InvoiceStatus.VOID },
+        });
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId,
+          action: 'INVOICE_VOIDED',
+          entityType: 'INVOICE',
+          entityId: invoice.id,
+          summary: `Invoice ${invoice.invoiceNumber} automatically voided via General Ledger journal reversal (${original.entryNumber || original.id})`,
+        });
+      }
+    } else if (refType === 'PAYMENT_OUT') {
+      const paymentOut = await tx.paymentOut.findFirst({
+        where: { id: refId, organizationId },
+        include: { bill: true },
+      });
+      if (paymentOut) {
+        const currentPaid = paymentOut.bill.amountPaidCents;
+        const newPaid = currentPaid > paymentOut.amountCents ? currentPaid - paymentOut.amountCents : 0n;
+        const newStatus =
+          paymentOut.bill.status === BillStatus.VOID
+            ? BillStatus.VOID
+            : newPaid === 0n
+            ? BillStatus.AWAITING_PAYMENT
+            : BillStatus.PARTIALLY_PAID;
+
+        await tx.bill.update({
+          where: { id: paymentOut.billId },
+          data: {
+            amountPaidCents: newPaid,
+            status: newStatus,
+          },
+        });
+        await tx.paymentOut.delete({ where: { id: paymentOut.id } });
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId,
+          action: 'PAYMENT_OUT_REVERSED',
+          entityType: 'BILL',
+          entityId: paymentOut.billId,
+          summary: `Reversed payment of $${(Number(paymentOut.amountCents) / 100).toFixed(2)} on Bill ${paymentOut.bill.reference || paymentOut.billId}; bill status restored to ${newStatus}`,
+        });
+      }
+    } else if (refType === 'PAYMENT_IN') {
+      const paymentIn = await tx.paymentIn.findFirst({
+        where: { id: refId, organizationId },
+        include: { invoice: true },
+      });
+      if (paymentIn) {
+        if (paymentIn.invoice) {
+          const currentPaid = paymentIn.invoice.amountPaidCents;
+          const newPaid = currentPaid > paymentIn.amountCents ? currentPaid - paymentIn.amountCents : 0n;
+          const newStatus =
+            paymentIn.invoice.status === InvoiceStatus.VOID
+              ? InvoiceStatus.VOID
+              : newPaid === 0n
+              ? InvoiceStatus.ISSUED
+              : InvoiceStatus.PARTIALLY_PAID;
+
+          await tx.invoice.update({
+            where: { id: paymentIn.invoice.id },
+            data: {
+              amountPaidCents: newPaid,
+              status: newStatus,
+            },
+          });
+        }
+        await tx.paymentIn.delete({ where: { id: paymentIn.id } });
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId,
+          action: 'PAYMENT_IN_REVERSED',
+          entityType: 'INVOICE',
+          entityId: paymentIn.invoiceId || paymentIn.id,
+          summary: `Reversed incoming receipt of $${(Number(paymentIn.amountCents) / 100).toFixed(2)}${paymentIn.invoice ? ` on Invoice ${paymentIn.invoice.invoiceNumber}` : ''}`,
+        });
+      }
+    } else if (refType === 'CREDIT_NOTE') {
+      const cn = await tx.creditNote.findFirst({
+        where: { id: refId, organizationId },
+      });
+      if (cn && cn.status !== CreditNoteStatus.VOID) {
+        if (cn.amountAppliedCents > 0n) {
+          throw new Error(
+            `Cannot reverse journal for Credit Note ${cn.creditNoteNumber} because $${(Number(cn.amountAppliedCents) / 100).toFixed(2)} has already been allocated.`,
+          );
+        }
+        await tx.creditNote.update({
+          where: { id: cn.id },
+          data: { status: CreditNoteStatus.VOID },
+        });
+      }
+    } else if (refType === 'VENDOR_CREDIT') {
+      const vc = await tx.vendorCredit.findFirst({
+        where: { id: refId, organizationId },
+      });
+      if (vc && vc.status !== CreditNoteStatus.VOID) {
+        if (vc.amountAppliedCents > 0n) {
+          throw new Error(
+            `Cannot reverse journal for Vendor Credit ${vc.reference || vc.id} because $${(Number(vc.amountAppliedCents) / 100).toFixed(2)} has already been allocated.`,
+          );
+        }
+        await tx.vendorCredit.update({
+          where: { id: vc.id },
+          data: { status: CreditNoteStatus.VOID },
+        });
+      }
+    } else if (refType === 'EXPENSE_CLAIM') {
+      const claim = await tx.expenseClaim.findFirst({
+        where: { id: refId, organizationId },
+      });
+      if (claim) {
+        if (claim.status === ExpenseClaimStatus.PAID) {
+          throw new Error(
+            `Cannot reverse approval journal for Expense Claim ${claim.claimNumber} while it is marked PAID. Reverse the reimbursement payout journal first.`,
+          );
+        }
+        await tx.expenseClaim.update({
+          where: { id: claim.id },
+          data: {
+            status: ExpenseClaimStatus.DRAFT,
+            approvedAt: null,
+            approvedByUserId: null,
+          },
+        });
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId,
+          action: 'EXPENSE_CLAIM_REVERTED',
+          entityType: 'EXPENSE_CLAIM',
+          entityId: claim.id,
+          summary: `Expense claim ${claim.claimNumber} reverted to DRAFT via GL journal reversal`,
+        });
+      }
+    } else if (
+      refType === 'EXPENSE_REIMBURSEMENT' ||
+      refType === 'EXPENSE_CLAIM_PAYMENT' ||
+      refType === 'EXPENSE_CLAIM_PAYOUT'
+    ) {
+      const claim = await tx.expenseClaim.findFirst({
+        where: { id: refId, organizationId },
+      });
+      if (claim && claim.status === ExpenseClaimStatus.PAID) {
+        await tx.expenseClaim.update({
+          where: { id: claim.id },
+          data: {
+            status: ExpenseClaimStatus.APPROVED,
+            paidAt: null,
+            paidFromBankId: null,
+          },
+        });
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId,
+          action: 'EXPENSE_REIMBURSEMENT_REVERSED',
+          entityType: 'EXPENSE_CLAIM',
+          entityId: claim.id,
+          summary: `Reimbursement payout reversed for Expense Claim ${claim.claimNumber}; claim returned to APPROVED`,
+        });
+      }
+    } else if (refType === 'DIRECT_TRANSACTION') {
+      const dt = await tx.directTransaction.findFirst({
+        where: { id: refId, organizationId },
+      });
+      if (dt) {
+        await tx.directTransaction.delete({ where: { id: dt.id } });
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId,
+          action: 'DIRECT_TRANSACTION_VOIDED',
+          entityType: 'DIRECT_TRANSACTION',
+          entityId: dt.id,
+          summary: `Direct transaction ${dt.reference || dt.payeeName || dt.id} removed via GL journal reversal`,
+        });
+      }
+    } else if (refType === 'BANK_TRANSFER') {
+      const bt = await tx.bankTransfer.findFirst({
+        where: { id: refId, organizationId },
+      });
+      if (bt) {
+        await tx.bankTransfer.delete({ where: { id: bt.id } });
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId,
+          action: 'BANK_TRANSFER_REVERSED',
+          entityType: 'BANK_TRANSFER',
+          entityId: bt.id,
+          summary: `Inter-account bank transfer ${bt.reference || bt.id} reversed and removed`,
+        });
+      }
+    }
   }
 
   const nextEntryNumber = await getNextJournalEntryNumber(tx, organizationId, 'REV');
@@ -354,7 +626,7 @@ export async function reverseJournalEntry(
     description: l.description ? `Reversal: ${l.description}` : `Reversal line`,
   }));
 
-  // Create the contra journal
+  // Create the contra journal with status REVERSED so both original and contra are excluded from active POSTED sums
   const contraEntry = await tx.journalEntry.create({
     data: {
       organizationId,
@@ -362,7 +634,7 @@ export async function reverseJournalEntry(
       description: reversalDescription,
       referenceType: 'MANUAL_REVERSAL',
       referenceId: original.id,
-      status: JournalStatus.POSTED,
+      status: JournalStatus.REVERSED,
       reversesEntryId: original.id,
       postedAt: reversalDate,
       createdByUserId: actorUserId || null,
@@ -392,6 +664,8 @@ export async function reverseJournalEntry(
     data: {
       status: JournalStatus.REVERSED,
       reversedById: contraEntry.id,
+      isReconciled: false,
+      reconciledAt: null,
     },
   });
 
@@ -415,6 +689,117 @@ export async function reverseJournalEntry(
     original: updatedOriginal,
     reversal: contraEntry,
   };
+}
+
+/**
+ * Synchronizes (updates in-place) or creates the active POSTED General Ledger journal entry
+ * for a sub-ledger document (Bill, Invoice, ExpenseClaim, DirectTransaction) when edited by ADMIN/ACCOUNTANT.
+ */
+export async function syncOrReplaceJournalEntry(
+  tx: Prisma.TransactionClient,
+  params: PostJournalParams,
+) {
+  const {
+    organizationId,
+    actorUserId,
+    description,
+    referenceType,
+    referenceId,
+    postedAt = new Date(),
+    lines,
+  } = params;
+
+  const lockCheck = await checkOrganizationLockDate(tx, organizationId, postedAt);
+  if (lockCheck.locked) {
+    throw new Error(lockCheck.message);
+  }
+
+  const { lines: validatedLines, totalDebitsCents } = await validateJournalLines(
+    tx,
+    organizationId,
+    lines,
+  );
+
+  const existing = await tx.journalEntry.findFirst({
+    where: {
+      organizationId,
+      referenceType,
+      referenceId,
+      status: JournalStatus.POSTED,
+      reversedById: null,
+    },
+  });
+
+  if (!existing) {
+    return postJournalEntry(tx, {
+      organizationId,
+      actorUserId,
+      description,
+      referenceType,
+      referenceId,
+      postedAt,
+      status: JournalStatus.POSTED,
+      lines,
+    });
+  }
+
+  const origLockCheck = await checkOrganizationLockDate(tx, organizationId, existing.postedAt);
+  if (origLockCheck.locked) {
+    throw new Error(origLockCheck.message);
+  }
+
+  await tx.journalLine.deleteMany({
+    where: { journalEntryId: existing.id, organizationId },
+  });
+
+  const updated = await tx.journalEntry.update({
+    where: { id: existing.id },
+    data: {
+      description,
+      postedAt,
+      approvedByUserId: actorUserId || existing.approvedByUserId,
+      lines: {
+        create: validatedLines.map((l) => ({
+          organizationId,
+          accountId: l.accountId,
+          trackingOptionId: l.trackingOptionId,
+          entryType: l.entryType,
+          amountCents: l.amountCents,
+          description: l.description,
+        })),
+      },
+    },
+    include: {
+      lines: {
+        include: {
+          account: {
+            select: { id: true, code: true, name: true, type: true, normalBalance: true },
+          },
+          trackingOption: {
+            select: { id: true, name: true, trackingCategory: { select: { id: true, name: true } } },
+          },
+        },
+        orderBy: [{ entryType: 'asc' }, { amountCents: 'desc' }],
+      },
+    },
+  });
+
+  await recordAuditLog(tx, {
+    organizationId,
+    actorUserId,
+    action: 'JOURNAL_UPDATED',
+    entityType: 'JOURNAL_ENTRY',
+    entityId: updated.id,
+    summary: `Updated journal ${updated.entryNumber || updated.id}: "${description}" ($${(Number(totalDebitsCents) / 100).toFixed(2)})`,
+    metadata: {
+      entryNumber: updated.entryNumber,
+      referenceType,
+      referenceId,
+      totalCents: Number(totalDebitsCents),
+    },
+  });
+
+  return updated;
 }
 
 /**

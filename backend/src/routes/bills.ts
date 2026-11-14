@@ -25,7 +25,12 @@ import { z } from 'zod';
 import { requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
-import { checkOrganizationLockDate, postJournalEntry, reverseJournalEntry } from '../lib/ledger-posting.js';
+import {
+  checkOrganizationLockDate,
+  postJournalEntry,
+  reverseJournalEntry,
+  syncOrReplaceJournalEntry,
+} from '../lib/ledger-posting.js';
 import { BillStatus, EntryType, JournalStatus, RecurrenceFrequency, Role, TaxTreatment } from '@prisma/client';
 
 const TaxTreatmentEnum = z.nativeEnum(TaxTreatment);
@@ -193,7 +198,10 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
         : BillStatus.PENDING_APPROVAL;
 
       if (autoApprove) {
-        await checkOrganizationLockDate(fastify.prisma, organizationId, parsedIssueDate);
+        const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, parsedIssueDate);
+        if (lockCheck.locked) {
+          return reply.code(400).send({ error: lockCheck.message });
+        }
       }
 
       const contact = await fastify.prisma.contact.findFirst({
@@ -234,19 +242,23 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Compute GST
       const processedLineItems = lineItems.map((item) => {
+        const qty = item.quantity ?? 1;
+        const unitPrice = item.unitPriceCents ?? (item.amountCents ? Math.round(item.amountCents / qty) : 0);
         const rawAmount = item.amountCents
           ? BigInt(item.amountCents)
-          : BigInt(Math.round(item.quantity * (item.unitPriceCents ?? 0)));
+          : BigInt(Math.round(qty * unitPrice));
         const gstResult = calculateGST(rawAmount, item.taxTreatment);
         return {
-          itemId: item.itemId,
+          itemId: item.itemId || null,
           description: item.description,
+          quantity: qty,
+          unitPriceCents: BigInt(unitPrice),
           taxTreatment: item.taxTreatment,
           amountCents: gstResult.subtotalCents,
           gstCents: gstResult.gstCents,
           totalCents: gstResult.totalCents,
           accountId: item.accountId || expenseAccount.id,
-          trackingOptionId: item.trackingOptionId,
+          trackingOptionId: item.trackingOptionId || null,
         };
       });
 
@@ -273,10 +285,16 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
             amountPaidCents: 0n,
             notes: notes ?? null,
             purchaseOrderId: purchaseOrderId ?? null,
+            createdByUserId: request.user.userId,
+            approvedByUserId: autoApprove ? request.user.userId : null,
             lineItems: {
               create: processedLineItems.map((li) => ({
                 organizationId,
                 itemId: li.itemId,
+                accountId: li.accountId,
+                trackingOptionId: li.trackingOptionId,
+                quantity: li.quantity,
+                unitPriceCents: li.unitPriceCents,
                 description: li.description,
                 amountCents: li.amountCents,
                 taxTreatment: li.taxTreatment,
@@ -399,6 +417,7 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
           referenceType: 'BILL',
           referenceId: bill.id,
         },
+        orderBy: { createdAt: 'desc' },
         include: {
           lines: {
             include: { account: true },
@@ -413,7 +432,7 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
     },
   );
 
-  // PATCH /api/v1/bills/:id
+  // PATCH /api/v1/bills/:id — Update draft, pending_approval, or unpaid awaiting_payment bill (with GL sync)
   fastify.patch(
     '/api/v1/bills/:id',
     {
@@ -422,14 +441,32 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const { id } = ParamsWithId.parse(request.params);
       const organizationId = request.user.organizationId!;
-      const bill = await fastify.prisma.bill.findFirst({ where: { id, organizationId } });
+      const userRole = request.user.role!;
+      const bill = await fastify.prisma.bill.findFirst({
+        where: { id, organizationId },
+        include: { contact: true, lineItems: true },
+      });
 
       if (!bill) {
         return reply.status(404).send({ error: 'Bill not found' });
       }
 
-      if (bill.status !== 'DRAFT') {
-        return reply.status(400).send({ error: `Cannot edit bill with status ${bill.status}` });
+      const canEditPosted = userRole === Role.ADMIN || userRole === Role.ACCOUNTANT;
+
+      if (bill.status === BillStatus.VOID) {
+        return reply.status(400).send({ error: 'Cannot edit a VOID bill.' });
+      }
+
+      if (bill.amountPaidCents > 0n) {
+        return reply.status(400).send({
+          error: 'Cannot edit a bill that has recorded payments. Reverse the payment first.',
+        });
+      }
+
+      if (bill.status === BillStatus.AWAITING_PAYMENT && !canEditPosted) {
+        return reply.status(403).send({
+          error: 'Only ADMIN or ACCOUNTANT users can edit an already-approved bill.',
+        });
       }
 
       const parse = UpdateBillBody.safeParse(request.body);
@@ -438,92 +475,235 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const { contactId, billNumber, reference, issueDate, dueDate, notes, lineItems } = parse.data;
+      const targetIssueDate = issueDate ? new Date(issueDate) : bill.issueDate;
 
-      const updated = await fastify.prisma.$transaction(async (tx) => {
-        let subtotalCents = bill.subtotalCents;
-        let gstCents = bill.gstCents;
-        let totalCents = bill.totalCents;
-
-        if (lineItems && lineItems.length > 0) {
-          await tx.billLineItem.deleteMany({ where: { billId: id } });
-
-          const processedLines = lineItems.map((item) => {
-            const rawAmount = item.amountCents
-              ? BigInt(item.amountCents)
-              : BigInt(Math.round(item.quantity * (item.unitPriceCents ?? 0)));
-            const gstResult = calculateGST(rawAmount, item.taxTreatment);
-            return {
-              organizationId,
-              itemId: item.itemId,
-              description: item.description,
-              taxTreatment: item.taxTreatment,
-              amountCents: gstResult.subtotalCents,
-              gstCents: gstResult.gstCents,
-              totalCents: gstResult.totalCents,
-            };
-          });
-
-          const totals = sumGSTResults(
-            processedLines.map((li) => ({
-              subtotalCents: li.amountCents,
-              gstCents: li.gstCents,
-              totalCents: li.totalCents,
-            })),
-          );
-
-          subtotalCents = totals.subtotalCents;
-          gstCents = totals.gstCents;
-          totalCents = totals.totalCents;
-
-          await tx.billLineItem.createMany({
-            data: processedLines.map((li) => ({ ...li, billId: id })),
-          });
+      if (bill.status === BillStatus.AWAITING_PAYMENT) {
+        const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, targetIssueDate);
+        if (lockCheck.locked) {
+          return reply.status(400).send({ error: lockCheck.message });
         }
+      }
 
-        return tx.bill.update({
-          where: { id },
-          data: {
-            contactId: contactId ?? bill.contactId,
-            reference: reference !== undefined ? reference : (billNumber ?? bill.reference),
-            issueDate: issueDate ? new Date(issueDate) : bill.issueDate,
-            dueDate: dueDate ? new Date(dueDate) : bill.dueDate,
-            notes: notes !== undefined ? notes : bill.notes,
-            subtotalCents,
-            gstCents,
-            totalCents,
-          },
-          include: { contact: true, lineItems: true },
-        });
+      const accounts = await fastify.prisma.account.findMany({
+        where: {
+          organizationId,
+          code: { in: ['6000', '5000', '2200', '2000'] },
+          isActive: true,
+        },
       });
+      const expenseAccount =
+        accounts.find((a) => a.code === '6000') ??
+        accounts.find((a) => a.code === '5000');
+      const gstPaidAccount = accounts.find((a) => a.code === '2200');
+      const apAccount = accounts.find((a) => a.code === '2000');
 
-      return reply.send({ bill: serializeBill(updated) });
+      if (!expenseAccount || !gstPaidAccount || !apAccount) {
+        return reply.code(500).send({
+          error: 'Required Chart of Accounts entries (2000, 2200, 6000) are missing.',
+        });
+      }
+
+      try {
+        const updated = await fastify.prisma.$transaction(async (tx) => {
+          let subtotalCents = bill.subtotalCents;
+          let gstCents = bill.gstCents;
+          let totalCents = bill.totalCents;
+
+          if (lineItems && lineItems.length > 0) {
+            await tx.billLineItem.deleteMany({ where: { billId: id } });
+
+            const processedLines = lineItems.map((item) => {
+              const qty = item.quantity ?? 1;
+              const unitPrice =
+                item.unitPriceCents ?? (item.amountCents ? Math.round(item.amountCents / qty) : 0);
+              const rawAmount = item.amountCents
+                ? BigInt(item.amountCents)
+                : BigInt(Math.round(qty * unitPrice));
+              const gstResult = calculateGST(rawAmount, item.taxTreatment);
+              return {
+                organizationId,
+                itemId: item.itemId || null,
+                accountId: item.accountId || expenseAccount.id,
+                trackingOptionId: item.trackingOptionId || null,
+                quantity: qty,
+                unitPriceCents: BigInt(unitPrice),
+                description: item.description,
+                taxTreatment: item.taxTreatment,
+                amountCents: gstResult.subtotalCents,
+                gstCents: gstResult.gstCents,
+                totalCents: gstResult.totalCents,
+              };
+            });
+
+            const totals = sumGSTResults(
+              processedLines.map((li) => ({
+                subtotalCents: li.amountCents,
+                gstCents: li.gstCents,
+                totalCents: li.totalCents,
+              })),
+            );
+
+            subtotalCents = totals.subtotalCents;
+            gstCents = totals.gstCents;
+            totalCents = totals.totalCents;
+
+            await tx.billLineItem.createMany({
+              data: processedLines.map((li) => ({ ...li, billId: id })),
+            });
+          }
+
+          const updatedBill = await tx.bill.update({
+            where: { id },
+            data: {
+              contactId: contactId ?? bill.contactId,
+              reference: reference !== undefined ? reference : (billNumber ?? bill.reference),
+              issueDate: targetIssueDate,
+              dueDate: dueDate ? new Date(dueDate) : bill.dueDate,
+              notes: notes !== undefined ? notes : bill.notes,
+              subtotalCents,
+              gstCents,
+              totalCents,
+            },
+            include: { contact: true, lineItems: true, paymentsOut: true },
+          });
+
+          // If bill is AWAITING_PAYMENT, synchronize its active General Ledger journal entry
+          if (updatedBill.status === BillStatus.AWAITING_PAYMENT && updatedBill.totalCents > 0n) {
+            const glLines: Array<{
+              accountId: string;
+              description: string;
+              entryType: EntryType;
+              amountCents: bigint;
+              trackingOptionId?: string | null;
+            }> = [];
+
+            for (const item of updatedBill.lineItems) {
+              if (item.amountCents > 0n) {
+                glLines.push({
+                  accountId: item.accountId || expenseAccount.id,
+                  description: `${updatedBill.reference || updatedBill.id}: ${item.description}`,
+                  entryType: EntryType.DEBIT,
+                  amountCents: item.amountCents,
+                  trackingOptionId: item.trackingOptionId,
+                });
+              }
+            }
+
+            if (updatedBill.gstCents > 0n) {
+              glLines.push({
+                accountId: gstPaidAccount.id,
+                description: `GST Paid on Bill ${updatedBill.reference || updatedBill.id}`,
+                entryType: EntryType.DEBIT,
+                amountCents: updatedBill.gstCents,
+              });
+            }
+
+            glLines.push({
+              accountId: apAccount.id,
+              description: `Bill ${updatedBill.reference || updatedBill.id} - ${updatedBill.contact.name}`,
+              entryType: EntryType.CREDIT,
+              amountCents: updatedBill.totalCents,
+            });
+
+            await syncOrReplaceJournalEntry(tx, {
+              organizationId,
+              actorUserId: request.user.userId,
+              description: `Bill ${updatedBill.reference || updatedBill.id} from ${updatedBill.contact.name}`,
+              referenceType: 'BILL',
+              referenceId: updatedBill.id,
+              postedAt: updatedBill.issueDate,
+              lines: glLines,
+            });
+          }
+
+          await recordAuditLog(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            action: 'BILL_UPDATED',
+            entityType: 'BILL',
+            entityId: updatedBill.id,
+            summary: `Updated bill ${updatedBill.reference || updatedBill.id} ($${(Number(updatedBill.totalCents) / 100).toFixed(2)}, status: ${updatedBill.status})`,
+          });
+
+          return updatedBill;
+        });
+
+        return reply.send({ bill: serializeBill(updated) });
+      } catch (err: any) {
+        return reply.status(400).send({ error: err.message || 'Failed to update bill.' });
+      }
     },
   );
 
-  // DELETE /api/v1/bills/:id
+  // DELETE /api/v1/bills/:id — Delete DRAFT/PENDING_APPROVAL bill or ADMIN Force-Delete unpaid bill
   fastify.delete(
     '/api/v1/bills/:id',
     {
-      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AP_SPECIALIST)],
     },
     async (request, reply) => {
       const { id } = ParamsWithId.parse(request.params);
       const organizationId = request.user.organizationId!;
+      const isAdmin = request.user.role === Role.ADMIN;
 
       const bill = await fastify.prisma.bill.findFirst({ where: { id, organizationId } });
       if (!bill) return reply.status(404).send({ error: 'Bill not found' });
-      if (bill.status !== 'DRAFT') return reply.status(400).send({ error: 'Only DRAFT bills can be deleted' });
+
+      if (bill.amountPaidCents > 0n) {
+        return reply.status(400).send({
+          error: 'Cannot delete a bill with recorded payments. Reverse the payments first.',
+        });
+      }
+
+      if (bill.status !== BillStatus.DRAFT && bill.status !== BillStatus.PENDING_APPROVAL && !isAdmin) {
+        return reply.status(400).send({
+          error: 'Only DRAFT or PENDING_APPROVAL bills can be deleted (or use an ADMIN account to force-delete unpaid bills).',
+        });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, bill.issueDate);
+      if (lockCheck.locked) {
+        return reply.status(400).send({ error: lockCheck.message });
+      }
 
       await fastify.prisma.$transaction(async (tx) => {
+        // Clean up any linked BILL journal entries (and their reversals)
+        const billJournals = await tx.journalEntry.findMany({
+          where: { organizationId, referenceType: 'BILL', referenceId: bill.id },
+          select: { id: true, reversedById: true },
+        });
+        const journalIds = billJournals.flatMap((j) =>
+          j.reversedById ? [j.id, j.reversedById] : [j.id],
+        );
+
+        if (journalIds.length > 0) {
+          await tx.journalEntry.updateMany({
+            where: { organizationId, id: { in: journalIds } },
+            data: { reversedById: null, reversesEntryId: null },
+          });
+          await tx.journalEntry.deleteMany({
+            where: { organizationId, id: { in: journalIds } },
+          });
+        }
+
         await tx.billLineItem.deleteMany({ where: { billId: id } });
         await tx.bill.delete({ where: { id } });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'BILL_DELETED',
+          entityType: 'BILL',
+          entityId: id,
+          summary: `Deleted bill ${bill.reference || id} ($${(Number(bill.totalCents) / 100).toFixed(2)})`,
+        });
       });
 
-      return reply.send({ message: 'Bill successfully deleted' });
+      return reply.send({ ok: true, message: 'Bill successfully deleted' });
     },
   );
 
-  // POST /api/v1/bills/:id/approve
+  // POST /api/v1/bills/:id/approve — Approve DRAFT or PENDING_APPROVAL bill and post to GL
   fastify.post(
     '/api/v1/bills/:id/approve',
     {
@@ -539,11 +719,16 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       if (!bill) return reply.status(404).send({ error: 'Bill not found' });
-      if (bill.status !== 'DRAFT') {
-        return reply.status(400).send({ error: `Bill is not in DRAFT status (current: ${bill.status})` });
+      if (bill.status !== BillStatus.DRAFT && bill.status !== BillStatus.PENDING_APPROVAL) {
+        return reply.status(400).send({
+          error: `Bill cannot be approved from ${bill.status} status.`,
+        });
       }
 
-      await checkOrganizationLockDate(fastify.prisma, organizationId, bill.issueDate);
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, bill.issueDate);
+      if (lockCheck.locked) {
+        return reply.status(400).send({ error: lockCheck.message });
+      }
 
       // Accounts
       const accounts = await fastify.prisma.account.findMany({
@@ -571,15 +756,17 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
         description: string;
         entryType: EntryType;
         amountCents: bigint;
+        trackingOptionId?: string | null;
       }> = [];
 
       for (const item of bill.lineItems) {
         if (item.amountCents > 0n) {
           lines.push({
-            accountId: expenseAccount.id,
+            accountId: item.accountId || expenseAccount.id,
             description: `${bill.reference || bill.id}: ${item.description}`,
             entryType: EntryType.DEBIT,
             amountCents: item.amountCents,
+            trackingOptionId: item.trackingOptionId,
           });
         }
       }
@@ -601,28 +788,118 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       const updated = await fastify.prisma.$transaction(async (tx) => {
-        await postJournalEntry(tx, {
-          organizationId,
-          actorUserId: request.user.userId,
-          description: `Bill ${bill.reference || bill.id} from ${bill.contact.name}`,
-          referenceType: 'BILL',
-          referenceId: bill.id,
-          postedAt: bill.issueDate,
-          lines,
+        if (bill.totalCents > 0n) {
+          await syncOrReplaceJournalEntry(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            description: `Bill ${bill.reference || bill.id} from ${bill.contact.name}`,
+            referenceType: 'BILL',
+            referenceId: bill.id,
+            postedAt: bill.issueDate,
+            lines,
+          });
+        }
+
+        const b = await tx.bill.update({
+          where: { id },
+          data: {
+            status: BillStatus.AWAITING_PAYMENT,
+            approvedByUserId: request.user.userId,
+          },
+          include: { contact: true, lineItems: true, paymentsOut: true },
         });
 
-        return tx.bill.update({
-          where: { id },
-          data: { status: BillStatus.AWAITING_PAYMENT },
-          include: { contact: true, lineItems: true },
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'BILL_APPROVED',
+          entityType: 'BILL',
+          entityId: b.id,
+          summary: `Approved bill ${b.reference || b.id} from ${b.contact.name} ($${(Number(b.totalCents) / 100).toFixed(2)}) and posted to General Ledger`,
         });
+
+        return b;
       });
 
       return reply.send({ bill: serializeBill(updated) });
     },
   );
 
-  // POST /api/v1/bills/:id/void
+  // POST /api/v1/bills/:id/revert-to-draft — Unapprove an unpaid bill back to DRAFT and reverse/remove GL entry
+  fastify.post(
+    '/api/v1/bills/:id/revert-to-draft',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      const bill = await fastify.prisma.bill.findFirst({
+        where: { id, organizationId },
+        include: { contact: true },
+      });
+
+      if (!bill) return reply.status(404).send({ error: 'Bill not found' });
+      if (bill.amountPaidCents > 0n) {
+        return reply.status(400).send({
+          error: 'Cannot revert a bill with recorded payments to draft. Reverse the payment first.',
+        });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, bill.issueDate);
+      if (lockCheck.locked) {
+        return reply.status(400).send({ error: lockCheck.message });
+      }
+
+      const originalJe = await fastify.prisma.journalEntry.findFirst({
+        where: {
+          organizationId,
+          referenceType: 'BILL',
+          referenceId: bill.id,
+          reversedById: null,
+          status: JournalStatus.POSTED,
+        },
+      });
+
+      const updatedBill = await fastify.prisma.$transaction(async (tx) => {
+        if (originalJe) {
+          await reverseJournalEntry(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            journalEntryId: originalJe.id,
+            reversalDate: new Date(),
+            reason: `Reverted bill ${bill.reference || bill.id} to DRAFT`,
+            skipSubledgerCascade: true,
+          });
+        }
+
+        const b = await tx.bill.update({
+          where: { id },
+          data: {
+            status: BillStatus.DRAFT,
+            approvedByUserId: null,
+          },
+          include: { contact: true, lineItems: true, paymentsOut: true },
+        });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'BILL_REVERTED_TO_DRAFT',
+          entityType: 'BILL',
+          entityId: b.id,
+          summary: `Reverted bill ${b.reference || b.id} to DRAFT and reversed General Ledger posting`,
+        });
+
+        return b;
+      });
+
+      return reply.send({ bill: serializeBill(updatedBill) });
+    },
+  );
+
+  // POST /api/v1/bills/:id/void — Void unpaid bill and reverse GL entry
   fastify.post(
     '/api/v1/bills/:id/void',
     {
@@ -643,7 +920,10 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.status(400).send({ error: 'Cannot void a bill that has recorded payments. Reverse payments first.' });
       }
 
-      await checkOrganizationLockDate(fastify.prisma, organizationId, new Date());
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, new Date());
+      if (lockCheck.locked) {
+        return reply.status(400).send({ error: lockCheck.message });
+      }
 
       // Find original Journal Entry
       const originalJe = await fastify.prisma.journalEntry.findFirst({
@@ -664,14 +944,108 @@ export const billRoutes: FastifyPluginAsync = async (fastify) => {
             journalEntryId: originalJe.id,
             reversalDate: new Date(),
             reason: `Reversal for voided bill ${bill.reference || bill.id}`,
+            skipSubledgerCascade: true,
           });
         }
 
-        return tx.bill.update({
+        const b = await tx.bill.update({
           where: { id },
           data: { status: BillStatus.VOID },
-          include: { contact: true, lineItems: true },
+          include: { contact: true, lineItems: true, paymentsOut: true },
         });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'BILL_VOIDED',
+          entityType: 'BILL',
+          entityId: b.id,
+          summary: `Voided bill ${b.reference || b.id} from ${bill.contact.name}`,
+        });
+
+        return b;
+      });
+
+      return reply.send({ bill: serializeBill(updatedBill) });
+    },
+  );
+
+  // DELETE /api/v1/bills/:id/payments/:paymentId — Reverse a recorded payment out and restore bill balance
+  fastify.delete<{ Params: { id: string; paymentId: string } }>(
+    '/api/v1/bills/:id/payments/:paymentId',
+    {
+      preHandler: [requireRole(Role.ADMIN, Role.ACCOUNTANT)],
+    },
+    async (request, reply) => {
+      const organizationId = request.user.organizationId!;
+      const { id: billId, paymentId } = request.params;
+
+      const paymentOut = await fastify.prisma.paymentOut.findFirst({
+        where: { id: paymentId, billId, organizationId },
+        include: { bill: true },
+      });
+
+      if (!paymentOut) {
+        return reply.code(404).send({ error: 'Payment record not found for this bill.' });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(
+        fastify.prisma,
+        organizationId,
+        paymentOut.paymentDate,
+      );
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      const updatedBill = await fastify.prisma.$transaction(async (tx) => {
+        const paymentJe = await tx.journalEntry.findFirst({
+          where: {
+            organizationId,
+            referenceType: 'PAYMENT_OUT',
+            referenceId: paymentOut.id,
+            status: JournalStatus.POSTED,
+            reversedById: null,
+          },
+        });
+
+        if (paymentJe) {
+          await reverseJournalEntry(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            journalEntryId: paymentJe.id,
+            reversalDate: new Date(),
+            reason: `Reversed payment on bill ${paymentOut.bill.reference || billId}`,
+            skipSubledgerCascade: true,
+          });
+        }
+
+        await tx.paymentOut.delete({ where: { id: paymentOut.id } });
+
+        const currentPaid = paymentOut.bill.amountPaidCents;
+        const newPaid = currentPaid > paymentOut.amountCents ? currentPaid - paymentOut.amountCents : 0n;
+        const newStatus =
+          newPaid === 0n ? BillStatus.AWAITING_PAYMENT : BillStatus.PARTIALLY_PAID;
+
+        const b = await tx.bill.update({
+          where: { id: billId },
+          data: {
+            amountPaidCents: newPaid,
+            status: newStatus,
+          },
+          include: { contact: true, lineItems: true, paymentsOut: true },
+        });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'PAYMENT_OUT_REVERSED',
+          entityType: 'BILL',
+          entityId: billId,
+          summary: `Reversed payment of $${(Number(paymentOut.amountCents) / 100).toFixed(2)} on bill ${b.reference || billId}`,
+        });
+
+        return b;
       });
 
       return reply.send({ bill: serializeBill(updatedBill) });

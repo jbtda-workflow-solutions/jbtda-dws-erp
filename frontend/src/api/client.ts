@@ -454,6 +454,9 @@ export const contactApi = {
 
   update: (id: string, data: UpdateContactInput) =>
     request<{ contact: Contact }>('PATCH', `/contacts/${id}`, data),
+
+  delete: (id: string) =>
+    request<{ success: boolean; message: string }>('DELETE', `/contacts/${id}`),
 };
 
 // ---------------------------------------------------------------------------
@@ -663,6 +666,9 @@ export const billApi = {
   approve: (id: string) =>
     request<{ bill: Bill }>('POST', `/bills/${id}/approve`),
 
+  revertToDraft: (id: string) =>
+    request<{ bill: Bill }>('POST', `/bills/${id}/revert-to-draft`),
+
   void: (id: string) =>
     request<{ bill: Bill }>('POST', `/bills/${id}/void`),
 
@@ -674,6 +680,12 @@ export const billApi = {
       'POST',
       `/bills/${billId}/payments`,
       data,
+    ),
+
+  reversePayment: (billId: string, paymentId: string) =>
+    request<{ message: string; bill: Bill }>(
+      'DELETE',
+      `/bills/${billId}/payments/${paymentId}`,
     ),
 
   listPayments: (billId: string) =>
@@ -794,6 +806,9 @@ export const invoiceApi = {
       `/invoices/${id}/issue`,
     ),
 
+  revertToDraft: (id: string) =>
+    request<{ invoice: Invoice }>('POST', `/invoices/${id}/revert-to-draft`),
+
   void: (id: string) =>
     request<{ invoice: Invoice }>('POST', `/invoices/${id}/void`),
 
@@ -805,6 +820,12 @@ export const invoiceApi = {
       'POST',
       `/invoices/${id}/payments`,
       data,
+    ),
+
+  reversePayment: (id: string, paymentId: string) =>
+    request<{ message: string; invoice: Invoice }>(
+      'DELETE',
+      `/invoices/${id}/payments/${paymentId}`,
     ),
 
   getPayments: (id: string) =>
@@ -983,6 +1004,12 @@ export const creditNoteApi = {
       `/credit-notes/${id}/refund`,
       data,
     ),
+
+  void: (id: string) =>
+    request<{ creditNote: CreditNote }>('POST', `/credit-notes/${id}/void`),
+
+  delete: (id: string) =>
+    request<{ success: boolean; message: string }>('DELETE', `/credit-notes/${id}`),
 };
 
 // ---------------------------------------------------------------------------
@@ -1158,6 +1185,12 @@ export const vendorCreditApi = {
       `/vendor-credits/${id}/allocate`,
       data,
     ),
+
+  void: (id: string) =>
+    request<{ vendorCredit: VendorCredit }>('POST', `/vendor-credits/${id}/void`),
+
+  delete: (id: string) =>
+    request<{ success: boolean; message: string }>('DELETE', `/vendor-credits/${id}`),
 };
 
 // ---------------------------------------------------------------------------
@@ -1467,6 +1500,9 @@ export const ledgerApi = {
   createManualEntry: (data: CreateManualJournalEntryInput) =>
     request<{ entry: JournalEntry }>('POST', '/ledger/entries', data),
 
+  updateEntry: (id: string, data: Partial<CreateManualJournalEntryInput>) =>
+    request<{ entry: JournalEntry }>('PATCH', `/ledger/${id}`, data),
+
   approve: (id: string) =>
     request<{ entry: JournalEntry }>('POST', `/ledger/${id}/approve`),
 
@@ -1727,6 +1763,15 @@ export const directTransactionApi = {
       directTransaction: DirectTransaction;
       journalEntryId: string;
     }>('POST', '/direct-transactions', data),
+
+  update: (id: string, data: Partial<CreateDirectTransactionInput>) =>
+    request<{
+      message: string;
+      directTransaction: DirectTransaction;
+    }>('PATCH', `/direct-transactions/${id}`, data),
+
+  delete: (id: string) =>
+    request<{ success: boolean; message: string }>('DELETE', `/direct-transactions/${id}`),
 };
 
 // ---------------------------------------------------------------------------
@@ -1916,6 +1961,18 @@ export const expenseClaimApi = {
       expenseClaim: ExpenseClaim;
       journalEntryId: string;
     }>('POST', `/expense-claims/${id}/pay`, data || {}),
+
+  void: (id: string) =>
+    request<{ message: string; expenseClaim: ExpenseClaim }>(
+      'POST',
+      `/expense-claims/${id}/void`,
+    ),
+
+  reversePayment: (id: string) =>
+    request<{ message: string; expenseClaim: ExpenseClaim }>(
+      'POST',
+      `/expense-claims/${id}/reverse-payment`,
+    ),
 };
 
 // ---------------------------------------------------------------------------
@@ -2052,6 +2109,9 @@ export const bankingApi = {
 
   createTransfer: (data: CreateBankTransferInput) =>
     request<{ message: string; transfer: BankTransfer }>('POST', '/banking/transfers', data),
+
+  deleteTransfer: (id: string) =>
+    request<{ success: boolean; message: string }>('DELETE', `/banking/transfers/${id}`),
 
   importStatements: (data: ImportStatementInput) =>
     request<{ message: string; importedCount: number }>('POST', '/banking/statements/import', data),

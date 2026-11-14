@@ -20,6 +20,8 @@ import {
   Receipt,
   FileCheck2,
   Printer,
+  Edit2,
+  Ban,
 } from 'lucide-react';
 import {
   billApi,
@@ -394,8 +396,8 @@ export function BillsPage() {
               />
             </div>
 
-            <div className="flex items-center bg-slate-100 p-1 rounded text-xs font-medium text-slate-600">
-              {(['ALL', 'DRAFT', 'AWAITING_PAYMENT', 'PARTIALLY_PAID', 'PAID'] as const).map(
+            <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded text-xs font-medium text-slate-600">
+              {(['ALL', 'DRAFT', 'PENDING_APPROVAL', 'AWAITING_PAYMENT', 'PARTIALLY_PAID', 'PAID', 'VOID'] as const).map(
                 (st) => (
                   <button
                     key={st}
@@ -912,6 +914,10 @@ export function BillsPage() {
           onBillUpdated={(upd) => {
             setBills((prev) => prev.map((b) => (b.id === upd.id ? upd : b)));
           }}
+          onBillDeleted={(delId) => {
+            setBills((prev) => prev.filter((b) => b.id !== delId));
+            setSelectedBillId(null);
+          }}
         />
       )}
 
@@ -933,6 +939,10 @@ export function BillsPage() {
           onClose={() => setSelectedPOId(null)}
           onPOUpdated={(upd) => {
             setPurchaseOrders((prev) => prev.map((p) => (p.id === upd.id ? upd : p)));
+          }}
+          onPODeleted={(delId) => {
+            setPurchaseOrders((prev) => prev.filter((p) => p.id !== delId));
+            setSelectedPOId(null);
           }}
           onConvertedToBill={() => {
             setSelectedPOId(null);
@@ -961,6 +971,10 @@ export function BillsPage() {
           onClose={() => setSelectedCreditId(null)}
           onCreditUpdated={(upd) => {
             setVendorCredits((prev) => prev.map((c) => (c.id === upd.id ? upd : c)));
+          }}
+          onCreditDeleted={(delId) => {
+            setVendorCredits((prev) => prev.filter((c) => c.id !== delId));
+            setSelectedCreditId(null);
           }}
           onAllocate={(c) => {
             setSelectedCreditId(null);
@@ -1075,9 +1089,10 @@ interface CreateBillModalProps {
   open: boolean;
   onClose: () => void;
   onCreated: (newBill: Bill) => void;
+  editBill?: Bill | null;
 }
 
-function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
+function CreateBillModal({ open, onClose, onCreated, editBill }: CreateBillModalProps) {
   const [vendors, setVendors] = useState<Contact[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [expenseAccounts, setExpenseAccounts] = useState<Account[]>([]);
@@ -1085,29 +1100,53 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
   const [loadingData, setLoadingData] = useState(true);
 
   // Form fields
-  const [contactId, setContactId] = useState('');
-  const [billNumber, setBillNumber] = useState('');
-  const [reference, setReference] = useState('');
+  const [contactId, setContactId] = useState(editBill?.contactId || '');
+  const [billNumber, setBillNumber] = useState(editBill?.billNumber || '');
+  const [reference, setReference] = useState(editBill?.reference || '');
   const [issueDate, setIssueDate] = useState(
-    new Date().toISOString().slice(0, 10),
+    editBill?.issueDate ? editBill.issueDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
   );
   const [dueDate, setDueDate] = useState(() => {
+    if (editBill?.dueDate) return editBill.dueDate.slice(0, 10);
     const d = new Date();
     d.setDate(d.getDate() + 30);
     return d.toISOString().slice(0, 10);
   });
   const [autoApprove, setAutoApprove] = useState(true);
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(editBill?.notes || '');
 
-  const [lineItems, setLineItems] = useState<BillLineDraft[]>([
-    {
-      id: '1',
-      description: 'Vendor Supplies / Consulting Services',
-      quantity: 1,
-      unitPrice: '100.00',
-      taxTreatment: 'TAX_EXCLUSIVE',
-    },
-  ]);
+  const [lineItems, setLineItems] = useState<BillLineDraft[]>(() => {
+    if (editBill?.lineItems && editBill.lineItems.length > 0) {
+      return editBill.lineItems.map((li, idx) => {
+        const qty = li.quantity || 1;
+        const unitCents =
+          li.unitPriceCents && li.unitPriceCents > 0
+            ? li.unitPriceCents
+            : li.taxTreatment === 'TAX_INCLUSIVE'
+            ? Math.round(li.totalCents / qty)
+            : Math.round(li.amountCents / qty);
+        return {
+          id: li.id || String(idx + 1),
+          itemId: li.itemId || undefined,
+          description: li.description,
+          quantity: qty,
+          unitPrice: (unitCents / 100).toFixed(2),
+          taxTreatment: li.taxTreatment,
+          accountId: li.accountId || undefined,
+          trackingOptionId: li.trackingOptionId || undefined,
+        };
+      });
+    }
+    return [
+      {
+        id: '1',
+        description: 'Vendor Supplies / Consulting Services',
+        quantity: 1,
+        unitPrice: '100.00',
+        taxTreatment: 'TAX_EXCLUSIVE',
+      },
+    ];
+  });
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1127,7 +1166,7 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
           (c) => c.type === 'VENDOR' || c.type === 'BOTH',
         );
         setVendors(vendorList);
-        if (vendorList.length > 0) {
+        if (!editBill && vendorList.length > 0) {
           setContactId(vendorList[0]!.id);
           const days = vendorList[0]!.paymentTermsDays || 30;
           const d = new Date();
@@ -1149,7 +1188,7 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
       }
     }
     void loadData();
-  }, []);
+  }, [editBill]);
 
   const handleVendorChange = (id: string) => {
     setContactId(id);
@@ -1288,22 +1327,34 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
 
     setSubmitting(true);
     try {
-      const res = await billApi.create({
-        contactId,
-        billNumber: billNumber.trim() || undefined,
-        reference: reference.trim() || null,
-        issueDate,
-        dueDate,
-        autoApprove,
-        notes: notes.trim() || null,
-        lineItems: parsedLineItems,
-      });
-      onCreated(res.bill);
+      if (editBill) {
+        const res = await billApi.update(editBill.id, {
+          contactId,
+          reference: reference.trim() || null,
+          issueDate,
+          dueDate,
+          notes: notes.trim() || null,
+          lineItems: parsedLineItems,
+        });
+        onCreated(res.bill);
+      } else {
+        const res = await billApi.create({
+          contactId,
+          billNumber: billNumber.trim() || undefined,
+          reference: reference.trim() || null,
+          issueDate,
+          dueDate,
+          autoApprove,
+          notes: notes.trim() || null,
+          lineItems: parsedLineItems,
+        });
+        onCreated(res.bill);
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError('Failed to record bill. Please try again.');
+        setError('Failed to save bill. Please try again.');
       }
     } finally {
       setSubmitting(false);
@@ -1314,8 +1365,12 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Record Vendor Bill"
-      description="Record a supplier invoice with item catalog auto-fill, custom line items, tracking dimensions, and automatic double-entry ledger posting."
+      title={editBill ? `Edit Vendor Bill (${editBill.reference || editBill.id.slice(0, 8)})` : 'Record Vendor Bill'}
+      description={
+        editBill
+          ? 'Update line items, prices, tax treatment, or account coding. Active General Ledger postings are automatically synchronized.'
+          : 'Record a supplier invoice with item catalog auto-fill, custom line items, tracking dimensions, and automatic double-entry ledger posting.'
+      }
       size="5xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4 mt-2">
@@ -1645,7 +1700,11 @@ function CreateBillModal({ open, onClose, onCreated }: CreateBillModalProps) {
             disabled={submitting || vendors.length === 0}
           >
             {submitting
-              ? 'Recording…'
+              ? 'Saving…'
+              : editBill
+              ? editBill.status === 'AWAITING_PAYMENT'
+                ? 'Save Changes & Sync GL'
+                : 'Save Bill Changes'
               : autoApprove
               ? 'Record Bill & Post to Ledger'
               : 'Save as Draft Bill'}
@@ -1664,50 +1723,153 @@ interface BillDetailModalProps {
   billId: string;
   onClose: () => void;
   onBillUpdated?: (bill: Bill) => void;
+  onBillDeleted?: (billId: string) => void;
 }
 
-function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProps) {
+function BillDetailModal({
+  billId,
+  onClose,
+  onBillUpdated,
+  onBillDeleted,
+}: BillDetailModalProps) {
   const [bill, setBill] = useState<Bill | null>(null);
   const [journalEntry, setJournalEntry] = useState<any | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [trackingCategories, setTrackingCategories] = useState<TrackingCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  const loadBillDetail = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [res, accRes, catRes] = await Promise.all([
+        billApi.get(billId),
+        accountApi.list().catch(() => ({ accounts: [] })),
+        accountApi.listTrackingCategories().catch(() => ({ categories: [] })),
+      ]);
+      setBill(res.bill);
+      setJournalEntry(res.journalEntry);
+      setAccounts(accRes.accounts || []);
+      setTrackingCategories(catRes.categories || []);
+    } catch (err) {
+      if (err instanceof ApiError) setError(err.message);
+      else setError('Failed to load bill details.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const [res, accRes, catRes] = await Promise.all([
-          billApi.get(billId),
-          accountApi.list().catch(() => ({ accounts: [] })),
-          accountApi.listTrackingCategories().catch(() => ({ categories: [] })),
-        ]);
-        setBill(res.bill);
-        setJournalEntry(res.journalEntry);
-        setAccounts(accRes.accounts || []);
-        setTrackingCategories(catRes.categories || []);
-      } catch (err) {
-        if (err instanceof ApiError) setError(err.message);
-        else setError('Failed to load bill details.');
-      } finally {
-        setLoading(false);
-      }
-    }
-    void load();
+    void loadBillDetail();
   }, [billId]);
 
-  const handlePaymentSuccess = (updatedBill: Bill) => {
-    setBill(updatedBill);
-    if (onBillUpdated) onBillUpdated(updatedBill);
+  const handlePaymentSuccess = () => {
     setIsPayModalOpen(false);
+    void loadBillDetail().then(() => {
+      billApi.get(billId).then((r) => {
+        if (onBillUpdated) onBillUpdated(r.bill);
+      });
+    });
+  };
+
+  const handleApproveBill = async () => {
+    if (!bill) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      const res = await billApi.approve(bill.id);
+      if (onBillUpdated) onBillUpdated(res.bill);
+      await loadBillDetail();
+    } catch (err: any) {
+      setError(err.message || 'Failed to approve bill.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRevertToDraft = async () => {
+    if (!bill) return;
+    if (!confirm('Revert this bill to DRAFT and reverse its General Ledger posting?')) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      const res = await billApi.revertToDraft(bill.id);
+      if (onBillUpdated) onBillUpdated(res.bill);
+      await loadBillDetail();
+    } catch (err: any) {
+      setError(err.message || 'Failed to revert bill to draft.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleVoidBill = async () => {
+    if (!bill) return;
+    if (!confirm('Void this bill and reverse its General Ledger posting?')) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      const res = await billApi.void(bill.id);
+      if (onBillUpdated) onBillUpdated(res.bill);
+      await loadBillDetail();
+    } catch (err: any) {
+      setError(err.message || 'Failed to void bill.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteBill = async () => {
+    if (!bill) return;
+    if (
+      !confirm(
+        bill.status === 'DRAFT' || bill.status === 'PENDING_APPROVAL'
+          ? 'Permanently delete this draft bill?'
+          : 'Force-delete this bill and remove its linked General Ledger entries?',
+      )
+    )
+      return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      await billApi.delete(bill.id);
+      if (onBillDeleted) onBillDeleted(bill.id);
+      else onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete bill.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReversePayment = async (paymentId: string) => {
+    if (!bill) return;
+    if (!confirm('Reverse this payment and its General Ledger disbursement entry?')) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      const res = await billApi.reversePayment(bill.id, paymentId);
+      if (onBillUpdated) onBillUpdated(res.bill);
+      await loadBillDetail();
+    } catch (err: any) {
+      setError(err.message || 'Failed to reverse payment.');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const balanceDue = bill ? bill.totalCents - bill.amountPaidCents : 0;
   const canPay = bill && (bill.status === 'AWAITING_PAYMENT' || bill.status === 'PARTIALLY_PAID') && balanceDue > 0;
+  const canEdit = bill && bill.amountPaidCents === 0 && bill.status !== 'VOID';
+  const canApprove = bill && (bill.status === 'DRAFT' || bill.status === 'PENDING_APPROVAL');
+  const canRevertToDraft = bill && bill.status === 'AWAITING_PAYMENT' && bill.amountPaidCents === 0;
+  const canVoid = bill && bill.status !== 'VOID' && bill.amountPaidCents === 0;
+  const canDelete = bill && bill.amountPaidCents === 0;
 
   return (
     <>
@@ -1846,6 +2008,7 @@ function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProp
                         <th className="py-2 px-3">Payment Date</th>
                         <th className="py-2 px-3">Bank Reference</th>
                         <th className="py-2 px-3 text-right">Amount Paid</th>
+                        <th className="py-2 px-3 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-mono">
@@ -1855,6 +2018,18 @@ function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProp
                           <td className="py-2 px-3 text-slate-600">{p.reference ?? '—'}</td>
                           <td className="py-2 px-3 text-right text-emerald-700 font-medium">
                             {formatCents(p.amountCents)}
+                          </td>
+                          <td className="py-2 px-3 text-right font-sans">
+                            <button
+                              type="button"
+                              disabled={actionLoading}
+                              onClick={() => void handleReversePayment(p.id)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors"
+                              title="Reverse payment and restore bill balance"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Reverse</span>
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1867,9 +2042,18 @@ function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProp
             {/* Double-Entry GL record */}
             {journalEntry && (
               <div className="space-y-2 pt-2 border-t border-slate-100">
-                <div className="flex items-center gap-1.5 font-medium text-slate-900">
-                  <FileText className="w-3.5 h-3.5 text-forest-700" />
-                  <span>Double-Entry Journal Entry ({journalEntry.referenceType})</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-medium text-slate-900">
+                    <FileText className="w-3.5 h-3.5 text-forest-700" />
+                    <span>
+                      Double-Entry Journal Entry ({journalEntry.entryNumber || journalEntry.referenceType})
+                    </span>
+                  </div>
+                  <StatusTag
+                    label={journalEntry.status || 'POSTED'}
+                    tone={journalEntry.status === 'REVERSED' ? 'draft' : 'emerald'}
+                    mono
+                  />
                 </div>
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                   <table className="w-full text-left">
@@ -1905,11 +2089,62 @@ function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProp
             )}
 
             {/* Modal Actions */}
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              <Button variant="outline" onClick={onClose}>
-                Close
-              </Button>
-              <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" onClick={onClose}>
+                  Close
+                </Button>
+                {canDelete && (
+                  <Button
+                    variant="outline"
+                    disabled={actionLoading}
+                    onClick={() => void handleDeleteBill()}
+                    className="inline-flex items-center gap-1.5 text-rose-700 border-rose-200 hover:bg-rose-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>
+                      {bill.status === 'DRAFT' || bill.status === 'PENDING_APPROVAL'
+                        ? 'Delete Draft'
+                        : 'Force Delete'}
+                    </span>
+                  </Button>
+                )}
+                {canVoid && (
+                  <Button
+                    variant="outline"
+                    disabled={actionLoading}
+                    onClick={() => void handleVoidBill()}
+                    className="inline-flex items-center gap-1.5 text-amber-800 border-amber-200 hover:bg-amber-50"
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                    <span>Void Bill</span>
+                  </Button>
+                )}
+                {canRevertToDraft && (
+                  <Button
+                    variant="outline"
+                    disabled={actionLoading}
+                    onClick={() => void handleRevertToDraft()}
+                    className="inline-flex items-center gap-1.5"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Revert to Draft</span>
+                  </Button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {canEdit && (
+                  <Button
+                    variant="outline"
+                    disabled={actionLoading}
+                    onClick={() => setIsEditModalOpen(true)}
+                    className="inline-flex items-center gap-1.5"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Edit Bill</span>
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   onClick={() => setIsPreviewOpen(true)}
@@ -1918,6 +2153,16 @@ function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProp
                   <Printer className="w-3.5 h-3.5" />
                   <span>Print Preview (A4)</span>
                 </Button>
+                {canApprove && (
+                  <Button
+                    disabled={actionLoading}
+                    onClick={() => void handleApproveBill()}
+                    className="inline-flex items-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Approve & Post GL</span>
+                  </Button>
+                )}
                 {canPay && (
                   <Button
                     onClick={() => setIsPayModalOpen(true)}
@@ -1932,6 +2177,20 @@ function BillDetailModal({ billId, onClose, onBillUpdated }: BillDetailModalProp
           </div>
         )}
       </Modal>
+
+      {/* Edit Bill Modal */}
+      {isEditModalOpen && bill && (
+        <CreateBillModal
+          open={isEditModalOpen}
+          editBill={bill}
+          onClose={() => setIsEditModalOpen(false)}
+          onCreated={(updatedBill) => {
+            setIsEditModalOpen(false);
+            if (onBillUpdated) onBillUpdated(updatedBill);
+            void loadBillDetail();
+          }}
+        />
+      )}
 
       {/* Payment Modal */}
       {isPayModalOpen && bill && (
@@ -2406,6 +2665,7 @@ interface PODetailModalProps {
   poId: string;
   onClose: () => void;
   onPOUpdated: (po: PurchaseOrder) => void;
+  onPODeleted?: (poId: string) => void;
   onConvertedToBill: () => void;
 }
 
@@ -2413,6 +2673,7 @@ function PODetailModal({
   poId,
   onClose,
   onPOUpdated,
+  onPODeleted,
   onConvertedToBill,
 }: PODetailModalProps) {
   const [po, setPo] = useState<PurchaseOrder | null>(null);
@@ -2457,6 +2718,21 @@ function PODetailModal({
       onConvertedToBill();
     } catch (err: any) {
       alert(err.message || 'Failed to convert PO to bill.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeletePO = async () => {
+    if (!po) return;
+    if (!confirm(`Delete Purchase Order ${po.poNumber}?`)) return;
+    setActionLoading(true);
+    try {
+      await purchaseOrderApi.delete(po.id);
+      if (onPODeleted) onPODeleted(po.id);
+      else onClose();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete purchase order.');
     } finally {
       setActionLoading(false);
     }
@@ -2519,11 +2795,24 @@ function PODetailModal({
           </div>
 
           <div className="flex justify-between items-center pt-3 border-t">
-            <Button variant="outline" onClick={onClose}>
-              Close
-            </Button>
             <div className="flex items-center gap-2">
-              {po.status === 'PENDING_APPROVAL' && (
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
+              {po.status !== 'BILLED' && (
+                <Button
+                  variant="outline"
+                  disabled={actionLoading}
+                  onClick={() => void handleDeletePO()}
+                  className="inline-flex items-center gap-1.5 text-rose-700 border-rose-200 hover:bg-rose-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete PO</span>
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {(po.status === 'PENDING_APPROVAL' || po.status === 'DRAFT') && (
                 <Button onClick={handleApprove} loading={actionLoading} className="inline-flex items-center gap-1.5">
                   <Check className="w-3.5 h-3.5" />
                   <span>Approve PO</span>
@@ -2724,6 +3013,7 @@ interface VendorCreditDetailModalProps {
   creditId: string;
   onClose: () => void;
   onCreditUpdated: (vc: VendorCredit) => void;
+  onCreditDeleted?: (creditId: string) => void;
   onAllocate: (vc: VendorCredit) => void;
 }
 
@@ -2731,6 +3021,7 @@ function VendorCreditDetailModal({
   creditId,
   onClose,
   onCreditUpdated,
+  onCreditDeleted,
   onAllocate,
 }: VendorCreditDetailModalProps) {
   const [credit, setCredit] = useState<VendorCredit | null>(null);
@@ -2762,6 +3053,36 @@ function VendorCreditDetailModal({
       onCreditUpdated(res.vendorCredit);
     } catch (err: any) {
       alert(err.message || 'Failed to issue vendor credit.');
+    } finally {
+      setIssuing(false);
+    }
+  };
+
+  const handleVoid = async () => {
+    if (!credit) return;
+    if (!confirm('Void this vendor credit and reverse its GL posting?')) return;
+    setIssuing(true);
+    try {
+      const res = await vendorCreditApi.void(credit.id);
+      setCredit(res.vendorCredit);
+      onCreditUpdated(res.vendorCredit);
+    } catch (err: any) {
+      alert(err.message || 'Failed to void vendor credit.');
+    } finally {
+      setIssuing(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!credit) return;
+    if (!confirm('Delete this vendor credit?')) return;
+    setIssuing(true);
+    try {
+      await vendorCreditApi.delete(credit.id);
+      if (onCreditDeleted) onCreditDeleted(credit.id);
+      else onClose();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete vendor credit.');
     } finally {
       setIssuing(false);
     }
@@ -2820,16 +3141,40 @@ function VendorCreditDetailModal({
           </div>
 
           <div className="flex justify-between items-center pt-3 border-t">
-            <Button variant="outline" onClick={onClose}>
-              Close
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
+              {credit.remainingCents === credit.totalCents && (
+                <Button
+                  variant="outline"
+                  disabled={issuing}
+                  onClick={() => void handleDelete()}
+                  className="inline-flex items-center gap-1.5 text-rose-700 border-rose-200 hover:bg-rose-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </Button>
+              )}
+              {credit.status !== 'VOID' && credit.remainingCents === credit.totalCents && (
+                <Button
+                  variant="outline"
+                  disabled={issuing}
+                  onClick={() => void handleVoid()}
+                  className="inline-flex items-center gap-1.5 text-amber-800 border-amber-200 hover:bg-amber-50"
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>Void Credit</span>
+                </Button>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {credit.status === 'DRAFT' && (
                 <Button onClick={handleIssue} loading={issuing}>
                   Issue & Post AP Credit
                 </Button>
               )}
-              {credit.status === 'OPEN' && credit.remainingCents > 0 && (
+              {(credit.status === 'OPEN' || (credit.status as string) === 'ISSUED') && credit.remainingCents > 0 && (
                 <Button onClick={() => onAllocate(credit)} className="inline-flex items-center gap-1.5">
                   <ArrowRight className="w-3.5 h-3.5" />
                   <span>Allocate to Unpaid Bill</span>

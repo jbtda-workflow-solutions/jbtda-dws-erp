@@ -16,7 +16,7 @@ import { z } from 'zod';
 import { requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
-import { checkOrganizationLockDate } from '../lib/ledger-posting.js';
+import { checkOrganizationLockDate, reverseJournalEntry } from '../lib/ledger-posting.js';
 import { CreditNoteStatus, EntryType, Role, TaxTreatment, InvoiceStatus } from '@prisma/client';
 
 const TaxTreatmentEnum = z.nativeEnum(TaxTreatment);
@@ -653,6 +653,155 @@ export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
         creditNote: serializeCreditNote(result.updatedCn),
         refundTransaction: serializeCreditNote(result.refundTx),
       });
+    },
+  );
+
+  // POST /api/v1/credit-notes/:id/void — Void an unallocated customer credit note
+  fastify.post(
+    '/api/v1/credit-notes/:id/void',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AR_SPECIALIST),
+      ],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+
+      const cn = await fastify.prisma.creditNote.findFirst({
+        where: { id, organizationId },
+        include: { contact: true },
+      });
+      if (!cn) return reply.code(404).send({ error: 'Credit note not found' });
+      if (cn.status === CreditNoteStatus.VOID) {
+        return reply.code(400).send({ error: 'Credit note is already void.' });
+      }
+      if (cn.amountAppliedCents > 0n) {
+        return reply.code(400).send({
+          error: 'Cannot void a credit note that has already been allocated or refunded.',
+        });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, new Date());
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      const originalEntry = await fastify.prisma.journalEntry.findFirst({
+        where: {
+          organizationId,
+          referenceType: 'CREDIT_NOTE',
+          referenceId: cn.id,
+          status: 'POSTED',
+          reversedById: null,
+        },
+      });
+
+      const updated = await fastify.prisma.$transaction(async (tx) => {
+        if (originalEntry) {
+          await reverseJournalEntry(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            journalEntryId: originalEntry.id,
+            reversalDate: new Date(),
+            reason: `Void Credit Note ${cn.creditNoteNumber}`,
+            skipSubledgerCascade: true,
+          });
+        }
+
+        const res = await tx.creditNote.update({
+          where: { id: cn.id },
+          data: { status: CreditNoteStatus.VOID },
+          include: { contact: true, lineItems: true },
+        });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'CREDIT_NOTE_VOIDED',
+          entityType: 'CREDIT_NOTE',
+          entityId: cn.id,
+          summary: `Voided credit note ${cn.creditNoteNumber} (${cn.contact.name})`,
+        });
+
+        return res;
+      });
+
+      return reply.code(200).send({ creditNote: serializeCreditNote(updated) });
+    },
+  );
+
+  // DELETE /api/v1/credit-notes/:id — Delete draft or ADMIN force-delete unallocated credit note
+  fastify.delete(
+    '/api/v1/credit-notes/:id',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT, Role.AR_SPECIALIST),
+      ],
+    },
+    async (request, reply) => {
+      const { id } = ParamsWithId.parse(request.params);
+      const organizationId = request.user.organizationId!;
+      const isAdmin = request.user.role === Role.ADMIN;
+
+      const cn = await fastify.prisma.creditNote.findFirst({
+        where: { id, organizationId },
+      });
+      if (!cn) return reply.code(404).send({ error: 'Credit note not found' });
+
+      if (cn.amountAppliedCents > 0n) {
+        return reply.code(400).send({
+          error: 'Cannot delete a credit note that has already been allocated or refunded.',
+        });
+      }
+
+      if (cn.status !== CreditNoteStatus.DRAFT && !isAdmin) {
+        return reply.code(400).send({
+          error: 'Only DRAFT credit notes can be deleted by non-ADMIN users. Void the credit note instead.',
+        });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(fastify.prisma, organizationId, cn.issueDate);
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      await fastify.prisma.$transaction(async (tx) => {
+        const linkedJournals = await tx.journalEntry.findMany({
+          where: {
+            organizationId,
+            referenceType: { in: ['CREDIT_NOTE', 'CREDIT_NOTE_VOID'] },
+            referenceId: cn.id,
+          },
+          select: { id: true },
+        });
+        const jIds = linkedJournals.map((j) => j.id);
+        if (jIds.length > 0) {
+          await tx.journalEntry.updateMany({
+            where: {
+              organizationId,
+              OR: [{ id: { in: jIds } }, { reversedById: { in: jIds } }, { reversesEntryId: { in: jIds } }],
+            },
+            data: { reversedById: null, reversesEntryId: null },
+          });
+          await tx.journalEntry.deleteMany({
+            where: { id: { in: jIds }, organizationId },
+          });
+        }
+
+        await tx.creditNote.delete({ where: { id: cn.id } });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'CREDIT_NOTE_DELETED',
+          entityType: 'CREDIT_NOTE',
+          entityId: cn.id,
+          summary: `Deleted credit note ${cn.creditNoteNumber}`,
+        });
+      });
+
+      return reply.code(200).send({ success: true, message: 'Credit note deleted successfully' });
     },
   );
 };

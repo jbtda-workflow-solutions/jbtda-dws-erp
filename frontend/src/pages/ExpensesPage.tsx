@@ -27,6 +27,7 @@ import {
   Layers,
   ChevronRight,
   RefreshCw,
+  RotateCcw,
 } from 'lucide-react';
 import {
   directTransactionApi,
@@ -1627,6 +1628,15 @@ export function ExpensesPage() {
       <InspectClaimDrawer
         claim={inspectClaim}
         onClose={() => setInspectClaim(null)}
+        onEditClaim={(c) => {
+          setInspectClaim(null);
+          setEditingClaim(c);
+          setOpenClaimModal(true);
+        }}
+        onChanged={() => {
+          setInspectClaim(null);
+          void loadClaimsData();
+        }}
       />
 
       {/* ========================================================================= */}
@@ -1635,6 +1645,10 @@ export function ExpensesPage() {
       <InspectDirectTxnDrawer
         transaction={inspectDirectTxn}
         onClose={() => setInspectDirectTxn(null)}
+        onChanged={() => {
+          setInspectDirectTxn(null);
+          void loadDirectTransactions();
+        }}
       />
     </div>
   );
@@ -2636,12 +2650,20 @@ function CreateBatchModal({
 function InspectClaimDrawer({
   claim,
   onClose,
+  onEditClaim,
+  onChanged,
 }: {
   claim: ExpenseClaim | null;
   onClose: () => void;
+  onEditClaim?: (claim: ExpenseClaim) => void;
+  onChanged?: () => void;
 }) {
+  const { role } = useAuth();
+  const isAdmin = role === 'ADMIN';
+  const canManagePosted = role === 'ADMIN' || role === 'ACCOUNTANT';
   const [detailedClaim, setDetailedClaim] = useState<ExpenseClaim | null>(null);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!claim) {
@@ -2847,6 +2869,99 @@ function InspectClaimDrawer({
             </div>
           </div>
         ))}
+
+        {/* Lifecycle Management Actions */}
+        <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {(activeClaim.status === 'DRAFT' || activeClaim.status === 'REJECTED' || (activeClaim.status === 'APPROVED' && canManagePosted)) && onEditClaim && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => onEditClaim(activeClaim)}
+                className="text-xs flex items-center gap-1"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>{activeClaim.status === 'APPROVED' ? 'Edit & Re-Post' : 'Edit Claim'}</span>
+              </Button>
+            )}
+
+            {(activeClaim.status === 'APPROVED' || activeClaim.status === 'SUBMITTED') && canManagePosted && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={async () => {
+                  if (!window.confirm(`Revert Claim ${activeClaim.claimNumber} to DRAFT? Any posted approval journal entry will be reversed.`)) return;
+                  setBusy(true);
+                  try {
+                    await expenseClaimApi.void(activeClaim.id);
+                    if (onChanged) onChanged();
+                  } catch (err: any) {
+                    alert(err.message || 'Failed to revert claim.');
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                className="text-xs text-amber-700 border-amber-200 hover:bg-amber-50 flex items-center gap-1"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Revert to Draft</span>
+              </Button>
+            )}
+
+            {activeClaim.status === 'PAID' && canManagePosted && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={async () => {
+                  if (!window.confirm(`Reverse reimbursement payout for Claim ${activeClaim.claimNumber}? This will reverse the payout journal and return the claim to APPROVED.`)) return;
+                  setBusy(true);
+                  try {
+                    await expenseClaimApi.reversePayment(activeClaim.id);
+                    if (onChanged) onChanged();
+                  } catch (err: any) {
+                    alert(err.message || 'Failed to reverse reimbursement payment.');
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                className="text-xs text-rose-700 border-rose-200 hover:bg-rose-50 flex items-center gap-1"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reverse Payout</span>
+              </Button>
+            )}
+
+            {(activeClaim.status === 'DRAFT' || activeClaim.status === 'REJECTED' || (isAdmin && activeClaim.status !== 'PAID')) && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={async () => {
+                  if (!window.confirm(`Permanently delete Claim ${activeClaim.claimNumber}?`)) return;
+                  setBusy(true);
+                  try {
+                    await expenseClaimApi.delete(activeClaim.id);
+                    if (onChanged) onChanged();
+                  } catch (err: any) {
+                    alert(err.message || 'Failed to delete claim.');
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                className="text-xs text-rose-700 border-rose-200 hover:bg-rose-50 flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{activeClaim.status === 'DRAFT' || activeClaim.status === 'REJECTED' ? 'Delete' : 'Force Delete'}</span>
+              </Button>
+            )}
+          </div>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>
+            Close
+          </Button>
+        </div>
       </div>
     </Drawer>
   );
@@ -2859,12 +2974,17 @@ function InspectClaimDrawer({
 function InspectDirectTxnDrawer({
   transaction,
   onClose,
+  onChanged,
 }: {
   transaction: DirectTransaction | null;
   onClose: () => void;
+  onChanged?: () => void;
 }) {
+  const { role } = useAuth();
+  const canManagePosted = role === 'ADMIN' || role === 'ACCOUNTANT';
   const [detailedTxn, setDetailedTxn] = useState<DirectTransaction | null>(null);
   const [journalEntry, setJournalEntry] = useState<JournalEntry | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!transaction) {
@@ -3033,6 +3153,37 @@ function InspectDirectTxnDrawer({
             </div>
           </div>
         )}
+
+        <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-2">
+          <div>
+            {canManagePosted && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={async () => {
+                  if (!window.confirm(`Delete Transaction ${txnLabel} and reverse its General Ledger journal entry?`)) return;
+                  setBusy(true);
+                  try {
+                    await directTransactionApi.delete(activeTxn.id);
+                    if (onChanged) onChanged();
+                  } catch (err: any) {
+                    alert(err.message || 'Failed to delete direct transaction.');
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                className="text-xs text-rose-700 border-rose-200 hover:bg-rose-50 flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete & Reverse GL</span>
+              </Button>
+            )}
+          </div>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>
+            Close
+          </Button>
+        </div>
       </div>
     </Drawer>
   );

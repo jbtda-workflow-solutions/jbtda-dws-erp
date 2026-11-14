@@ -21,7 +21,11 @@ import { z } from 'zod';
 import { requireRole } from '../plugins/auth.js';
 import { calculateGST } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
-import { checkOrganizationLockDate, postJournalEntry } from '../lib/ledger-posting.js';
+import {
+  checkOrganizationLockDate,
+  postJournalEntry,
+  reverseJournalEntry,
+} from '../lib/ledger-posting.js';
 import {
   AccountType,
   EntryType,
@@ -764,6 +768,78 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
           error: err.message || 'Failed to record inter-account transfer.',
         });
       }
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // DELETE /api/v1/banking/transfers/:id — Reverse/delete inter-account transfer & GL journal
+  // -------------------------------------------------------------------------
+  fastify.delete<{ Params: { id: string } }>(
+    '/api/v1/banking/transfers/:id',
+    {
+      preHandler: [
+        requireRole(Role.ADMIN, Role.ACCOUNTANT),
+      ],
+    },
+    async (request, reply) => {
+      const organizationId = request.user.organizationId!;
+      const { id } = request.params;
+
+      const transfer = await fastify.prisma.bankTransfer.findFirst({
+        where: { id, organizationId },
+      });
+
+      if (!transfer) {
+        return reply.code(404).send({ error: 'Bank transfer not found.' });
+      }
+
+      const lockCheck = await checkOrganizationLockDate(
+        fastify.prisma,
+        organizationId,
+        transfer.transferDate,
+      );
+      if (lockCheck.locked) {
+        return reply.code(400).send({ error: lockCheck.message });
+      }
+
+      const activeJournal = await fastify.prisma.journalEntry.findFirst({
+        where: {
+          organizationId,
+          referenceType: 'BANK_TRANSFER',
+          referenceId: transfer.id,
+          status: JournalStatus.POSTED,
+          reversedById: null,
+        },
+      });
+
+      await fastify.prisma.$transaction(async (tx) => {
+        if (activeJournal) {
+          await reverseJournalEntry(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            journalEntryId: activeJournal.id,
+            reversalDate: new Date(),
+            reason: `Reversed Bank Transfer ${transfer.reference || transfer.id}`,
+            skipSubledgerCascade: true,
+          });
+        }
+
+        await tx.bankTransfer.delete({ where: { id: transfer.id } });
+
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId: request.user.userId,
+          action: 'BANK_TRANSFER_DELETED',
+          entityType: 'BANK_TRANSFER',
+          entityId: transfer.id,
+          summary: `Deleted inter-account transfer ($${(Number(transfer.amountCents) / 100).toFixed(2)}) and reversed GL posting`,
+        });
+      });
+
+      return reply.code(200).send({
+        success: true,
+        message: 'Inter-account transfer reversed and deleted successfully.',
+      });
     },
   );
 

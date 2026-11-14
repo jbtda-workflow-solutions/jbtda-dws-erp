@@ -19,7 +19,10 @@ import {
   Check,
   X,
   Printer,
+  Pencil,
+  Ban,
 } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 import {
   invoiceApi,
   quoteApi,
@@ -98,6 +101,7 @@ export function InvoicesPage() {
 
   // Modals & Drawers
   const [isCreateInvoiceOpen, setIsCreateInvoiceOpen] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [isDirectPaymentModalOpen, setIsDirectPaymentModalOpen] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
@@ -815,13 +819,22 @@ export function InvoicesPage() {
       )}
 
       {/* Modals */}
-      {isCreateInvoiceOpen && (
+      {(isCreateInvoiceOpen || editingInvoice) && (
         <CreateInvoiceModal
-          open={isCreateInvoiceOpen}
-          onClose={() => setIsCreateInvoiceOpen(false)}
-          onCreated={(newInv: Invoice) => {
-            setInvoices((prev) => [newInv, ...prev]);
+          open={isCreateInvoiceOpen || Boolean(editingInvoice)}
+          editInvoice={editingInvoice}
+          onClose={() => {
             setIsCreateInvoiceOpen(false);
+            setEditingInvoice(null);
+          }}
+          onCreated={(savedInv: Invoice) => {
+            if (editingInvoice) {
+              setInvoices((prev) => prev.map((i) => (i.id === savedInv.id ? savedInv : i)));
+            } else {
+              setInvoices((prev) => [savedInv, ...prev]);
+            }
+            setIsCreateInvoiceOpen(false);
+            setEditingInvoice(null);
           }}
         />
       )}
@@ -832,6 +845,14 @@ export function InvoicesPage() {
           onClose={() => setSelectedInvoiceId(null)}
           onInvoiceUpdated={(upd) => {
             setInvoices((prev) => prev.map((i) => (i.id === upd.id ? upd : i)));
+          }}
+          onInvoiceDeleted={(id) => {
+            setInvoices((prev) => prev.filter((i) => i.id !== id));
+            setSelectedInvoiceId(null);
+          }}
+          onEditInvoice={(inv) => {
+            setSelectedInvoiceId(null);
+            setEditingInvoice(inv);
           }}
           onRecordPayment={(inv) => {
             setSelectedInvoiceId(null);
@@ -882,6 +903,10 @@ export function InvoicesPage() {
           onQuoteUpdated={(updQ) => {
             setQuotes((prev) => prev.map((q) => (q.id === updQ.id ? updQ : q)));
           }}
+          onQuoteDeleted={(id) => {
+            setQuotes((prev) => prev.filter((q) => q.id !== id));
+            setSelectedQuoteId(null);
+          }}
           onConvertedToInvoice={() => {
             setSelectedQuoteId(null);
             void fetchQuotes();
@@ -909,6 +934,10 @@ export function InvoicesPage() {
           onClose={() => setSelectedCreditNoteId(null)}
           onCreditNoteUpdated={(upd) => {
             setCreditNotes((prev) => prev.map((c) => (c.id === upd.id ? upd : c)));
+          }}
+          onCreditNoteDeleted={(id) => {
+            setCreditNotes((prev) => prev.filter((c) => c.id !== id));
+            setSelectedCreditNoteId(null);
           }}
           onAllocate={(cn) => {
             setSelectedCreditNoteId(null);
@@ -1008,15 +1037,18 @@ interface InvoiceLineDraft {
 
 interface CreateInvoiceModalProps {
   open: boolean;
+  editInvoice?: Invoice | null;
   onClose: () => void;
   onCreated: (newInv: Invoice) => void;
 }
 
 function CreateInvoiceModal({
   open,
+  editInvoice,
   onClose,
   onCreated,
 }: CreateInvoiceModalProps) {
+  const isEditing = Boolean(editInvoice);
   const [customers, setCustomers] = useState<Contact[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [revenueAccounts, setRevenueAccounts] = useState<Account[]>([]);
@@ -1024,27 +1056,42 @@ function CreateInvoiceModal({
   const [loadingData, setLoadingData] = useState(true);
 
   // Form fields
-  const [contactId, setContactId] = useState('');
-  const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [contactId, setContactId] = useState(editInvoice?.contactId || '');
+  const [invoiceNumber, setInvoiceNumber] = useState(editInvoice?.invoiceNumber || '');
   const [issueDate, setIssueDate] = useState(
-    new Date().toISOString().slice(0, 10),
+    editInvoice?.issueDate ? editInvoice.issueDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
   );
   const [dueDate, setDueDate] = useState(() => {
+    if (editInvoice?.dueDate) return editInvoice.dueDate.slice(0, 10);
     const d = new Date();
     d.setDate(d.getDate() + 14);
     return d.toISOString().slice(0, 10);
   });
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(editInvoice?.notes || '');
 
-  const [lineItems, setLineItems] = useState<InvoiceLineDraft[]>([
-    {
-      id: '1',
-      description: 'Professional Services',
-      quantity: 1,
-      unitPrice: '150.00',
-      taxTreatment: 'TAX_EXCLUSIVE',
-    },
-  ]);
+  const [lineItems, setLineItems] = useState<InvoiceLineDraft[]>(() => {
+    if (editInvoice?.lineItems && editInvoice.lineItems.length > 0) {
+      return editInvoice.lineItems.map((li, idx) => ({
+        id: li.id || String(idx + 1),
+        itemId: li.itemId || undefined,
+        description: li.description,
+        quantity: li.quantity || 1,
+        unitPrice: ((li.unitPriceCents ?? li.amountCents) / 100).toFixed(2),
+        taxTreatment: li.taxTreatment,
+        accountId: li.accountId || undefined,
+        trackingOptionId: li.trackingOptionId || undefined,
+      }));
+    }
+    return [
+      {
+        id: '1',
+        description: 'Professional Services',
+        quantity: 1,
+        unitPrice: '150.00',
+        taxTreatment: 'TAX_EXCLUSIVE',
+      },
+    ];
+  });
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1064,7 +1111,7 @@ function CreateInvoiceModal({
           (c) => c.type === 'CUSTOMER' || c.type === 'BOTH',
         );
         setCustomers(customerList);
-        if (customerList.length > 0) {
+        if (!editInvoice && customerList.length > 0) {
           setContactId(customerList[0]!.id);
           const days = customerList[0]!.paymentTermsDays || 14;
           const d = new Date();
@@ -1084,7 +1131,7 @@ function CreateInvoiceModal({
       }
     }
     void loadData();
-  }, []);
+  }, [editInvoice]);
 
   const handleCustomerChange = (id: string) => {
     setContactId(id);
@@ -1223,20 +1270,23 @@ function CreateInvoiceModal({
 
     setSubmitting(true);
     try {
-      const res = await invoiceApi.create({
+      const payload = {
         contactId,
         invoiceNumber: invoiceNumber.trim() || undefined,
         issueDate,
         dueDate,
         notes: notes.trim() || null,
         lineItems: parsedLineItems,
-      });
+      };
+      const res = editInvoice
+        ? await invoiceApi.update(editInvoice.id, payload)
+        : await invoiceApi.create(payload);
       onCreated(res.invoice);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError('Failed to create invoice.');
+        setError(editInvoice ? 'Failed to update invoice.' : 'Failed to create invoice.');
       }
     } finally {
       setSubmitting(false);
@@ -1247,8 +1297,14 @@ function CreateInvoiceModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Create Customer Invoice"
-      description="Create a draft invoice with item catalog auto-fill, custom line items, tracking dimensions, and automatic GST."
+      title={isEditing ? `Edit Invoice ${editInvoice?.invoiceNumber ?? ''}` : 'Create Customer Invoice'}
+      description={
+        isEditing
+          ? editInvoice?.status === 'ISSUED'
+            ? 'Modify invoice details and line items. The General Ledger journal will be automatically synchronized on save.'
+            : 'Update draft customer invoice details and line items.'
+          : 'Create a draft invoice with item catalog auto-fill, custom line items, tracking dimensions, and automatic GST.'
+      }
       size="5xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4 mt-2">
@@ -1547,7 +1603,13 @@ function CreateInvoiceModal({
             type="submit"
             disabled={submitting || customers.length === 0}
           >
-            {submitting ? 'Saving…' : 'Save as Draft Invoice'}
+            {submitting
+              ? 'Saving…'
+              : isEditing
+                ? editInvoice?.status === 'ISSUED'
+                  ? 'Save & Re-Post GL'
+                  : 'Save Changes'
+                : 'Save as Draft Invoice'}
           </Button>
         </div>
       </form>
@@ -1563,6 +1625,8 @@ interface InvoiceDetailModalProps {
   invoiceId: string;
   onClose: () => void;
   onInvoiceUpdated?: (invoice: Invoice) => void;
+  onInvoiceDeleted?: (invoiceId: string) => void;
+  onEditInvoice?: (invoice: Invoice) => void;
   onRecordPayment?: (invoice: Invoice) => void;
 }
 
@@ -1570,35 +1634,43 @@ function InvoiceDetailModal({
   invoiceId,
   onClose,
   onInvoiceUpdated,
+  onInvoiceDeleted,
+  onEditInvoice,
   onRecordPayment,
 }: InvoiceDetailModalProps) {
+  const { role } = useAuth();
+  const isAdmin = role === 'ADMIN';
+  const canEditPosted = role === 'ADMIN' || role === 'ACCOUNTANT';
+
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [journalEntry, setJournalEntry] = useState<any | null>(null);
   const [payments, setPayments] = useState<PaymentIn[]>([]);
   const [loading, setLoading] = useState(true);
   const [issuing, setIssuing] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const [invRes, pmtRes] = await Promise.all([
-          invoiceApi.get(invoiceId),
-          invoiceApi.getPayments(invoiceId).catch(() => ({ payments: [] })),
-        ]);
-        setInvoice(invRes.invoice);
-        setJournalEntry(invRes.journalEntry);
-        setPayments(pmtRes.payments);
-      } catch (err) {
-        if (err instanceof ApiError) setError(err.message);
-        else setError('Failed to load invoice details.');
-      } finally {
-        setLoading(false);
-      }
+  const loadDetails = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [invRes, pmtRes] = await Promise.all([
+        invoiceApi.get(invoiceId),
+        invoiceApi.getPayments(invoiceId).catch(() => ({ payments: [] })),
+      ]);
+      setInvoice(invRes.invoice);
+      setJournalEntry(invRes.journalEntry);
+      setPayments(pmtRes.payments);
+    } catch (err) {
+      if (err instanceof ApiError) setError(err.message);
+      else setError('Failed to load invoice details.');
+    } finally {
+      setLoading(false);
     }
-    void load();
+  };
+
+  useEffect(() => {
+    void loadDetails();
   }, [invoiceId]);
 
   const handleIssueInvoice = async () => {
@@ -1618,7 +1690,77 @@ function InvoiceDetailModal({
     }
   };
 
-  const isDraft = invoice?.status === 'DRAFT';
+  const handleRevertToDraft = async () => {
+    if (!invoice) return;
+    if (!window.confirm(`Revert Invoice ${invoice.invoiceNumber} to DRAFT? This will automatically reverse its General Ledger journal entry so you can freely edit or delete it.`)) return;
+    setActionBusy(true);
+    setError(null);
+    try {
+      const res = await invoiceApi.revertToDraft(invoice.id);
+      setInvoice(res.invoice);
+      setJournalEntry(null);
+      if (onInvoiceUpdated) onInvoiceUpdated(res.invoice);
+    } catch (err: any) {
+      setError(err.message || 'Failed to revert invoice to draft.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleVoidInvoice = async () => {
+    if (!invoice) return;
+    if (!window.confirm(`Void Invoice ${invoice.invoiceNumber}? If issued, its General Ledger journal entry will be automatically reversed.`)) return;
+    setActionBusy(true);
+    setError(null);
+    try {
+      const res = await invoiceApi.void(invoice.id);
+      setInvoice(res.invoice);
+      if (onInvoiceUpdated) onInvoiceUpdated(res.invoice);
+      await loadDetails();
+    } catch (err: any) {
+      setError(err.message || 'Failed to void invoice.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleDeleteInvoice = async () => {
+    if (!invoice) return;
+    if (!window.confirm(`Permanently delete Invoice ${invoice.invoiceNumber}? This action cannot be undone.`)) return;
+    setActionBusy(true);
+    setError(null);
+    try {
+      await invoiceApi.delete(invoice.id);
+      if (onInvoiceDeleted) onInvoiceDeleted(invoice.id);
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete invoice.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleReversePayment = async (paymentId: string) => {
+    if (!invoice) return;
+    if (!window.confirm('Reverse and delete this customer payment? The payment GL journal will be reversed and the invoice balance restored.')) return;
+    setActionBusy(true);
+    setError(null);
+    try {
+      const res = await invoiceApi.reversePayment(invoice.id, paymentId);
+      setInvoice(res.invoice);
+      if (onInvoiceUpdated) onInvoiceUpdated(res.invoice);
+      await loadDetails();
+    } catch (err: any) {
+      setError(err.message || 'Failed to reverse payment.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const isDraft = invoice?.status === 'DRAFT' || invoice?.status === 'PENDING_APPROVAL';
+  const isUnpaidIssued = invoice?.status === 'ISSUED' && invoice.amountPaidCents === 0;
+  const canEdit = isDraft || (isUnpaidIssued && canEditPosted);
+  const canVoid = invoice && invoice.status !== 'VOID' && invoice.amountPaidCents === 0 && canEditPosted;
+  const canDelete = invoice && (isDraft || (isAdmin && invoice.amountPaidCents === 0));
   const remainingDueCents = invoice ? invoice.totalCents - invoice.amountPaidCents : 0;
   const canPay = invoice?.status === 'ISSUED' || invoice?.status === 'PARTIALLY_PAID';
 
@@ -1753,6 +1895,7 @@ function InvoiceDetailModal({
                       <th className="py-2 px-3">Payment Date</th>
                       <th className="py-2 px-3">Reference / Transaction</th>
                       <th className="py-2 px-3 text-right">Amount Received</th>
+                      {canEditPosted && <th className="py-2 px-3 text-right">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-mono">
@@ -1767,6 +1910,20 @@ function InvoiceDetailModal({
                         <td className="py-2 px-3 text-right font-medium text-emerald-700">
                           {formatCents(p.amountCents)}
                         </td>
+                        {canEditPosted && (
+                          <td className="py-2 px-3 text-right font-sans">
+                            <button
+                              type="button"
+                              onClick={() => handleReversePayment(p.id)}
+                              disabled={actionBusy}
+                              className="inline-flex items-center gap-1 text-[11px] text-rose-600 hover:text-rose-800 font-medium"
+                              title="Reverse customer payment and restore invoice balance"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Reverse</span>
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -1825,26 +1982,71 @@ function InvoiceDetailModal({
           ) : null}
 
           {/* Modal Actions */}
-          <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={onClose} disabled={issuing}>
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" onClick={onClose} disabled={issuing || actionBusy}>
                 Close
               </Button>
               <Button
                 variant="outline"
                 onClick={() => setIsPreviewOpen(true)}
-                disabled={issuing}
+                disabled={issuing || actionBusy}
                 className="inline-flex items-center gap-1.5 text-slate-700 hover:text-slate-900"
               >
                 <Printer className="w-3.5 h-3.5 text-slate-500" />
                 <span>Print Preview (A4)</span>
               </Button>
+              {canEdit && onEditInvoice && (
+                <Button
+                  variant="outline"
+                  onClick={() => onEditInvoice(invoice)}
+                  disabled={issuing || actionBusy}
+                  className="inline-flex items-center gap-1.5 text-slate-700 hover:text-slate-900"
+                >
+                  <Pencil className="w-3.5 h-3.5 text-slate-500" />
+                  <span>{isUnpaidIssued ? 'Edit & Re-Post' : 'Edit Invoice'}</span>
+                </Button>
+              )}
+              {isUnpaidIssued && canEditPosted && (
+                <Button
+                  variant="outline"
+                  onClick={handleRevertToDraft}
+                  disabled={issuing || actionBusy}
+                  className="inline-flex items-center gap-1.5 text-amber-700 border-amber-200 hover:bg-amber-50"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Revert to Draft</span>
+                </Button>
+              )}
+              {canVoid && (
+                <Button
+                  variant="outline"
+                  onClick={handleVoidInvoice}
+                  disabled={issuing || actionBusy}
+                  className="inline-flex items-center gap-1.5 text-rose-700 border-rose-200 hover:bg-rose-50"
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>Void Invoice</span>
+                </Button>
+              )}
+              {canDelete && (
+                <Button
+                  variant="outline"
+                  onClick={handleDeleteInvoice}
+                  disabled={issuing || actionBusy}
+                  className="inline-flex items-center gap-1.5 text-rose-700 border-rose-200 hover:bg-rose-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isDraft ? 'Delete Draft' : 'Force Delete'}</span>
+                </Button>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {canPay && onRecordPayment && (
                 <Button
                   variant="outline"
                   onClick={() => onRecordPayment(invoice)}
+                  disabled={actionBusy}
                   className="inline-flex items-center gap-1.5 text-forest-800 border-forest-200 hover:bg-forest-50"
                 >
                   <CreditCard className="w-3.5 h-3.5 text-forest-700" />
@@ -1854,7 +2056,7 @@ function InvoiceDetailModal({
               {isDraft && (
                 <Button
                   onClick={handleIssueInvoice}
-                  disabled={issuing}
+                  disabled={issuing || actionBusy}
                   className="inline-flex items-center gap-1.5"
                 >
                   <Send className="w-3.5 h-3.5" />
@@ -2703,6 +2905,7 @@ interface QuoteDetailModalProps {
   quoteId: string;
   onClose: () => void;
   onQuoteUpdated: (quote: Quote) => void;
+  onQuoteDeleted?: (quoteId: string) => void;
   onConvertedToInvoice: () => void;
 }
 
@@ -2710,11 +2913,13 @@ function QuoteDetailModal({
   quoteId,
   onClose,
   onQuoteUpdated,
+  onQuoteDeleted,
   onConvertedToInvoice,
 }: QuoteDetailModalProps) {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [loading, setLoading] = useState(true);
   const [converting, setConverting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -2743,6 +2948,20 @@ function QuoteDetailModal({
       alert(err.message || 'Failed to convert quote to invoice.');
     } finally {
       setConverting(false);
+    }
+  };
+
+  const handleDeleteQuote = async () => {
+    if (!quote) return;
+    if (!window.confirm(`Delete Quote ${quote.quoteNumber}?`)) return;
+    setDeleting(true);
+    try {
+      await quoteApi.delete(quote.id);
+      if (onQuoteDeleted) onQuoteDeleted(quote.id);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete quote.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -2829,6 +3048,18 @@ function QuoteDetailModal({
                     Mark as Declined
                   </Button>
                 </>
+              )}
+              {quote.status !== 'INVOICED' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDeleteQuote}
+                  disabled={deleting}
+                  className="text-rose-700 border-rose-200 hover:bg-rose-50 inline-flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Quote</span>
+                </Button>
               )}
             </div>
 
@@ -3045,6 +3276,7 @@ interface CreditNoteDetailModalProps {
   creditNoteId: string;
   onClose: () => void;
   onCreditNoteUpdated: (cn: CreditNote) => void;
+  onCreditNoteDeleted?: (cnId: string) => void;
   onAllocate: (cn: CreditNote) => void;
 }
 
@@ -3052,11 +3284,15 @@ function CreditNoteDetailModal({
   creditNoteId,
   onClose,
   onCreditNoteUpdated,
+  onCreditNoteDeleted,
   onAllocate,
 }: CreditNoteDetailModalProps) {
+  const { role } = useAuth();
+  const isAdmin = role === 'ADMIN';
   const [creditNote, setCreditNote] = useState<CreditNote | null>(null);
   const [loading, setLoading] = useState(true);
   const [issuing, setIssuing] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -3085,6 +3321,35 @@ function CreditNoteDetailModal({
       alert(err.message || 'Failed to issue credit note.');
     } finally {
       setIssuing(false);
+    }
+  };
+
+  const handleVoid = async () => {
+    if (!creditNote) return;
+    if (!window.confirm(`Void Credit Note ${creditNote.creditNoteNumber}? Its contra-AR journal will be reversed.`)) return;
+    setBusy(true);
+    try {
+      const res = await creditNoteApi.void(creditNote.id);
+      setCreditNote(res.creditNote);
+      onCreditNoteUpdated(res.creditNote);
+    } catch (err: any) {
+      alert(err.message || 'Failed to void credit note.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!creditNote) return;
+    if (!window.confirm(`Delete Credit Note ${creditNote.creditNoteNumber}?`)) return;
+    setBusy(true);
+    try {
+      await creditNoteApi.delete(creditNote.id);
+      if (onCreditNoteDeleted) onCreditNoteDeleted(creditNote.id);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete credit note.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -3141,9 +3406,33 @@ function CreditNoteDetailModal({
           </div>
 
           <div className="flex items-center justify-between pt-3 border-t">
-            <Button variant="outline" onClick={onClose}>
-              Close
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={onClose} disabled={busy || issuing}>
+                Close
+              </Button>
+              {creditNote.status !== 'VOID' && creditNote.remainingCents === creditNote.totalCents && (
+                <Button
+                  variant="outline"
+                  onClick={handleVoid}
+                  disabled={busy || issuing}
+                  className="text-rose-700 border-rose-200 hover:bg-rose-50 inline-flex items-center gap-1"
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>Void Credit Note</span>
+                </Button>
+              )}
+              {(creditNote.status === 'DRAFT' || (isAdmin && creditNote.remainingCents === creditNote.totalCents)) && (
+                <Button
+                  variant="outline"
+                  onClick={handleDelete}
+                  disabled={busy || issuing}
+                  className="text-rose-700 border-rose-200 hover:bg-rose-50 inline-flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </Button>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {creditNote.status === 'DRAFT' && (
                 <Button onClick={handleIssue} loading={issuing}>

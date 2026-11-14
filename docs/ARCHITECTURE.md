@@ -160,6 +160,7 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `POST` | `/api/v1/contacts` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` (Cust), `AP_SPECIALIST` (Vend) | Creates contact. Validates Australian ABN checksum algorithm. |
 | `GET` | `/api/v1/contacts/:id` | Cookie Session | Read Roles | Fetches contact details, banking BSB/account, and default accounts. |
 | `PATCH` | `/api/v1/contacts/:id` | Cookie Session | Write Roles | Updates contact details. Validates ABN if changed. |
+| `DELETE` | `/api/v1/contacts/:id` | Cookie Session | `ADMIN` | Permanently deletes a contact with zero linked financial transactions; advises deactivation if historical transactions exist. |
 | `GET` | `/api/v1/contacts/:id/360` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Returns 360-degree customer/vendor ledger history, outstanding balances, and open documents. |
 
 ### 6. Items / Products & Services Catalog API (`/api/v1/items/*`)
@@ -176,10 +177,13 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `GET` | `/api/v1/invoices` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST`, `MANAGER`, `AUDITOR` | Lists customer invoices with status filters. |
 | `POST` | `/api/v1/invoices` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Creates draft customer invoice with line items. |
 | `GET` | `/api/v1/invoices/:id` | Cookie Session | Read Roles | Returns invoice details, lines, tax calculations, and payments. |
-| `PATCH` | `/api/v1/invoices/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Updates draft invoice. Disallowed if already issued or paid. |
+| `PATCH` | `/api/v1/invoices/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Updates draft/pending invoice, or edits & re-posts an unpaid `ISSUED` invoice (`ADMIN`/`ACCOUNTANT`), atomically synchronizing the active `INVOICE` GL journal. |
+| `DELETE` | `/api/v1/invoices/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Deletes a `DRAFT`/`PENDING_APPROVAL` invoice, or allows `ADMIN` Force-Delete on unpaid/void invoices (reversing any posted GL journal). |
 | `POST` | `/api/v1/invoices/:id/issue` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Issues invoice: generates sequential invoice number, posts double-entry AR journal (Debit A/R, Credit Sales, Credit GST Collected). |
-| `POST` | `/api/v1/invoices/:id/void` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Voids invoice: creates reversing journal entry. |
+| `POST` | `/api/v1/invoices/:id/revert-to-draft` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Reverts an unpaid `ISSUED` or `PENDING_APPROVAL` invoice back to `DRAFT` and reverses its active GL journal. |
+| `POST` | `/api/v1/invoices/:id/void` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Voids an unpaid invoice (`status = VOID`) and reverses its posted GL journal. |
 | `POST` | `/api/v1/invoices/:id/payments` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Records incoming customer payment against invoice. Posts GL entry (Debit Bank, Credit A/R). |
+| `DELETE` | `/api/v1/invoices/:id/payments/:paymentId` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Reverses and deletes a customer payment receipt, reverses its `PAYMENT_IN` GL journal, and restores the invoice balance/status. |
 | `POST` | `/api/v1/payments-in` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Batch payment receipt allocating funds across multiple invoices. |
 | `GET` | `/api/v1/invoices/recurring` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Lists recurring invoice schedules. |
 | `POST` | `/api/v1/invoices/recurring` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Creates recurring invoice schedule. |
@@ -192,11 +196,14 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `GET` | `/api/v1/bills` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST`, `MANAGER`, `AUDITOR` | Lists vendor bills with status filters. |
 | `POST` | `/api/v1/bills` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Creates draft or submitted vendor bill with line items. |
 | `GET` | `/api/v1/bills/:id` | Cookie Session | Read Roles | Returns bill details, line items, and allocated payments. |
-| `PATCH` | `/api/v1/bills/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Updates draft bill. Disallowed once approved. |
+| `PATCH` | `/api/v1/bills/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Updates draft/pending bill, or edits & re-posts an unpaid `AWAITING_PAYMENT` bill (`ADMIN`/`ACCOUNTANT`), atomically synchronizing the active `BILL` GL journal. |
+| `DELETE` | `/api/v1/bills/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Deletes a `DRAFT`/`PENDING_APPROVAL` bill, or allows `ADMIN` Force-Delete on unpaid/void bills (reversing any posted GL journal). |
 | `POST` | `/api/v1/bills/:id/approve` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Approves bill: posts double-entry AP journal (Debit Expense, Debit GST Paid, Credit A/P). |
-| `POST` | `/api/v1/bills/:id/void` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Voids bill: creates reversing AP journal entry. |
+| `POST` | `/api/v1/bills/:id/revert-to-draft` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Reverts an unpaid `AWAITING_PAYMENT` or `PENDING_APPROVAL` bill back to `DRAFT` and reverses its active GL journal. |
+| `POST` | `/api/v1/bills/:id/void` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Voids an unpaid bill (`status = VOID`) and reverses its posted GL journal. |
 | `POST` | `/api/v1/bills/:id/payments` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` (Draft) | Records payment out against bill. Posts GL entry (Debit A/P, Credit Bank). |
 | `GET` | `/api/v1/bills/:id/payments` | Cookie Session | Read Roles | Lists payments allocated to this bill. |
+| `DELETE` | `/api/v1/bills/:id/payments/:paymentId` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Reverses and deletes a supplier payment, reverses its `PAYMENT_OUT` GL journal, and restores the bill balance/status. |
 | `POST` | `/api/v1/payments-out` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Direct payment-out batch allocation across bills. |
 | `GET` | `/api/v1/recurring-bills` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Lists recurring bill schedules. |
 | `POST` | `/api/v1/recurring-bills` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Creates recurring bill schedule. |
@@ -211,6 +218,7 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `POST` | `/api/v1/quotes` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Creates draft quote. |
 | `GET` | `/api/v1/quotes/:id` | Cookie Session | Read Roles | Fetches quote details and lines. |
 | `PATCH` | `/api/v1/quotes/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Updates draft quote. |
+| `DELETE` | `/api/v1/quotes/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Deletes non-invoiced sales quote. |
 | `POST` | `/api/v1/quotes/:id/convert-to-invoice` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Converts approved quote into draft customer invoice. |
 
 ### 10. Purchase Orders API (`/api/v1/purchase-orders/*`)
@@ -220,6 +228,7 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `POST` | `/api/v1/purchase-orders` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Creates draft purchase order. |
 | `GET` | `/api/v1/purchase-orders/:id` | Cookie Session | Read Roles | Fetches PO details and lines. |
 | `PATCH` | `/api/v1/purchase-orders/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Updates draft PO. |
+| `DELETE` | `/api/v1/purchase-orders/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Deletes non-billed purchase order. |
 | `POST` | `/api/v1/purchase-orders/:id/approve` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER` | Approves PO. Validates two-person rule if enabled. |
 | `POST` | `/api/v1/purchase-orders/:id/convert-to-bill` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Converts approved PO into draft vendor bill. |
 
@@ -232,6 +241,8 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `POST` | `/api/v1/credit-notes/:id/issue` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Issues credit note: posts contra-AR journal (Debit Sales, Debit GST Collected, Credit A/R). |
 | `POST` | `/api/v1/credit-notes/:id/allocate` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Allocates credit note against open customer invoice. |
 | `POST` | `/api/v1/credit-notes/:id/refund` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Records direct cash refund against credit note. |
+| `POST` | `/api/v1/credit-notes/:id/void` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Voids an unallocated customer credit note and reverses its contra-AR GL journal. |
+| `DELETE` | `/api/v1/credit-notes/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AR_SPECIALIST` | Deletes a draft credit note or allows `ADMIN` Force-Delete on unallocated credit notes. |
 
 ### 12. Vendor Credits API (`/api/v1/vendor-credits/*`)
 | Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
@@ -242,6 +253,8 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `POST` | `/api/v1/vendor-credits/:id/issue` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Issues vendor credit: posts contra-AP journal (Debit A/P, Credit Expense, Credit GST Paid). |
 | `POST` | `/api/v1/vendor-credits/:id/allocate` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Allocates vendor credit against open vendor bill. |
 | `POST` | `/api/v1/vendor-credits/:id/refund` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Records direct cash refund from vendor. |
+| `POST` | `/api/v1/vendor-credits/:id/void` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Voids an unallocated vendor credit and reverses its contra-AP GL journal. |
+| `DELETE` | `/api/v1/vendor-credits/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Deletes a draft vendor credit or allows `ADMIN` Force-Delete on unallocated vendor credits. |
 
 ### 13. Batch Payments & Australian ABA Export API (`/api/v1/batch-payments/*`)
 | Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
@@ -256,6 +269,8 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `GET` | `/api/v1/direct-transactions` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST`, `AUDITOR` | Lists direct spend money / receive money transactions with bank account, contact, date, and search filters. |
 | `POST` | `/api/v1/direct-transactions` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Records immediate bank/card spend or receive transaction. Calculates Australian GST, validates accounting period lock date, and atomically posts double-entry General Ledger journal (`DEBIT Expense/Asset`, `DEBIT 2200 GST Paid`, `CREDIT Bank/Card Account`). |
 | `GET` | `/api/v1/direct-transactions/:id` | Cookie Session | Read Roles | Fetches direct transaction details, multi-line account distributions, and associated posted GL journal. |
+| `PATCH` | `/api/v1/direct-transactions/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Updates a direct spend/receive transaction and atomically synchronizes its active `DIRECT_TRANSACTION` GL journal. |
+| `DELETE` | `/api/v1/direct-transactions/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Deletes a direct spend/receive transaction and reverses its posted `DIRECT_TRANSACTION` GL journal. |
 
 ### 15. Employee Expense Claims & Reimbursements API (`/api/v1/expense-claims/*`)
 | Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
@@ -263,12 +278,14 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `GET` | `/api/v1/expense-claims` | Cookie Session | All Roles (Scoped) | Lists expense claims. `EMPLOYEE` is strictly isolated to own claims (`scope=my`); `MANAGER` accesses team claims (`scope=team`); `ADMIN`/`ACCOUNTANT` access all organizational claims. |
 | `POST` | `/api/v1/expense-claims` | Cookie Session | All Roles | Creates draft or submitted out-of-pocket expense claim with multi-line merchant receipts, account allocations, GST, and tracking categories. |
 | `GET` | `/api/v1/expense-claims/:id` | Cookie Session | All Roles (Scoped) | Fetches expense claim details, receipts, approval timestamps, and attached GL journal entries. |
-| `PATCH` | `/api/v1/expense-claims/:id` | Cookie Session | Claimant / Finance | Updates draft expense claim items and summary details. |
-| `DELETE` | `/api/v1/expense-claims/:id` | Cookie Session | Claimant / Finance | Deletes draft expense claim. |
+| `PATCH` | `/api/v1/expense-claims/:id` | Cookie Session | Claimant / Finance | Updates draft/rejected expense claim, or allows `ADMIN`/`ACCOUNTANT` to edit an unpaid `APPROVED` claim and synchronize its `EXPENSE_CLAIM` GL journal. |
+| `DELETE` | `/api/v1/expense-claims/:id` | Cookie Session | Claimant / Finance | Deletes draft/rejected expense claim, or allows `ADMIN` Force-Delete on unpaid claims (reversing any posted GL journal). |
 | `POST` | `/api/v1/expense-claims/:id/submit` | Cookie Session | Claimant / Finance | Submits draft claim for manager approval (`DRAFT` $\rightarrow$ `SUBMITTED`). |
 | `POST` | `/api/v1/expense-claims/:id/approve` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER` | Approves claim. Enforces maker-checker rule when two-person approval is enabled. Posts GL journal (`DEBIT Expense`, `DEBIT 2200 GST Paid`, `CREDIT 2050 Employee Reimbursements Payable`). |
 | `POST` | `/api/v1/expense-claims/:id/reject` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER` | Rejects claim with mandatory reason guidance (`SUBMITTED` $\rightarrow$ `REJECTED`). |
+| `POST` | `/api/v1/expense-claims/:id/void` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Reverts an unpaid `APPROVED` or `SUBMITTED` claim back to `DRAFT` and reverses its `EXPENSE_CLAIM` GL journal. |
 | `POST` | `/api/v1/expense-claims/:id/pay` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AP_SPECIALIST` | Settles approved claim via direct payment: posts settlement GL entry (`DEBIT 2050 Employee Reimbursements Payable`, `CREDIT Bank Account`) and marks claim `PAID`. |
+| `POST` | `/api/v1/expense-claims/:id/reverse-payment` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Reverses the reimbursement payout on a `PAID` claim, reverses the `EXPENSE_REIMBURSEMENT` GL journal, and restores the claim to `APPROVED`. |
 
 ### 16. General Ledger & Financial Reporting API (`/api/v1/ledger/*`)
 | Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
@@ -276,8 +293,10 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `GET` | `/api/v1/ledger` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Lists journal entries with account, date range, and reference type filters. |
 | `GET` | `/api/v1/ledger/accounts` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Computes live debit/credit account balances. |
 | `POST` | `/api/v1/ledger/entries` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Posts manual double-entry journal entry. Validates debits === credits in integer cents and lock dates. |
+| `PATCH` | `/api/v1/ledger/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Edits a `DRAFT`/`PENDING_APPROVAL` journal or updates narrative/lines on an unreconciled `MANUAL` journal. |
+| `DELETE` | `/api/v1/ledger/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Deletes a `DRAFT`/`PENDING_APPROVAL` journal, or allows `ADMIN` Force-Delete on unreconciled journals. |
 | `POST` | `/api/v1/ledger/:id/approve` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Approves draft journal entry. Validates two-person rule if enabled. |
-| `POST` | `/api/v1/ledger/:id/reverse` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Creates atomic reversing journal entry. |
+| `POST` | `/api/v1/ledger/:id/reverse` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Creates atomic contra-reversing journal entry (`REV-xxxx`), marks both original and contra entries `REVERSED`, blocks double-reversal, and bidirectionally cascades void/reversal to the source sub-ledger record. |
 | `GET` | `/api/v1/ledger/trial-balance` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Generates Trial Balance financial statement. |
 | `GET` | `/api/v1/ledger/profit-loss` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Generates Profit & Loss financial statement. |
 | `GET` | `/api/v1/ledger/balance-sheet` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Generates Balance Sheet financial statement. |
@@ -289,6 +308,7 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `PATCH` | `/api/v1/banking/accounts/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Updates bank account status (`isBankAccount`) and banking details (`bankBsb`, `bankAccountNumber`, `apcaUserId`). |
 | `GET` | `/api/v1/banking/transfers` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR` | Lists inter-account transfers with source/destination account names and transaction amounts. |
 | `POST` | `/api/v1/banking/transfers` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER` | Records inter-account transfer and atomically posts clean 2-line double-entry GL journal (`DEBIT Destination Account`, `CREDIT Source Account`). |
+| `DELETE` | `/api/v1/banking/transfers/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Reverses and deletes an inter-account transfer and reverses its linked `BANK_TRANSFER` GL journal. |
 | `POST` | `/api/v1/banking/statements/import` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Parses CSV bank statements (supports Commonwealth Bank, Westpac, ANZ, NAB, Macquarie, and generic formats) and imports `bank_statement_lines`. |
 | `GET` | `/api/v1/banking/statements` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Lists imported bank statement lines with account and status filters (`ALL`, `UNRECONCILED`, `RECONCILED`). |
 | `DELETE` | `/api/v1/banking/statements/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Deletes an unreconciled statement line (reconciled lines protected against deletion). |

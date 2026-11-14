@@ -138,6 +138,8 @@ Access is compartmentalized by functional domain so regular employees (`EMPLOYEE
 | Bank Statement Import & GL Reconciliation | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | 🔍 Read |
 | Submit & View **Own** Employee Expense Claims | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (Own) | 🔍 Read |
 | View Immutable System Audit Log | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Edit & Re-Post / Revert to Draft / Void / Reverse Payments on Posted Records | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Force-Delete Unpaid/Unreconciled Records & Unused Contacts | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Developer & Agent Context Console (`/developer` & `/api/v1/developer/*`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Delete organization | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 

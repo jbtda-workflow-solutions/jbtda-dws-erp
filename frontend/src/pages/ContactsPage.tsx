@@ -15,7 +15,9 @@ import {
   ShieldCheck,
   CreditCard,
   History,
+  Trash2,
 } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 import {
   contactApi,
   accountsApi,
@@ -79,6 +81,8 @@ const CONTACT_TYPE_LABELS: Record<ContactType, string> = {
 };
 
 export function ContactsPage() {
+  const { role } = useAuth();
+  const isAdmin = role === 'ADMIN';
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [glAccounts, setGlAccounts] = useState<AccountWithBalance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -557,17 +561,39 @@ export function ContactsPage() {
                     </p>
                   )}
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    handleOpenEdit(drawerData.contact);
-                  }}
-                  className="h-7 text-xs px-2.5"
-                >
-                  <Edit2 className="w-3 h-3 mr-1" />
-                  <span>Edit Profile</span>
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      handleOpenEdit(drawerData.contact);
+                    }}
+                    className="h-7 text-xs px-2.5"
+                  >
+                    <Edit2 className="w-3 h-3 mr-1" />
+                    <span>Edit Profile</span>
+                  </Button>
+                  {isAdmin && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        if (!window.confirm(`Delete contact "${drawerData.contact.name}"? Contacts with linked transactions cannot be deleted and should be marked Inactive instead.`)) return;
+                        try {
+                          await contactApi.delete(drawerData.contact.id);
+                          setContacts((prev) => prev.filter((c) => c.id !== drawerData.contact.id));
+                          setDrawerContactId(null);
+                        } catch (err: any) {
+                          alert(err.message || 'Failed to delete contact.');
+                        }
+                      }}
+                      className="h-7 text-xs px-2.5 text-rose-700 border-rose-200 hover:bg-rose-50"
+                    >
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      <span>Delete</span>
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-600 pt-2 border-t border-slate-200">
