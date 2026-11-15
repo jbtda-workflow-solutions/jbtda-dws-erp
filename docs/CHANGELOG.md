@@ -4,7 +4,11 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
-## [0.25.1] — 2026-11-15 — Bulk Import Interactive Transaction Timeout & Per-Row Query Optimization
+## [0.25.1] — 2026-11-15 — Bulk Import Interactive Transaction Timeout, Per-Row Query Optimization & Module 14 Roadmap Specification
+
+### Added
+- **Module 14 Roadmap Specification (`docs/STAGES_ROADMAP.md`, `AGENTS.md`)**:
+  - Added **Module 14: Draft-First Bulk Upload, Zero-Guessing Validation & Interactive Transaction Triage / Invoice-Bill Allocation (`14.1`–`14.4`)** to `docs/STAGES_ROADMAP.md` to eliminate silent fallback guessing of missing GL accounts (`6000`/`4000`), bank accounts (`1000`), and tax treatments (`TAX_INCLUSIVE`), introduce a `DRAFT` status for `DirectTransaction` records with missing coding, and enable interactive triage to code & post or allocate imported draft transactions directly against open Customer Invoices (`ALLOCATE_INVOICE`), Vendor Bills (`ALLOCATE_BILL`), or Bank Transfers (`BANK_TRANSFER`).
 
 ### Fixed
 - **Bulk CSV Import Transaction Timeout Remediation (`backend/src/routes/bulk-import.ts`, `backend/src/lib/ledger-posting.ts`, `backend/src/lib/audit.ts`, `backend/src/routes/banking.ts`, `backend/src/routes/developer.ts`)**:

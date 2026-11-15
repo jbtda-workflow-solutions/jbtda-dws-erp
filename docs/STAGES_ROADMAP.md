@@ -1,4 +1,4 @@
-# Master Architecture & 13-Module Deep-Build Roadmap
+# Master Architecture & 14-Module Deep-Build Roadmap
 
 This document is the authoritative architectural blueprint and execution plan for the **JBTDA-DWS Enterprise Ledger & Business Services Platform**.
 
@@ -108,7 +108,7 @@ Access is strictly compartmentalized by domain so regular staff and specialists 
 
 ---
 
-## 5. The 12-Module Deep-Build Execution Plan
+## 5. The 14-Module Deep-Build Execution Plan
 
 Development proceeds strictly **one module at a time**. We complete the backend routes, validations, ledger integrations, audit logging, and frontend interfaces for a module before moving to the next.
 
@@ -561,3 +561,26 @@ Development proceeds strictly **one module at a time**. We complete the backend 
       - *Clear Selection*
     - **Dependency-Aware Table Grid:** Checkboxes for every table showing live `Org Rows` and `Total DB Rows`. Selecting a parent table (e.g., `bills`, `invoices`, `journal_entries`, `direct_transactions`, `expense_claims`, `contacts`) automatically selects required child/line tables and displays clear dependency notices.
     - **Confirmation Modal & Execution Receipt:** Requires explicit confirmation before executing the purge, then displays per-table deleted row counts and refreshes live diagnostics.
+
+---
+
+### Module 14: Draft-First Bulk Upload, Zero-Guessing Validation & Interactive Transaction Triage / Invoice-Bill Allocation
+**Objective:** Eliminate all silent fallback "guessing" of missing GL accounts (`6000`/`4000`), bank accounts (`1000`), and tax treatments (`TAX_INCLUSIVE` / `TAX_EXCLUSIVE`) during bulk CSV imports; introduce a true `DRAFT` lifecycle for Direct Transactions (`Spend Money` / `Receive Money`) so incomplete bank/transaction uploads land safely as unposted drafts with zero General Ledger distortion; and provide an interactive triage workflow where users can review each draft transaction to either assign GL coding & post, allocate a payment against an open Customer Invoice (`ALLOCATE_INVOICE`), allocate a payment against an open Vendor Bill (`ALLOCATE_BILL`), or convert to an Inter-Account Bank Transfer (`BANK_TRANSFER`).
+
+- [ ] **14.1 Eliminate Silent "Guessing" Across Bulk CSV Imports (`backend/src/routes/bulk-import.ts` & `backend/src/routes/banking.ts`)**:
+  - Remove silent fallback assignment of `defaultExpAccount` (`6000`), `defaultRevAccount` (`4000`), default `1000` bank account, and assumed `TAX_INCLUSIVE` / `TAX_EXCLUSIVE` GST treatments when columns are left blank in `bulk-import.ts`.
+  - Enforce a strict two-tier import rule across all transactional record types (`DIRECT_TRANSACTIONS`, `INVOICES`, `BILLS`, `CREDIT_NOTES`, `VENDOR_CREDITS`, `EXPENSE_CLAIMS`, `JOURNAL_ENTRIES`):
+    - **Direct GL Posting (`POSTED` / `ISSUED` / `AWAITING_PAYMENT` / `APPROVED`):** Permitted ONLY when every required accounting field (`account_code`, `tax_treatment`, `bank_account_code`, and `contact_name` where required) is explicitly provided and valid in the CSV.
+    - **Missing Coding Fields $\rightarrow$ Automatic `DRAFT` Staging:** Whenever `account_code`, `contact_name`, or `tax_treatment` is omitted (or when `status=DRAFT` is specified), the record MUST be staged as an unposted **`DRAFT`** with explicit `"Needs Coding"` badges in the Step 1 preview table—never posted to the General Ledger with guessed accounts or guessed GST.
+- [ ] **14.2 `DirectTransaction` Draft Status & Nullable Pre-Coding Schema (`backend/prisma/schema.prisma`, `backend/src/routes/direct-transactions.ts`)**:
+  - Extend `DirectTransaction` (`direct_transactions`) with `status` (`DirectTransactionStatus`: `DRAFT` | `POSTED` | `VOID`, defaulting to `DRAFT` when coding is incomplete) and make `accountId` / `taxTreatment` on `DirectTransactionLine` (`direct_transaction_lines`) nullable while `status === 'DRAFT'`.
+  - Ensure `DRAFT` Direct Transactions have **zero General Ledger impact** (no `JournalEntry` created until coded and posted or allocated) and are excluded from posted cash/expense KPIs while remaining visible in a dedicated **"Drafts / Needs Coding & Allocation"** queue.
+- [ ] **14.3 Interactive Draft Transaction Triage: Code & Post, Allocate to Invoice, or Allocate to Bill (`backend/src/routes/direct-transactions.ts`, `frontend/src/pages/ExpensesPage.tsx`, `frontend/src/pages/BankingPage.tsx`)**:
+  - Add `POST /api/v1/direct-transactions/:id/process` (and matching UI triage drawer/modal in `/expenses` and `/banking`) allowing a user inspecting any `DRAFT` Direct Transaction (or Unreconciled Bank Line) to resolve it via 4 explicit modes:
+    1. **Assign Coding & Post (`CODE_DIRECT`):** Select Contact, GL Account (`EXPENSE` / `REVENUE` / `ASSET`), Cost Centre (`TrackingOption`), and Tax Treatment (`TAX_INCLUSIVE` / `TAX_EXCLUSIVE` / `GST_FREE`), transitioning the transaction from `DRAFT` $\rightarrow$ `POSTED` and posting the balanced `DIRECT_TRANSACTION` GL journal.
+    2. **Allocate Deposit to Open Customer Invoice (`ALLOCATE_INVOICE`):** Match a `RECEIVE_MONEY` draft transaction to an open `Invoice` (`ISSUED` / `PARTIALLY_PAID`), atomically creating a `PaymentIn` receipt (`DR Bank Account`, `CR 1200 Accounts Receivable`), updating `Invoice.amountPaidCents` and status (`PARTIALLY_PAID` / `PAID`), and linking/resolving the draft transaction.
+    3. **Allocate Withdrawal to Open Vendor Bill (`ALLOCATE_BILL`):** Match a `SPEND_MONEY` draft transaction to an open `Bill` (`AWAITING_PAYMENT` / `PARTIALLY_PAID`), atomically creating a `PaymentOut` remittance (`DR 2000 Accounts Payable`, `CR Bank Account`), updating `Bill.amountPaidCents` and status (`PARTIALLY_PAID` / `PAID`), and linking/resolving the draft transaction.
+    4. **Convert to Inter-Account Transfer (`BANK_TRANSFER`):** Match a transfer between two Bank/Card accounts into a clean 2-line `BankTransfer` (`DR Destination Bank`, `CR Source Bank`) with zero GST or P&L distortion.
+- [ ] **14.4 Unified Bank Statement Upload & Draft Triage Experience in `/settings` & `/banking` (`SettingsPage.tsx`, `BankingPage.tsx`, `ExpensesPage.tsx`)**:
+  - Update the `DIRECT_TRANSACTIONS` bulk import template and preview in `SettingsPage.tsx` so users can upload raw bank/transaction CSVs with blank `account_code` / `contact_name` / `tax_treatment` columns and clearly see that incomplete rows will be created as **`DRAFT (Needs Coding / Allocation)`** rather than guessing `6000` or `4000`.
+  - Add a direct **`BANK_STATEMENT` (Bank Statement Feed for Reconciliation)** option in the `/settings` Bulk CSV Import Hub (routing to a selected Bank Account's reconciliation queue in `/banking`) alongside `DIRECT_TRANSACTIONS` so users have a clear, guided choice between importing into the `/banking` statement reconciliation queue or staging `DRAFT` transactions in `/expenses`.
