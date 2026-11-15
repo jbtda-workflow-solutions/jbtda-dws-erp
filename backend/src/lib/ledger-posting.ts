@@ -92,6 +92,7 @@ export async function validateJournalLines(
   tx: Prisma.TransactionClient,
   organizationId: string,
   lines: JournalLineInput[],
+  skipDbLookup = false,
 ): Promise<ValidatedJournalLinesResult> {
   if (!lines || lines.length < 2) {
     throw new Error('A journal entry requires at least two lines (one debit and one credit).');
@@ -135,37 +136,39 @@ export async function validateJournalLines(
     );
   }
 
-  // Verify accounts
-  const validAccounts = await tx.account.findMany({
-    where: {
-      organizationId,
-      id: { in: Array.from(accountIds) },
-      isActive: true,
-    },
-    select: { id: true, code: true, name: true },
-  });
-
-  if (validAccounts.length !== accountIds.size) {
-    const foundIds = new Set(validAccounts.map((a) => a.id));
-    const missing = Array.from(accountIds).filter((id) => !foundIds.has(id));
-    throw new Error(`One or more accounts (${missing.join(', ')}) are invalid, inactive, or do not belong to this organization.`);
-  }
-
-  // Verify tracking options if provided
-  if (trackingOptionIds.size > 0) {
-    const validOptions = await tx.trackingOption.findMany({
+  if (!skipDbLookup) {
+    // Verify accounts
+    const validAccounts = await tx.account.findMany({
       where: {
         organizationId,
-        id: { in: Array.from(trackingOptionIds) },
+        id: { in: Array.from(accountIds) },
         isActive: true,
       },
-      select: { id: true },
+      select: { id: true, code: true, name: true },
     });
 
-    if (validOptions.length !== trackingOptionIds.size) {
-      const foundIds = new Set(validOptions.map((o) => o.id));
-      const missing = Array.from(trackingOptionIds).filter((id) => !foundIds.has(id));
-      throw new Error(`One or more tracking options (${missing.join(', ')}) are invalid, inactive, or do not belong to this organization.`);
+    if (validAccounts.length !== accountIds.size) {
+      const foundIds = new Set(validAccounts.map((a) => a.id));
+      const missing = Array.from(accountIds).filter((id) => !foundIds.has(id));
+      throw new Error(`One or more accounts (${missing.join(', ')}) are invalid, inactive, or do not belong to this organization.`);
+    }
+
+    // Verify tracking options if provided
+    if (trackingOptionIds.size > 0) {
+      const validOptions = await tx.trackingOption.findMany({
+        where: {
+          organizationId,
+          id: { in: Array.from(trackingOptionIds) },
+          isActive: true,
+        },
+        select: { id: true },
+      });
+
+      if (validOptions.length !== trackingOptionIds.size) {
+        const foundIds = new Set(validOptions.map((o) => o.id));
+        const missing = Array.from(trackingOptionIds).filter((id) => !foundIds.has(id));
+        throw new Error(`One or more tracking options (${missing.join(', ')}) are invalid, inactive, or do not belong to this organization.`);
+      }
     }
   }
 
@@ -200,6 +203,12 @@ export interface PostJournalParams {
   postedAt?: Date;
   status?: JournalStatus;
   lines: JournalLineInput[];
+  /** Optional pre-assigned entryNumber (e.g. during bulk imports) to avoid per-row COUNT(*) queries */
+  entryNumber?: string;
+  /** Optional flag to skip redundant account/tracking/lockDate DB lookups when already pre-validated */
+  skipValidationQueries?: boolean;
+  /** Optional flag to skip per-row audit log creation when a batch audit log is recorded at the end of a bulk import */
+  skipAuditLog?: boolean;
 }
 
 /**
@@ -218,6 +227,9 @@ export async function postJournalEntry(
     postedAt = new Date(),
     status = JournalStatus.POSTED,
     lines,
+    entryNumber: providedEntryNumber,
+    skipValidationQueries = false,
+    skipAuditLog = false,
   } = params;
 
   // Validate double-entry lines and foreign keys
@@ -225,17 +237,19 @@ export async function postJournalEntry(
     tx,
     organizationId,
     lines,
+    skipValidationQueries,
   );
 
   // If posting immediately, verify period lock date
-  if (status === JournalStatus.POSTED) {
+  if (status === JournalStatus.POSTED && !skipValidationQueries) {
     const lockCheck = await checkOrganizationLockDate(tx, organizationId, postedAt);
     if (lockCheck.locked) {
       throw new Error(lockCheck.message);
     }
   }
 
-  const entryNumber = await getNextJournalEntryNumber(tx, organizationId, 'JNL');
+  const entryNumber =
+    providedEntryNumber || (await getNextJournalEntryNumber(tx, organizationId, 'JNL'));
 
   const entry = await tx.journalEntry.create({
     data: {
@@ -274,21 +288,23 @@ export async function postJournalEntry(
     },
   });
 
-  await recordAuditLog(tx, {
-    organizationId,
-    actorUserId,
-    action: status === JournalStatus.POSTED ? 'JOURNAL_POSTED' : 'JOURNAL_DRAFTED',
-    entityType: 'JOURNAL_ENTRY',
-    entityId: entry.id,
-    summary: `${status === JournalStatus.POSTED ? 'Posted' : 'Drafted'} journal ${entry.entryNumber}: "${description}" ($${(Number(totalDebitsCents) / 100).toFixed(2)})`,
-    metadata: {
-      entryNumber: entry.entryNumber,
-      referenceType,
-      referenceId,
-      status,
-      totalCents: Number(totalDebitsCents),
-    },
-  });
+  if (!skipAuditLog) {
+    await recordAuditLog(tx, {
+      organizationId,
+      actorUserId,
+      action: status === JournalStatus.POSTED ? 'JOURNAL_POSTED' : 'JOURNAL_DRAFTED',
+      entityType: 'JOURNAL_ENTRY',
+      entityId: entry.id,
+      summary: `${status === JournalStatus.POSTED ? 'Posted' : 'Drafted'} journal ${entry.entryNumber}: "${description}" ($${(Number(totalDebitsCents) / 100).toFixed(2)})`,
+      metadata: {
+        entryNumber: entry.entryNumber,
+        referenceType,
+        referenceId,
+        status,
+        totalCents: Number(totalDebitsCents),
+      },
+    });
+  }
 
   return entry;
 }

@@ -946,11 +946,10 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
 
       // If committing pre-validated lines directly (Step 2 of Validate & Preview)
       if (!csvContent && manualLines && manualLines.length > 0 && !dryRun) {
-        const createdCount = await fastify.prisma.$transaction(async (tx) => {
-          let count = 0;
-          for (const l of manualLines) {
-            await tx.bankStatementLine.create({
-              data: {
+        const createdCount = await fastify.prisma.$transaction(
+          async (tx) => {
+            const res = await tx.bankStatementLine.createMany({
+              data: manualLines.map((l) => ({
                 organizationId,
                 bankAccountId,
                 statementDate: new Date(l.statementDate),
@@ -962,26 +961,26 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
                 suggestedTrackingOptionId: l.suggestedTrackingOptionId || null,
                 suggestedTaxTreatment: l.suggestedTaxTreatment || null,
                 isReconciled: false,
+              })),
+            });
+
+            await recordAuditLog(tx, {
+              organizationId,
+              actorUserId: request.user.userId,
+              action: 'BANK_STATEMENT_IMPORTED',
+              entityType: 'ACCOUNT',
+              entityId: bankAccountId,
+              summary: `Imported ${res.count} validated statement lines for ${bankAccount.code} - ${bankAccount.name}`,
+              metadata: {
+                bankAccountId,
+                importedCount: res.count,
               },
             });
-            count++;
-          }
 
-          await recordAuditLog(tx, {
-            organizationId,
-            actorUserId: request.user.userId,
-            action: 'BANK_STATEMENT_IMPORTED',
-            entityType: 'ACCOUNT',
-            entityId: bankAccountId,
-            summary: `Imported ${count} validated statement lines for ${bankAccount.code} - ${bankAccount.name}`,
-            metadata: {
-              bankAccountId,
-              importedCount: count,
-            },
-          });
-
-          return count;
-        });
+            return res.count;
+          },
+          { maxWait: 15000, timeout: 60000 },
+        );
 
         return reply.code(201).send({
           message: `Successfully imported ${createdCount} bank statement lines.`,
@@ -1163,11 +1162,10 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Insert validated rows into bank_statement_lines
-      const createdCount = await fastify.prisma.$transaction(async (tx) => {
-        let count = 0;
-        for (const row of validRows) {
-          await tx.bankStatementLine.create({
-            data: {
+      const createdCount = await fastify.prisma.$transaction(
+        async (tx) => {
+          const res = await tx.bankStatementLine.createMany({
+            data: validRows.map((row) => ({
               organizationId,
               bankAccountId,
               statementDate: new Date(row.statementDate),
@@ -1179,26 +1177,26 @@ export const bankingRoutes: FastifyPluginAsync = async (fastify) => {
               suggestedTrackingOptionId: row.suggestedTrackingOptionId,
               suggestedTaxTreatment: row.suggestedTaxTreatment,
               isReconciled: false,
+            })),
+          });
+
+          await recordAuditLog(tx, {
+            organizationId,
+            actorUserId: request.user.userId,
+            action: 'BANK_STATEMENT_IMPORTED',
+            entityType: 'ACCOUNT',
+            entityId: bankAccountId,
+            summary: `Imported ${res.count} statement lines for ${bankAccount.code} - ${bankAccount.name}`,
+            metadata: {
+              bankAccountId,
+              importedCount: res.count,
             },
           });
-          count++;
-        }
 
-        await recordAuditLog(tx, {
-          organizationId,
-          actorUserId: request.user.userId,
-          action: 'BANK_STATEMENT_IMPORTED',
-          entityType: 'ACCOUNT',
-          entityId: bankAccountId,
-          summary: `Imported ${count} statement lines for ${bankAccount.code} - ${bankAccount.name}`,
-          metadata: {
-            bankAccountId,
-            importedCount: count,
-          },
-        });
-
-        return count;
-      });
+          return res.count;
+        },
+        { maxWait: 15000, timeout: 60000 },
+      );
 
       return reply.code(201).send({
         message: `Successfully imported ${createdCount} bank statement lines.`,

@@ -36,7 +36,11 @@ export async function recordAuditLog(
         actorEmail = actorEmail ?? user.email;
         actorName = actorName ?? user.name;
       }
-    } catch {
+    } catch (err: any) {
+      const msg = String(err?.message || '');
+      if (msg.includes('Transaction') || msg.includes('transaction')) {
+        throw err;
+      }
       // Non-fatal fallback if user lookup fails
     }
   }

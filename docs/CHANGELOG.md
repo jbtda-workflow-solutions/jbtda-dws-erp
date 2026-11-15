@@ -4,6 +4,18 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.25.1] — 2026-11-15 — Bulk Import Interactive Transaction Timeout & Per-Row Query Optimization
+
+### Fixed
+- **Bulk CSV Import Transaction Timeout Remediation (`backend/src/routes/bulk-import.ts`, `backend/src/lib/ledger-posting.ts`, `backend/src/lib/audit.ts`, `backend/src/routes/banking.ts`, `backend/src/routes/developer.ts`)**:
+  - Resolved `Invalid prisma.auditLog.create() invocation: Transaction API error: Transaction not found` during bulk uploads of Direct Transactions (and other GL-posting record types).
+  - Root cause: Prisma interactive transactions default to a 5,000ms (`5s`) timeout, while calling `postJournalEntry()` per CSV row previously executed 7 redundant database queries per row (`account.findMany`, `trackingOption.findMany`, `organization.findUnique`, `journalEntry.count`, `user.findUnique`, and per-row `auditLog.create`), causing batches to exceed 5,000ms before `recordAuditLog()` ran.
+  - Added fast-path bulk flags (`entryNumber`, `skipValidationQueries`, `skipAuditLog`) to `postJournalEntry()` in `backend/src/lib/ledger-posting.ts`, pre-computed the starting `journalEntry` sequence number and actor metadata once per batch in `backend/src/routes/bulk-import.ts`, and extended the interactive transaction timeout to `{ maxWait: 15000, timeout: 120000 }`.
+  - Converted bank statement CSV import (`backend/src/routes/banking.ts`) to single-query `tx.bankStatementLine.createMany()` with `{ maxWait: 15000, timeout: 60000 }`, and extended the table purge transaction timeout in `backend/src/routes/developer.ts`.
+  - Updated `recordAuditLog()` in `backend/src/lib/audit.ts` to rethrow closed/aborted transaction errors from `db.user.findUnique()` rather than swallowing them and masking upstream transaction failures.
+
+---
+
 ## [0.25.0] — 2026-11-15 — Module 13: Prisma-Native Schema Self-Healing & Interactive Developer Database Management Workbench
 
 ### Changed

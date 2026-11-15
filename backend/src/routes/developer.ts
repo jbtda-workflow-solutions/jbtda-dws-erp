@@ -1583,7 +1583,7 @@ export const developerRoutes: FastifyPluginAsync = async (fastify) => {
             },
           });
         }
-      });
+      }, { maxWait: 15000, timeout: 60000 });
 
       const totalDeletedRows = Object.values(deletedCounts).reduce(
         (sum, n) => sum + n,

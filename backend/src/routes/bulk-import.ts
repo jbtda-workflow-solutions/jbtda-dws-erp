@@ -567,10 +567,11 @@ export const bulkImportRoutes: FastifyPluginAsync = async (fastify) => {
       return (
         accounts.find(
           (a) =>
-            a.code.toLowerCase() === target ||
-            a.name.toLowerCase() === target ||
-            `${a.code} - ${a.name}`.toLowerCase() === target ||
-            `${a.code} ${a.name}`.toLowerCase() === target,
+            a.isActive &&
+            (a.code.toLowerCase() === target ||
+              a.name.toLowerCase() === target ||
+              `${a.code} - ${a.name}`.toLowerCase() === target ||
+              `${a.code} ${a.name}`.toLowerCase() === target),
         ) ?? null
       );
     };
@@ -580,7 +581,9 @@ export const bulkImportRoutes: FastifyPluginAsync = async (fastify) => {
       const target = codeOrName.trim().toLowerCase();
       return (
         items.find(
-          (it) => it.code.toLowerCase() === target || it.name.toLowerCase() === target,
+          (it) =>
+            it.isActive &&
+            (it.code.toLowerCase() === target || it.name.toLowerCase() === target),
         ) ?? null
       );
     };
@@ -591,9 +594,10 @@ export const bulkImportRoutes: FastifyPluginAsync = async (fastify) => {
       return (
         trackingOptions.find(
           (t) =>
-            t.name.toLowerCase() === target ||
-            (t.code && t.code.toLowerCase() === target) ||
-            `${t.trackingCategory.name}: ${t.name}`.toLowerCase() === target,
+            t.isActive &&
+            (t.name.toLowerCase() === target ||
+              (t.code && t.code.toLowerCase() === target) ||
+              `${t.trackingCategory.name}: ${t.name}`.toLowerCase() === target),
         ) ?? null
       );
     };
@@ -1386,6 +1390,14 @@ export const bulkImportRoutes: FastifyPluginAsync = async (fastify) => {
         const claimNumber = getField(first, 'claim_number') || `EXP-${Math.floor(1000 + Math.random() * 9000)}`;
         const title = getField(first, 'title') || claimNumber;
 
+        const dupClaim = await fastify.prisma.expenseClaim.findFirst({
+          where: { organizationId, claimNumber },
+          select: { id: true },
+        });
+        if (dupClaim) {
+          errors.push(`Expense claim number "${claimNumber}" already exists.`);
+        }
+
         const empEmail = getField(first, 'employee_email', 'email').toLowerCase();
         let empUserId = actorUserId;
         if (empEmail) {
@@ -1635,634 +1647,557 @@ export const bulkImportRoutes: FastifyPluginAsync = async (fastify) => {
     // =========================================================================
     // STEP 2: ATOMIC COMMIT OF VALIDATED RECORDS
     // =========================================================================
-    const committedCount = await fastify.prisma.$transaction(async (tx) => {
-      let count = 0;
+    const actorMember = orgMembers.find((m) => m.userId === actorUserId);
+    const actorEmail = actorMember?.user.email ?? null;
+    const actorName = actorMember?.user.name ?? null;
 
-      for (const rec of validRecords) {
-        const p = rec.payload;
+    const committedCount = await fastify.prisma.$transaction(
+      async (tx) => {
+        let count = 0;
+        let nextJournalSeq =
+          (await tx.journalEntry.count({
+            where: { organizationId },
+          })) + 1;
 
-        if (entityType === 'CONTACTS') {
-          await tx.contact.create({
-            data: {
-              organizationId,
-              name: p.name,
-              type: p.type,
-              legalName: p.legalName,
-              abn: p.abn,
-              email: p.email,
-              phone: p.phone,
-              billingAddress: p.billingAddress,
-              paymentTermsDays: p.paymentTermsDays,
-              defaultRevenueAccountId: p.defaultRevenueAccountId,
-              defaultExpenseAccountId: p.defaultExpenseAccountId,
-              bankBsb: p.bankBsb,
-              bankAccountNumber: p.bankAccountNumber,
-              bankAccountName: p.bankAccountName,
-              isActive: true,
-            },
-          });
-          count++;
-        } else if (entityType === 'ITEMS') {
-          await tx.item.upsert({
-            where: {
-              organizationId_code: { organizationId, code: p.code },
-            },
-            update: {
-              name: p.name,
-              saleUnitPriceCents: p.saleUnitPriceCents,
-              saleTaxTreatment: p.saleTaxTreatment,
-              incomeAccountId: p.incomeAccountId,
-              saleDescription: p.saleDescription,
-              purchaseUnitPriceCents: p.purchaseUnitPriceCents,
-              purchaseTaxTreatment: p.purchaseTaxTreatment,
-              expenseAccountId: p.expenseAccountId,
-              purchaseDescription: p.purchaseDescription,
-              isActive: true,
-            },
-            create: {
-              organizationId,
-              code: p.code,
-              name: p.name,
-              saleUnitPriceCents: p.saleUnitPriceCents,
-              saleTaxTreatment: p.saleTaxTreatment,
-              incomeAccountId: p.incomeAccountId,
-              saleDescription: p.saleDescription,
-              purchaseUnitPriceCents: p.purchaseUnitPriceCents,
-              purchaseTaxTreatment: p.purchaseTaxTreatment,
-              expenseAccountId: p.expenseAccountId,
-              purchaseDescription: p.purchaseDescription,
-              isActive: true,
-            },
-          });
-          count++;
-        } else if (entityType === 'ACCOUNTS') {
-          await tx.account.upsert({
-            where: {
-              organizationId_code: { organizationId, code: p.code },
-            },
-            update: {
-              name: p.name,
-              type: p.type,
-              normalBalance: p.normalBalance,
-              parentId: p.parentId,
-              defaultTaxTreatment: p.defaultTaxTreatment,
-              isBankAccount: p.isBankAccount,
-              bankBsb: p.bankBsb,
-              bankAccountNumber: p.bankAccountNumber,
-              isActive: true,
-            },
-            create: {
-              organizationId,
-              code: p.code,
-              name: p.name,
-              type: p.type,
-              normalBalance: p.normalBalance,
-              parentId: p.parentId,
-              defaultTaxTreatment: p.defaultTaxTreatment,
-              isBankAccount: p.isBankAccount,
-              bankBsb: p.bankBsb,
-              bankAccountNumber: p.bankAccountNumber,
-              isActive: true,
-            },
-          });
-          count++;
-        } else if (entityType === 'TRACKING_OPTIONS') {
-          const cat = await tx.trackingCategory.upsert({
-            where: {
-              organizationId_name: { organizationId, name: p.categoryName },
-            },
-            update: { isActive: true },
-            create: {
-              organizationId,
-              name: p.categoryName,
-              description: p.categoryDesc,
-              isActive: true,
-            },
-          });
-          await tx.trackingOption.upsert({
-            where: {
-              trackingCategoryId_name: {
+        for (const rec of validRecords) {
+          const p = rec.payload;
+
+          if (entityType === 'CONTACTS') {
+            await tx.contact.create({
+              data: {
+                organizationId,
+                name: p.name,
+                type: p.type,
+                legalName: p.legalName,
+                abn: p.abn,
+                email: p.email,
+                phone: p.phone,
+                billingAddress: p.billingAddress,
+                paymentTermsDays: p.paymentTermsDays,
+                defaultRevenueAccountId: p.defaultRevenueAccountId,
+                defaultExpenseAccountId: p.defaultExpenseAccountId,
+                bankBsb: p.bankBsb,
+                bankAccountNumber: p.bankAccountNumber,
+                bankAccountName: p.bankAccountName,
+                isActive: true,
+              },
+            });
+            count++;
+          } else if (entityType === 'ITEMS') {
+            await tx.item.upsert({
+              where: {
+                organizationId_code: { organizationId, code: p.code },
+              },
+              update: {
+                name: p.name,
+                saleUnitPriceCents: p.saleUnitPriceCents,
+                saleTaxTreatment: p.saleTaxTreatment,
+                incomeAccountId: p.incomeAccountId,
+                saleDescription: p.saleDescription,
+                purchaseUnitPriceCents: p.purchaseUnitPriceCents,
+                purchaseTaxTreatment: p.purchaseTaxTreatment,
+                expenseAccountId: p.expenseAccountId,
+                purchaseDescription: p.purchaseDescription,
+                isActive: true,
+              },
+              create: {
+                organizationId,
+                code: p.code,
+                name: p.name,
+                saleUnitPriceCents: p.saleUnitPriceCents,
+                saleTaxTreatment: p.saleTaxTreatment,
+                incomeAccountId: p.incomeAccountId,
+                saleDescription: p.saleDescription,
+                purchaseUnitPriceCents: p.purchaseUnitPriceCents,
+                purchaseTaxTreatment: p.purchaseTaxTreatment,
+                expenseAccountId: p.expenseAccountId,
+                purchaseDescription: p.purchaseDescription,
+                isActive: true,
+              },
+            });
+            count++;
+          } else if (entityType === 'ACCOUNTS') {
+            await tx.account.upsert({
+              where: {
+                organizationId_code: { organizationId, code: p.code },
+              },
+              update: {
+                name: p.name,
+                type: p.type,
+                normalBalance: p.normalBalance,
+                parentId: p.parentId,
+                defaultTaxTreatment: p.defaultTaxTreatment,
+                isBankAccount: p.isBankAccount,
+                bankBsb: p.bankBsb,
+                bankAccountNumber: p.bankAccountNumber,
+                isActive: true,
+              },
+              create: {
+                organizationId,
+                code: p.code,
+                name: p.name,
+                type: p.type,
+                normalBalance: p.normalBalance,
+                parentId: p.parentId,
+                defaultTaxTreatment: p.defaultTaxTreatment,
+                isBankAccount: p.isBankAccount,
+                bankBsb: p.bankBsb,
+                bankAccountNumber: p.bankAccountNumber,
+                isActive: true,
+              },
+            });
+            count++;
+          } else if (entityType === 'TRACKING_OPTIONS') {
+            const cat = await tx.trackingCategory.upsert({
+              where: {
+                organizationId_name: { organizationId, name: p.categoryName },
+              },
+              update: { isActive: true },
+              create: {
+                organizationId,
+                name: p.categoryName,
+                description: p.categoryDesc,
+                isActive: true,
+              },
+            });
+            await tx.trackingOption.upsert({
+              where: {
+                trackingCategoryId_name: {
+                  trackingCategoryId: cat.id,
+                  name: p.optionName,
+                },
+              },
+              update: {
+                code: p.optionCode,
+                isActive: true,
+              },
+              create: {
+                organizationId,
                 trackingCategoryId: cat.id,
                 name: p.optionName,
+                code: p.optionCode,
+                isActive: true,
               },
-            },
-            update: {
-              code: p.optionCode,
-              isActive: true,
-            },
-            create: {
-              organizationId,
-              trackingCategoryId: cat.id,
-              name: p.optionName,
-              code: p.optionCode,
-              isActive: true,
-            },
-          });
-          count++;
-        } else if (entityType === 'INVOICES') {
-          const inv = await tx.invoice.create({
-            data: {
-              organizationId,
-              contactId: p.contactId,
-              invoiceNumber: p.docRef,
-              issueDate: p.issueDate,
-              dueDate: p.secondaryDate ?? p.issueDate,
-              status: p.status,
-              subtotalCents: p.subtotalCents,
-              gstCents: p.gstCents,
-              totalCents: p.totalCents,
-              amountPaidCents: 0n,
-              notes: p.notes,
-              createdByUserId: actorUserId,
-              approvedByUserId: p.status === InvoiceStatus.ISSUED ? actorUserId : null,
-              lineItems: {
-                create: p.lines.map((l: any) => ({
-                  organizationId,
-                  itemId: l.itemId,
-                  accountId: l.accountId,
-                  trackingOptionId: l.trackingOptionId,
-                  description: l.description,
-                  quantity: l.quantity,
-                  unitPriceCents: l.unitPriceCents,
-                  amountCents: l.amountCents,
-                  taxTreatment: l.taxTreatment,
-                  gstCents: l.gstCents,
-                  totalCents: l.totalCents,
-                })),
-              },
-            },
-          });
-
-          if (p.status === InvoiceStatus.ISSUED && p.totalCents > 0n && arAccount) {
-            const jLines: Array<{
-              accountId: string;
-              trackingOptionId?: string | null;
-              entryType: EntryType;
-              amountCents: bigint;
-              description?: string;
-            }> = [
-              {
-                accountId: arAccount.id,
-                entryType: EntryType.DEBIT,
-                amountCents: p.totalCents,
-                description: `Invoice ${inv.invoiceNumber} - ${p.contactName}`,
-              },
-            ];
-            for (const l of p.lines) {
-              if (l.amountCents > 0n) {
-                jLines.push({
-                  accountId: l.accountId || defaultRevAccount!.id,
-                  trackingOptionId: l.trackingOptionId,
-                  entryType: EntryType.CREDIT,
-                  amountCents: l.amountCents,
-                  description: `${inv.invoiceNumber}: ${l.description}`,
-                });
-              }
-            }
-            if (p.gstCents > 0n && gstCollectedAccount) {
-              jLines.push({
-                accountId: gstCollectedAccount.id,
-                entryType: EntryType.CREDIT,
-                amountCents: p.gstCents,
-                description: `GST Collected on Invoice ${inv.invoiceNumber}`,
-              });
-            }
-            await postJournalEntry(tx, {
-              organizationId,
-              actorUserId,
-              description: `Invoice ${inv.invoiceNumber} issued to ${p.contactName}`,
-              referenceType: 'INVOICE',
-              referenceId: inv.id,
-              postedAt: p.issueDate,
-              status: JournalStatus.POSTED,
-              lines: jLines,
             });
-          }
-          count++;
-        } else if (entityType === 'QUOTES') {
-          await tx.quote.create({
-            data: {
-              organizationId,
-              contactId: p.contactId,
-              quoteNumber: p.docRef,
-              issueDate: p.issueDate,
-              expiryDate: p.secondaryDate ?? p.issueDate,
-              status: p.status,
-              subtotalCents: p.subtotalCents,
-              gstCents: p.gstCents,
-              totalCents: p.totalCents,
-              notes: p.notes,
-              createdByUserId: actorUserId,
-              lineItems: {
-                create: p.lines.map((l: any) => ({
-                  organizationId,
-                  itemId: l.itemId,
-                  accountId: l.accountId,
-                  trackingOptionId: l.trackingOptionId,
-                  description: l.description,
-                  quantity: l.quantity,
-                  unitPriceCents: l.unitPriceCents,
-                  amountCents: l.amountCents,
-                  taxTreatment: l.taxTreatment,
-                  gstCents: l.gstCents,
-                  totalCents: l.totalCents,
-                })),
-              },
-            },
-          });
-          count++;
-        } else if (entityType === 'CREDIT_NOTES') {
-          const cn = await tx.creditNote.create({
-            data: {
-              organizationId,
-              contactId: p.contactId,
-              creditNoteNumber: p.docRef,
-              issueDate: p.issueDate,
-              status: p.status,
-              subtotalCents: p.subtotalCents,
-              gstCents: p.gstCents,
-              totalCents: p.totalCents,
-              amountAppliedCents: 0n,
-              notes: p.notes,
-              createdByUserId: actorUserId,
-              lineItems: {
-                create: p.lines.map((l: any) => ({
-                  organizationId,
-                  accountId: l.accountId,
-                  trackingOptionId: l.trackingOptionId,
-                  description: l.description,
-                  amountCents: l.amountCents,
-                  taxTreatment: l.taxTreatment,
-                  gstCents: l.gstCents,
-                  totalCents: l.totalCents,
-                })),
-              },
-            },
-          });
-
-          if (p.status === CreditNoteStatus.ISSUED && p.totalCents > 0n && arAccount) {
-            const jLines: Array<{
-              accountId: string;
-              trackingOptionId?: string | null;
-              entryType: EntryType;
-              amountCents: bigint;
-              description?: string;
-            }> = [];
-            for (const l of p.lines) {
-              if (l.amountCents > 0n) {
-                jLines.push({
-                  accountId: l.accountId || defaultRevAccount!.id,
-                  trackingOptionId: l.trackingOptionId,
-                  entryType: EntryType.DEBIT,
-                  amountCents: l.amountCents,
-                  description: `Credit Note ${cn.creditNoteNumber}: ${l.description}`,
-                });
-              }
-            }
-            if (p.gstCents > 0n && gstCollectedAccount) {
-              jLines.push({
-                accountId: gstCollectedAccount.id,
-                entryType: EntryType.DEBIT,
-                amountCents: p.gstCents,
-                description: `GST Reversal on Credit Note ${cn.creditNoteNumber}`,
-              });
-            }
-            jLines.push({
-              accountId: arAccount.id,
-              entryType: EntryType.CREDIT,
-              amountCents: p.totalCents,
-              description: `Credit Note ${cn.creditNoteNumber} - ${p.contactName}`,
-            });
-            await postJournalEntry(tx, {
-              organizationId,
-              actorUserId,
-              description: `Customer Credit Note ${cn.creditNoteNumber} (${p.contactName})`,
-              referenceType: 'CREDIT_NOTE',
-              referenceId: cn.id,
-              postedAt: p.issueDate,
-              status: JournalStatus.POSTED,
-              lines: jLines,
-            });
-          }
-          count++;
-        } else if (entityType === 'BILLS') {
-          const bill = await tx.bill.create({
-            data: {
-              organizationId,
-              contactId: p.contactId,
-              reference: p.docRef,
-              issueDate: p.issueDate,
-              dueDate: p.secondaryDate ?? p.issueDate,
-              status: p.status,
-              subtotalCents: p.subtotalCents,
-              gstCents: p.gstCents,
-              totalCents: p.totalCents,
-              amountPaidCents: 0n,
-              notes: p.notes,
-              createdByUserId: actorUserId,
-              approvedByUserId: p.status === BillStatus.AWAITING_PAYMENT ? actorUserId : null,
-              lineItems: {
-                create: p.lines.map((l: any) => ({
-                  organizationId,
-                  itemId: l.itemId,
-                  accountId: l.accountId,
-                  trackingOptionId: l.trackingOptionId,
-                  description: l.description,
-                  quantity: l.quantity,
-                  unitPriceCents: l.unitPriceCents,
-                  amountCents: l.amountCents,
-                  taxTreatment: l.taxTreatment,
-                  gstCents: l.gstCents,
-                  totalCents: l.totalCents,
-                })),
-              },
-            },
-          });
-
-          if (p.status === BillStatus.AWAITING_PAYMENT && p.totalCents > 0n && apAccount) {
-            const jLines: Array<{
-              accountId: string;
-              trackingOptionId?: string | null;
-              entryType: EntryType;
-              amountCents: bigint;
-              description?: string;
-            }> = [];
-            for (const l of p.lines) {
-              if (l.amountCents > 0n) {
-                jLines.push({
-                  accountId: l.accountId || defaultExpAccount!.id,
-                  trackingOptionId: l.trackingOptionId,
-                  entryType: EntryType.DEBIT,
-                  amountCents: l.amountCents,
-                  description: `${bill.reference}: ${l.description}`,
-                });
-              }
-            }
-            if (p.gstCents > 0n && gstPaidAccount) {
-              jLines.push({
-                accountId: gstPaidAccount.id,
-                entryType: EntryType.DEBIT,
-                amountCents: p.gstCents,
-                description: `GST Paid on Bill ${bill.reference}`,
-              });
-            }
-            jLines.push({
-              accountId: apAccount.id,
-              entryType: EntryType.CREDIT,
-              amountCents: p.totalCents,
-              description: `Bill ${bill.reference} - ${p.contactName}`,
-            });
-            await postJournalEntry(tx, {
-              organizationId,
-              actorUserId,
-              description: `Bill ${bill.reference} from ${p.contactName}`,
-              referenceType: 'BILL',
-              referenceId: bill.id,
-              postedAt: p.issueDate,
-              status: JournalStatus.POSTED,
-              lines: jLines,
-            });
-          }
-          count++;
-        } else if (entityType === 'PURCHASE_ORDERS') {
-          await tx.purchaseOrder.create({
-            data: {
-              organizationId,
-              contactId: p.contactId,
-              poNumber: p.docRef,
-              issueDate: p.issueDate,
-              deliveryDate: p.secondaryDate ?? null,
-              status: p.status,
-              subtotalCents: p.subtotalCents,
-              gstCents: p.gstCents,
-              totalCents: p.totalCents,
-              notes: p.notes,
-              createdByUserId: actorUserId,
-              approvedByUserId: p.status === PurchaseOrderStatus.APPROVED ? actorUserId : null,
-              lineItems: {
-                create: p.lines.map((l: any) => ({
-                  organizationId,
-                  itemId: l.itemId,
-                  accountId: l.accountId,
-                  trackingOptionId: l.trackingOptionId,
-                  description: l.description,
-                  quantity: l.quantity,
-                  unitPriceCents: l.unitPriceCents,
-                  amountCents: l.amountCents,
-                  taxTreatment: l.taxTreatment,
-                  gstCents: l.gstCents,
-                  totalCents: l.totalCents,
-                })),
-              },
-            },
-          });
-          count++;
-        } else if (entityType === 'VENDOR_CREDITS') {
-          const vc = await tx.vendorCredit.create({
-            data: {
-              organizationId,
-              contactId: p.contactId,
-              reference: p.docRef,
-              issueDate: p.issueDate,
-              status: p.status,
-              subtotalCents: p.subtotalCents,
-              gstCents: p.gstCents,
-              totalCents: p.totalCents,
-              amountAppliedCents: 0n,
-              notes: p.notes,
-              createdByUserId: actorUserId,
-              lineItems: {
-                create: p.lines.map((l: any) => ({
-                  organizationId,
-                  accountId: l.accountId,
-                  trackingOptionId: l.trackingOptionId,
-                  description: l.description,
-                  amountCents: l.amountCents,
-                  taxTreatment: l.taxTreatment,
-                  gstCents: l.gstCents,
-                  totalCents: l.totalCents,
-                })),
-              },
-            },
-          });
-
-          if (p.status === CreditNoteStatus.ISSUED && p.totalCents > 0n && apAccount) {
-            const jLines: Array<{
-              accountId: string;
-              trackingOptionId?: string | null;
-              entryType: EntryType;
-              amountCents: bigint;
-              description?: string;
-            }> = [
-              {
-                accountId: apAccount.id,
-                entryType: EntryType.DEBIT,
-                amountCents: p.totalCents,
-                description: `Vendor Credit ${vc.reference} - ${p.contactName}`,
-              },
-            ];
-            for (const l of p.lines) {
-              if (l.amountCents > 0n) {
-                jLines.push({
-                  accountId: l.accountId || defaultExpAccount!.id,
-                  trackingOptionId: l.trackingOptionId,
-                  entryType: EntryType.CREDIT,
-                  amountCents: l.amountCents,
-                  description: `Vendor Credit ${vc.reference}: ${l.description}`,
-                });
-              }
-            }
-            if (p.gstCents > 0n && gstPaidAccount) {
-              jLines.push({
-                accountId: gstPaidAccount.id,
-                entryType: EntryType.CREDIT,
-                amountCents: p.gstCents,
-                description: `GST Reversal on Vendor Credit ${vc.reference}`,
-              });
-            }
-            await postJournalEntry(tx, {
-              organizationId,
-              actorUserId,
-              description: `Vendor Credit ${vc.reference} (${p.contactName})`,
-              referenceType: 'VENDOR_CREDIT',
-              referenceId: vc.id,
-              postedAt: p.issueDate,
-              status: JournalStatus.POSTED,
-              lines: jLines,
-            });
-          }
-          count++;
-        } else if (entityType === 'DIRECT_TRANSACTIONS') {
-          const dtx = await tx.directTransaction.create({
-            data: {
-              organizationId,
-              type: p.type,
-              bankAccountId: p.bankAccountId,
-              contactId: p.contactId,
-              payeeName: p.payeeName,
-              transactionDate: p.transactionDate,
-              reference: p.reference,
-              subtotalCents: p.subtotalCents,
-              gstCents: p.gstCents,
-              totalCents: p.totalCents,
-              notes: p.notes,
-              createdByUserId: actorUserId,
-              lines: {
-                create: [
-                  {
+            count++;
+          } else if (entityType === 'INVOICES') {
+            const inv = await tx.invoice.create({
+              data: {
+                organizationId,
+                contactId: p.contactId,
+                invoiceNumber: p.docRef,
+                issueDate: p.issueDate,
+                dueDate: p.secondaryDate ?? p.issueDate,
+                status: p.status,
+                subtotalCents: p.subtotalCents,
+                gstCents: p.gstCents,
+                totalCents: p.totalCents,
+                amountPaidCents: 0n,
+                notes: p.notes,
+                createdByUserId: actorUserId,
+                approvedByUserId: p.status === InvoiceStatus.ISSUED ? actorUserId : null,
+                lineItems: {
+                  create: p.lines.map((l: any) => ({
                     organizationId,
-                    accountId: p.accountId,
-                    trackingOptionId: p.trackingOptionId,
-                    description: p.description,
-                    amountCents: p.subtotalCents,
-                    taxTreatment: p.taxTreatment,
-                    gstCents: p.gstCents,
-                    totalCents: p.totalCents,
-                  },
-                ],
+                    itemId: l.itemId,
+                    accountId: l.accountId,
+                    trackingOptionId: l.trackingOptionId,
+                    description: l.description,
+                    quantity: l.quantity,
+                    unitPriceCents: l.unitPriceCents,
+                    amountCents: l.amountCents,
+                    taxTreatment: l.taxTreatment,
+                    gstCents: l.gstCents,
+                    totalCents: l.totalCents,
+                  })),
+                },
               },
-            },
-          });
-
-          const isReceive = p.type === DirectTransactionType.RECEIVE_MONEY;
-          const jLines: Array<{
-            accountId: string;
-            trackingOptionId?: string | null;
-            entryType: EntryType;
-            amountCents: bigint;
-            description?: string;
-          }> = [];
-
-          if (isReceive) {
-            jLines.push({
-              accountId: p.bankAccountId,
-              entryType: EntryType.DEBIT,
-              amountCents: p.totalCents,
-              description: p.description,
             });
-            if (p.gstCents > 0n && gstCollectedAccount) {
+
+            if (p.status === InvoiceStatus.ISSUED && p.totalCents > 0n && arAccount) {
+              const jLines: Array<{
+                accountId: string;
+                trackingOptionId?: string | null;
+                entryType: EntryType;
+                amountCents: bigint;
+                description?: string;
+              }> = [
+                {
+                  accountId: arAccount.id,
+                  entryType: EntryType.DEBIT,
+                  amountCents: p.totalCents,
+                  description: `Invoice ${inv.invoiceNumber} - ${p.contactName}`,
+                },
+              ];
+              for (const l of p.lines) {
+                if (l.amountCents > 0n) {
+                  jLines.push({
+                    accountId: l.accountId || defaultRevAccount!.id,
+                    trackingOptionId: l.trackingOptionId,
+                    entryType: EntryType.CREDIT,
+                    amountCents: l.amountCents,
+                    description: `${inv.invoiceNumber}: ${l.description}`,
+                  });
+                }
+              }
+              if (p.gstCents > 0n && gstCollectedAccount) {
+                jLines.push({
+                  accountId: gstCollectedAccount.id,
+                  entryType: EntryType.CREDIT,
+                  amountCents: p.gstCents,
+                  description: `GST Collected on Invoice ${inv.invoiceNumber}`,
+                });
+              }
+              await postJournalEntry(tx, {
+                organizationId,
+                actorUserId,
+                description: `Invoice ${inv.invoiceNumber} issued to ${p.contactName}`,
+                referenceType: 'INVOICE',
+                referenceId: inv.id,
+                postedAt: p.issueDate,
+                status: JournalStatus.POSTED,
+                lines: jLines,
+                entryNumber: `JNL-${(nextJournalSeq++).toString().padStart(4, '0')}`,
+                skipValidationQueries: true,
+                skipAuditLog: true,
+              });
+            }
+            count++;
+          } else if (entityType === 'QUOTES') {
+            await tx.quote.create({
+              data: {
+                organizationId,
+                contactId: p.contactId,
+                quoteNumber: p.docRef,
+                issueDate: p.issueDate,
+                expiryDate: p.secondaryDate ?? p.issueDate,
+                status: p.status,
+                subtotalCents: p.subtotalCents,
+                gstCents: p.gstCents,
+                totalCents: p.totalCents,
+                notes: p.notes,
+                createdByUserId: actorUserId,
+                lineItems: {
+                  create: p.lines.map((l: any) => ({
+                    organizationId,
+                    itemId: l.itemId,
+                    accountId: l.accountId,
+                    trackingOptionId: l.trackingOptionId,
+                    description: l.description,
+                    quantity: l.quantity,
+                    unitPriceCents: l.unitPriceCents,
+                    amountCents: l.amountCents,
+                    taxTreatment: l.taxTreatment,
+                    gstCents: l.gstCents,
+                    totalCents: l.totalCents,
+                  })),
+                },
+              },
+            });
+            count++;
+          } else if (entityType === 'CREDIT_NOTES') {
+            const cn = await tx.creditNote.create({
+              data: {
+                organizationId,
+                contactId: p.contactId,
+                creditNoteNumber: p.docRef,
+                issueDate: p.issueDate,
+                status: p.status,
+                subtotalCents: p.subtotalCents,
+                gstCents: p.gstCents,
+                totalCents: p.totalCents,
+                amountAppliedCents: 0n,
+                notes: p.notes,
+                createdByUserId: actorUserId,
+                lineItems: {
+                  create: p.lines.map((l: any) => ({
+                    organizationId,
+                    accountId: l.accountId,
+                    trackingOptionId: l.trackingOptionId,
+                    description: l.description,
+                    amountCents: l.amountCents,
+                    taxTreatment: l.taxTreatment,
+                    gstCents: l.gstCents,
+                    totalCents: l.totalCents,
+                  })),
+                },
+              },
+            });
+
+            if (p.status === CreditNoteStatus.ISSUED && p.totalCents > 0n && arAccount) {
+              const jLines: Array<{
+                accountId: string;
+                trackingOptionId?: string | null;
+                entryType: EntryType;
+                amountCents: bigint;
+                description?: string;
+              }> = [];
+              for (const l of p.lines) {
+                if (l.amountCents > 0n) {
+                  jLines.push({
+                    accountId: l.accountId || defaultRevAccount!.id,
+                    trackingOptionId: l.trackingOptionId,
+                    entryType: EntryType.DEBIT,
+                    amountCents: l.amountCents,
+                    description: `Credit Note ${cn.creditNoteNumber}: ${l.description}`,
+                  });
+                }
+              }
+              if (p.gstCents > 0n && gstCollectedAccount) {
+                jLines.push({
+                  accountId: gstCollectedAccount.id,
+                  entryType: EntryType.DEBIT,
+                  amountCents: p.gstCents,
+                  description: `GST Reversal on Credit Note ${cn.creditNoteNumber}`,
+                });
+              }
               jLines.push({
-                accountId: gstCollectedAccount.id,
+                accountId: arAccount.id,
                 entryType: EntryType.CREDIT,
-                amountCents: p.gstCents,
-                description: `GST on ${p.description}`,
+                amountCents: p.totalCents,
+                description: `Credit Note ${cn.creditNoteNumber} - ${p.contactName}`,
+              });
+              await postJournalEntry(tx, {
+                organizationId,
+                actorUserId,
+                description: `Customer Credit Note ${cn.creditNoteNumber} (${p.contactName})`,
+                referenceType: 'CREDIT_NOTE',
+                referenceId: cn.id,
+                postedAt: p.issueDate,
+                status: JournalStatus.POSTED,
+                lines: jLines,
+                entryNumber: `JNL-${(nextJournalSeq++).toString().padStart(4, '0')}`,
+                skipValidationQueries: true,
+                skipAuditLog: true,
               });
             }
-            jLines.push({
-              accountId: p.accountId,
-              trackingOptionId: p.trackingOptionId,
-              entryType: EntryType.CREDIT,
-              amountCents: p.subtotalCents,
-              description: p.description,
-            });
-          } else {
-            jLines.push({
-              accountId: p.accountId,
-              trackingOptionId: p.trackingOptionId,
-              entryType: EntryType.DEBIT,
-              amountCents: p.subtotalCents,
-              description: p.description,
-            });
-            if (p.gstCents > 0n && gstPaidAccount) {
-              jLines.push({
-                accountId: gstPaidAccount.id,
-                entryType: EntryType.DEBIT,
-                amountCents: p.gstCents,
-                description: `GST on ${p.description}`,
-              });
-            }
-            jLines.push({
-              accountId: p.bankAccountId,
-              entryType: EntryType.CREDIT,
-              amountCents: p.totalCents,
-              description: p.description,
-            });
-          }
-
-          await postJournalEntry(tx, {
-            organizationId,
-            actorUserId,
-            description: `${isReceive ? 'Receive Money' : 'Spend Money'}: ${p.payeeName}`,
-            referenceType: 'DIRECT_TRANSACTION',
-            referenceId: dtx.id,
-            postedAt: p.transactionDate,
-            status: JournalStatus.POSTED,
-            lines: jLines,
-          });
-          count++;
-        } else if (entityType === 'EXPENSE_CLAIMS') {
-          const claim = await tx.expenseClaim.create({
-            data: {
-              organizationId,
-              employeeUserId: p.employeeUserId,
-              claimNumber: p.claimNumber,
-              title: p.title,
-              status: p.status,
-              submittedAt: p.status !== ExpenseClaimStatus.DRAFT ? new Date() : null,
-              approvedAt: p.status === ExpenseClaimStatus.APPROVED ? new Date() : null,
-              approvedByUserId: p.status === ExpenseClaimStatus.APPROVED ? actorUserId : null,
-              subtotalCents: p.subtotalCents,
-              gstCents: p.gstCents,
-              totalCents: p.totalCents,
-              notes: p.notes,
-              items: {
-                create: p.items.map((it: any) => ({
-                  organizationId,
-                  expenseDate: it.expenseDate,
-                  merchant: it.merchant,
-                  description: it.description,
-                  accountId: it.accountId,
-                  trackingOptionId: it.trackingOptionId,
-                  amountCents: it.amountCents,
-                  taxTreatment: it.taxTreatment,
-                  gstCents: it.gstCents,
-                  totalCents: it.totalCents,
-                })),
+            count++;
+          } else if (entityType === 'BILLS') {
+            const bill = await tx.bill.create({
+              data: {
+                organizationId,
+                contactId: p.contactId,
+                reference: p.docRef,
+                issueDate: p.issueDate,
+                dueDate: p.secondaryDate ?? p.issueDate,
+                status: p.status,
+                subtotalCents: p.subtotalCents,
+                gstCents: p.gstCents,
+                totalCents: p.totalCents,
+                amountPaidCents: 0n,
+                notes: p.notes,
+                createdByUserId: actorUserId,
+                approvedByUserId: p.status === BillStatus.AWAITING_PAYMENT ? actorUserId : null,
+                lineItems: {
+                  create: p.lines.map((l: any) => ({
+                    organizationId,
+                    itemId: l.itemId,
+                    accountId: l.accountId,
+                    trackingOptionId: l.trackingOptionId,
+                    description: l.description,
+                    quantity: l.quantity,
+                    unitPriceCents: l.unitPriceCents,
+                    amountCents: l.amountCents,
+                    taxTreatment: l.taxTreatment,
+                    gstCents: l.gstCents,
+                    totalCents: l.totalCents,
+                  })),
+                },
               },
-            },
-          });
+            });
 
-          if (p.status === ExpenseClaimStatus.APPROVED && p.totalCents > 0n && empReimbAccount) {
+            if (p.status === BillStatus.AWAITING_PAYMENT && p.totalCents > 0n && apAccount) {
+              const jLines: Array<{
+                accountId: string;
+                trackingOptionId?: string | null;
+                entryType: EntryType;
+                amountCents: bigint;
+                description?: string;
+              }> = [];
+              for (const l of p.lines) {
+                if (l.amountCents > 0n) {
+                  jLines.push({
+                    accountId: l.accountId || defaultExpAccount!.id,
+                    trackingOptionId: l.trackingOptionId,
+                    entryType: EntryType.DEBIT,
+                    amountCents: l.amountCents,
+                    description: `${bill.reference}: ${l.description}`,
+                  });
+                }
+              }
+              if (p.gstCents > 0n && gstPaidAccount) {
+                jLines.push({
+                  accountId: gstPaidAccount.id,
+                  entryType: EntryType.DEBIT,
+                  amountCents: p.gstCents,
+                  description: `GST Paid on Bill ${bill.reference}`,
+                });
+              }
+              jLines.push({
+                accountId: apAccount.id,
+                entryType: EntryType.CREDIT,
+                amountCents: p.totalCents,
+                description: `Bill ${bill.reference} - ${p.contactName}`,
+              });
+              await postJournalEntry(tx, {
+                organizationId,
+                actorUserId,
+                description: `Bill ${bill.reference} from ${p.contactName}`,
+                referenceType: 'BILL',
+                referenceId: bill.id,
+                postedAt: p.issueDate,
+                status: JournalStatus.POSTED,
+                lines: jLines,
+                entryNumber: `JNL-${(nextJournalSeq++).toString().padStart(4, '0')}`,
+                skipValidationQueries: true,
+                skipAuditLog: true,
+              });
+            }
+            count++;
+          } else if (entityType === 'PURCHASE_ORDERS') {
+            await tx.purchaseOrder.create({
+              data: {
+                organizationId,
+                contactId: p.contactId,
+                poNumber: p.docRef,
+                issueDate: p.issueDate,
+                deliveryDate: p.secondaryDate ?? null,
+                status: p.status,
+                subtotalCents: p.subtotalCents,
+                gstCents: p.gstCents,
+                totalCents: p.totalCents,
+                notes: p.notes,
+                createdByUserId: actorUserId,
+                approvedByUserId: p.status === PurchaseOrderStatus.APPROVED ? actorUserId : null,
+                lineItems: {
+                  create: p.lines.map((l: any) => ({
+                    organizationId,
+                    itemId: l.itemId,
+                    accountId: l.accountId,
+                    trackingOptionId: l.trackingOptionId,
+                    description: l.description,
+                    quantity: l.quantity,
+                    unitPriceCents: l.unitPriceCents,
+                    amountCents: l.amountCents,
+                    taxTreatment: l.taxTreatment,
+                    gstCents: l.gstCents,
+                    totalCents: l.totalCents,
+                  })),
+                },
+              },
+            });
+            count++;
+          } else if (entityType === 'VENDOR_CREDITS') {
+            const vc = await tx.vendorCredit.create({
+              data: {
+                organizationId,
+                contactId: p.contactId,
+                reference: p.docRef,
+                issueDate: p.issueDate,
+                status: p.status,
+                subtotalCents: p.subtotalCents,
+                gstCents: p.gstCents,
+                totalCents: p.totalCents,
+                amountAppliedCents: 0n,
+                notes: p.notes,
+                createdByUserId: actorUserId,
+                lineItems: {
+                  create: p.lines.map((l: any) => ({
+                    organizationId,
+                    accountId: l.accountId,
+                    trackingOptionId: l.trackingOptionId,
+                    description: l.description,
+                    amountCents: l.amountCents,
+                    taxTreatment: l.taxTreatment,
+                    gstCents: l.gstCents,
+                    totalCents: l.totalCents,
+                  })),
+                },
+              },
+            });
+
+            if (p.status === CreditNoteStatus.ISSUED && p.totalCents > 0n && apAccount) {
+              const jLines: Array<{
+                accountId: string;
+                trackingOptionId?: string | null;
+                entryType: EntryType;
+                amountCents: bigint;
+                description?: string;
+              }> = [
+                {
+                  accountId: apAccount.id,
+                  entryType: EntryType.DEBIT,
+                  amountCents: p.totalCents,
+                  description: `Vendor Credit ${vc.reference} - ${p.contactName}`,
+                },
+              ];
+              for (const l of p.lines) {
+                if (l.amountCents > 0n) {
+                  jLines.push({
+                    accountId: l.accountId || defaultExpAccount!.id,
+                    trackingOptionId: l.trackingOptionId,
+                    entryType: EntryType.CREDIT,
+                    amountCents: l.amountCents,
+                    description: `Vendor Credit ${vc.reference}: ${l.description}`,
+                  });
+                }
+              }
+              if (p.gstCents > 0n && gstPaidAccount) {
+                jLines.push({
+                  accountId: gstPaidAccount.id,
+                  entryType: EntryType.CREDIT,
+                  amountCents: p.gstCents,
+                  description: `GST Reversal on Vendor Credit ${vc.reference}`,
+                });
+              }
+              await postJournalEntry(tx, {
+                organizationId,
+                actorUserId,
+                description: `Vendor Credit ${vc.reference} (${p.contactName})`,
+                referenceType: 'VENDOR_CREDIT',
+                referenceId: vc.id,
+                postedAt: p.issueDate,
+                status: JournalStatus.POSTED,
+                lines: jLines,
+                entryNumber: `JNL-${(nextJournalSeq++).toString().padStart(4, '0')}`,
+                skipValidationQueries: true,
+                skipAuditLog: true,
+              });
+            }
+            count++;
+          } else if (entityType === 'DIRECT_TRANSACTIONS') {
+            const dtx = await tx.directTransaction.create({
+              data: {
+                organizationId,
+                type: p.type,
+                bankAccountId: p.bankAccountId,
+                contactId: p.contactId,
+                payeeName: p.payeeName,
+                transactionDate: p.transactionDate,
+                reference: p.reference,
+                subtotalCents: p.subtotalCents,
+                gstCents: p.gstCents,
+                totalCents: p.totalCents,
+                notes: p.notes,
+                createdByUserId: actorUserId,
+                lines: {
+                  create: [
+                    {
+                      organizationId,
+                      accountId: p.accountId,
+                      trackingOptionId: p.trackingOptionId,
+                      description: p.description,
+                      amountCents: p.subtotalCents,
+                      taxTreatment: p.taxTreatment,
+                      gstCents: p.gstCents,
+                      totalCents: p.totalCents,
+                    },
+                  ],
+                },
+              },
+            });
+
+            const isReceive = p.type === DirectTransactionType.RECEIVE_MONEY;
             const jLines: Array<{
               accountId: string;
               trackingOptionId?: string | null;
@@ -2270,74 +2205,185 @@ export const bulkImportRoutes: FastifyPluginAsync = async (fastify) => {
               amountCents: bigint;
               description?: string;
             }> = [];
-            for (const it of p.items) {
-              if (it.amountCents > 0n) {
+
+            if (isReceive) {
+              jLines.push({
+                accountId: p.bankAccountId,
+                entryType: EntryType.DEBIT,
+                amountCents: p.totalCents,
+                description: p.description,
+              });
+              if (p.gstCents > 0n && gstCollectedAccount) {
                 jLines.push({
-                  accountId: it.accountId,
-                  trackingOptionId: it.trackingOptionId,
-                  entryType: EntryType.DEBIT,
-                  amountCents: it.amountCents,
-                  description: `${claim.claimNumber}: ${it.merchant} - ${it.description}`,
+                  accountId: gstCollectedAccount.id,
+                  entryType: EntryType.CREDIT,
+                  amountCents: p.gstCents,
+                  description: `GST on ${p.description}`,
                 });
               }
-            }
-            if (p.gstCents > 0n && gstPaidAccount) {
               jLines.push({
-                accountId: gstPaidAccount.id,
+                accountId: p.accountId,
+                trackingOptionId: p.trackingOptionId,
+                entryType: EntryType.CREDIT,
+                amountCents: p.subtotalCents,
+                description: p.description,
+              });
+            } else {
+              jLines.push({
+                accountId: p.accountId,
+                trackingOptionId: p.trackingOptionId,
                 entryType: EntryType.DEBIT,
-                amountCents: p.gstCents,
-                description: `GST Paid on Expense Claim ${claim.claimNumber}`,
+                amountCents: p.subtotalCents,
+                description: p.description,
+              });
+              if (p.gstCents > 0n && gstPaidAccount) {
+                jLines.push({
+                  accountId: gstPaidAccount.id,
+                  entryType: EntryType.DEBIT,
+                  amountCents: p.gstCents,
+                  description: `GST on ${p.description}`,
+                });
+              }
+              jLines.push({
+                accountId: p.bankAccountId,
+                entryType: EntryType.CREDIT,
+                amountCents: p.totalCents,
+                description: p.description,
               });
             }
-            jLines.push({
-              accountId: empReimbAccount.id,
-              entryType: EntryType.CREDIT,
-              amountCents: p.totalCents,
-              description: `Expense Claim ${claim.claimNumber} Payable`,
-            });
 
             await postJournalEntry(tx, {
               organizationId,
               actorUserId,
-              description: `Approved Expense Claim ${claim.claimNumber}: ${claim.title}`,
-              referenceType: 'EXPENSE_CLAIM',
-              referenceId: claim.id,
-              postedAt: new Date(),
+              description: `${isReceive ? 'Receive Money' : 'Spend Money'}: ${p.payeeName}`,
+              referenceType: 'DIRECT_TRANSACTION',
+              referenceId: dtx.id,
+              postedAt: p.transactionDate,
               status: JournalStatus.POSTED,
               lines: jLines,
+              entryNumber: `JNL-${(nextJournalSeq++).toString().padStart(4, '0')}`,
+              skipValidationQueries: true,
+              skipAuditLog: true,
             });
+            count++;
+          } else if (entityType === 'EXPENSE_CLAIMS') {
+            const claim = await tx.expenseClaim.create({
+              data: {
+                organizationId,
+                employeeUserId: p.employeeUserId,
+                claimNumber: p.claimNumber,
+                title: p.title,
+                status: p.status,
+                submittedAt: p.status !== ExpenseClaimStatus.DRAFT ? new Date() : null,
+                approvedAt: p.status === ExpenseClaimStatus.APPROVED ? new Date() : null,
+                approvedByUserId: p.status === ExpenseClaimStatus.APPROVED ? actorUserId : null,
+                subtotalCents: p.subtotalCents,
+                gstCents: p.gstCents,
+                totalCents: p.totalCents,
+                notes: p.notes,
+                items: {
+                  create: p.items.map((it: any) => ({
+                    organizationId,
+                    expenseDate: it.expenseDate,
+                    merchant: it.merchant,
+                    description: it.description,
+                    accountId: it.accountId,
+                    trackingOptionId: it.trackingOptionId,
+                    amountCents: it.amountCents,
+                    taxTreatment: it.taxTreatment,
+                    gstCents: it.gstCents,
+                    totalCents: it.totalCents,
+                  })),
+                },
+              },
+            });
+
+            if (p.status === ExpenseClaimStatus.APPROVED && p.totalCents > 0n && empReimbAccount) {
+              const jLines: Array<{
+                accountId: string;
+                trackingOptionId?: string | null;
+                entryType: EntryType;
+                amountCents: bigint;
+                description?: string;
+              }> = [];
+              for (const it of p.items) {
+                if (it.amountCents > 0n) {
+                  jLines.push({
+                    accountId: it.accountId,
+                    trackingOptionId: it.trackingOptionId,
+                    entryType: EntryType.DEBIT,
+                    amountCents: it.amountCents,
+                    description: `${claim.claimNumber}: ${it.merchant} - ${it.description}`,
+                  });
+                }
+              }
+              if (p.gstCents > 0n && gstPaidAccount) {
+                jLines.push({
+                  accountId: gstPaidAccount.id,
+                  entryType: EntryType.DEBIT,
+                  amountCents: p.gstCents,
+                  description: `GST Paid on Expense Claim ${claim.claimNumber}`,
+                });
+              }
+              jLines.push({
+                accountId: empReimbAccount.id,
+                entryType: EntryType.CREDIT,
+                amountCents: p.totalCents,
+                description: `Expense Claim ${claim.claimNumber} Payable`,
+              });
+
+              await postJournalEntry(tx, {
+                organizationId,
+                actorUserId,
+                description: `Approved Expense Claim ${claim.claimNumber}: ${claim.title}`,
+                referenceType: 'EXPENSE_CLAIM',
+                referenceId: claim.id,
+                postedAt: new Date(),
+                status: JournalStatus.POSTED,
+                lines: jLines,
+                entryNumber: `JNL-${(nextJournalSeq++).toString().padStart(4, '0')}`,
+                skipValidationQueries: true,
+                skipAuditLog: true,
+              });
+            }
+            count++;
+          } else if (entityType === 'JOURNAL_ENTRIES') {
+            await postJournalEntry(tx, {
+              organizationId,
+              actorUserId,
+              description: `${p.entryNumber ? `[${p.entryNumber}] ` : ''}${p.description}`,
+              referenceType: 'MANUAL',
+              referenceId: p.entryNumber,
+              postedAt: p.postedDate,
+              status: p.status,
+              lines: p.lines,
+              entryNumber: p.entryNumber || `JNL-${(nextJournalSeq++).toString().padStart(4, '0')}`,
+              skipValidationQueries: true,
+              skipAuditLog: true,
+            });
+            count++;
           }
-          count++;
-        } else if (entityType === 'JOURNAL_ENTRIES') {
-          await postJournalEntry(tx, {
-            organizationId,
-            actorUserId,
-            description: `${p.entryNumber ? `[${p.entryNumber}] ` : ''}${p.description}`,
-            referenceType: 'MANUAL',
-            referenceId: p.entryNumber,
-            postedAt: p.postedDate,
-            status: p.status,
-            lines: p.lines,
-          });
-          count++;
         }
-      }
 
-      await recordAuditLog(tx, {
-        organizationId,
-        actorUserId,
-        action: 'BULK_CSV_IMPORT_COMMITTED',
-        entityType,
-        entityId: organizationId,
-        summary: `Bulk CSV imported ${count} ${entityType} record(s)`,
-        metadata: {
+        await recordAuditLog(tx, {
+          organizationId,
+          actorUserId,
+          actorEmail,
+          actorName,
+          action: 'BULK_CSV_IMPORT_COMMITTED',
           entityType,
-          committedCount: count,
-        },
-      });
+          entityId: organizationId,
+          summary: `Bulk CSV imported ${count} ${entityType} record(s)`,
+          metadata: {
+            entityType,
+            committedCount: count,
+          },
+        });
 
-      return count;
-    });
+        return count;
+      },
+      { maxWait: 15000, timeout: 120000 },
+    );
 
     return {
       entityType,
