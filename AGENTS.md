@@ -189,7 +189,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │   ├── INTEGRATIONS.md        # Async webhook payloads and n8n contracts
 │   ├── PLUGINS.md             # Enterprise Plug-In Module Contract (FLEET, INVENTORY, DOCUMENTS, N8N)
 │   ├── SECURITY.md            # Auth mechanics, 7-role RBAC matrix, and crypto standards
-│   ├── STAGES_ROADMAP.md      # Canonical Product Modules, Active Stages (1–16) & Deferred Stages (D1–D5)
+│   ├── STAGES_ROADMAP.md      # Canonical Product Modules, Active Stages (1–16) & Deferred Stages (D1–D6)
 │   └── modules/               # Domain-scoped AI Agent Product Module Contexts
 │       ├── README.md          # Canonical Product Module Registry, tiering matrix & universal invariants
 │       ├── core-platform.md   # CORE_PLATFORM (Workspace, Auth, RBAC, Contacts, Items, Bulk Import, Dev Console)

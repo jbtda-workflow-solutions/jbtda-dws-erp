@@ -61,4 +61,4 @@ Concise architectural invariants and financial mechanics for **JBTDA-DWS-ERP** �
 ## 3. Product Modules & Delivery Roadmap
 
 - **Canonical Product Modules (`docs/modules/README.md`):** `CORE_PLATFORM`, `CORE_ACCOUNTING`, `RECEIVABLES`, `PAYABLES`, `EXPENSES`, `CONNECTORS`, `DOCUMENTS`, `PROJECTS`, `INVENTORY`, `FLEET`, `PAYROLL`, and internal `DEVELOPER_PORTAL`.
-- **Delivery Stages (`docs/STAGES_ROADMAP.md`):** Stages 1–13 completed; Stages 14–16 active (`Module Gating & Recurring Runner`, `Connectors Hub Phase 1`, `Connectors Hub Phase 2 — Google Workspace`); Deferred Stages D1–D5 (`DOCUMENTS`, `PROJECTS`, `INVENTORY`, `FLEET`, `PAYROLL`).
+- **Delivery Stages (`docs/STAGES_ROADMAP.md`):** Stages 1–13 completed; Stages 14–16 active (`Module Gating & Recurring Runner`, `Connectors Hub Phase 1 — /connectors UI & API Keys`, `Connectors Hub Phase 2 — Google Workspace`); Deferred Stages D1–D6 (`DOCUMENTS`, `PROJECTS`, `INVENTORY`, `FLEET`, `PAYROLL`, `Outbound Webhooks & n8n`).

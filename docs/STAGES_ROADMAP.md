@@ -560,22 +560,18 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 
 ---
 
-### Module 15: Connectors Hub Phase 1 — Inbound Scoped API Keys, Outbound Webhooks (n8n) & AES-256-GCM Secret Vault
-**Objective:** Launch the **`CONNECTORS` (`/connectors`)** module with a deterministic Inbound API Handler (tenant-scoped Bearer API keys with module permissions), a tenant-managed Outbound Webhook & n8n Event Dispatcher with delivery logs and retries, and a unified `AES-256-GCM` cryptographic vault (`ENCRYPTION_KEY`) for secrets and OAuth tokens.
+### Module 15: Connectors Hub Phase 1 — `/connectors` UI, Inbound Scoped API Keys & AES-256-GCM Secret Vault
+**Objective:** Launch the **`CONNECTORS` (`/connectors`)** module UI, establish the `AES-256-GCM` cryptographic vault (`ENCRYPTION_KEY`) for connector tokens and secrets, and build the deterministic Inbound API Handler (tenant-scoped Bearer API keys with module permissions).
 
 - [ ] **15.1 AES-256-GCM Cryptographic Vault & Connectors Prisma Schema (`backend/src/lib/crypto.ts`, `backend/prisma/schema.prisma`)**:
-  - Implement deterministic `encryptSecret()` / `decryptSecret()` helpers using `AES-256-GCM` backed by `ENCRYPTION_KEY` (32-byte hex from Secret Manager), documented in `AGENTS.md`, `docs/ARCHITECTURE.md`, and `docs/SECURITY.md`.
-  - Add Prisma models for `ApiKey` (`api_keys`), `WebhookEndpoint` (`webhook_endpoints`), `WebhookDelivery` (`webhook_deliveries`), `ConnectorAccount` (`connector_accounts`), and `ConnectorSyncLog` (`connector_sync_logs`).
+  - Implement deterministic `encryptSecret()` / `decryptSecret()` helpers using `AES-256-GCM` backed by `ENCRYPTION_KEY` (32-byte hex from Secret Manager), documented in `docs/ARCHITECTURE.md` and `docs/SECURITY.md`.
+  - Add Prisma models for `ApiKey` (`api_keys`), `ConnectorAccount` (`connector_accounts`), and `ConnectorSyncLog` (`connector_sync_logs`).
 - [ ] **15.2 Inbound API Handler & Scoped Bearer API Keys (`backend/src/plugins/auth.ts`, `backend/src/routes/connectors.ts`)**:
   - Extend Fastify auth middleware to accept either `erp_session` HttpOnly cookie (human sessions) OR `Authorization: Bearer dws_live_...` (machine clients), validating SHA-256 key hash, revocation/expiry, `organizationId`, `requireModule(...)`, and explicit module scopes (e.g., `receivables:read`, `receivables:write`, `payables:read`, `reports:read`, `contacts:write`).
   - Endpoints (`ADMIN` only, gated by `requireModule('CONNECTORS')`): `GET /api/v1/connectors/api-keys`, `POST /api/v1/connectors/api-keys` (returns plaintext key once), `DELETE /api/v1/connectors/api-keys/:id` (revoke).
-- [ ] **15.3 Outbound Webhook Dispatcher & n8n Event Engine (`backend/src/lib/webhooks.ts`, `backend/src/routes/connectors.ts`)**:
-  - Build non-blocking, post-commit `emitWebhookEvent(organizationId, eventName, actorUserId, data)` dispatching standardized envelopes (`docs/INTEGRATIONS.md`) signed with HMAC-SHA256 (`X-Webhook-Signature`) and `X-Webhook-Secret`, recording every attempt in `webhook_deliveries`.
-  - Wire core domain events: `invoice.issued`, `invoice.payment_received`, `bill.approved`, `expense.reimbursed`, `bas.locked`, and `bank.reconciled`.
-  - Endpoints: `GET/POST/PATCH/DELETE /api/v1/connectors/webhooks`, `POST /api/v1/connectors/webhooks/:id/test`, `GET /api/v1/connectors/webhooks/:id/deliveries`, `POST /api/v1/connectors/webhooks/deliveries/:deliveryId/retry`.
-- [ ] **15.4 Connectors Hub Frontend UI — Phase 1 (`frontend/src/pages/ConnectorsPage.tsx`, `frontend/src/App.tsx`, `frontend/src/components/AppShell.tsx`)**:
-  - Build `/connectors` following Corporate Precision (`docs/DESIGN_SYSTEM.md`) with tabs for **API Keys**, **Outbound Webhooks & Delivery Logs**, and **External Apps (Google Workspace)**.
-  - Provide 1-click key creation with one-time copy modal, scope matrix checkboxes, webhook subscription editor, test ping button, and delivery status inspector drawer.
+- [ ] **15.3 Connectors Hub Frontend UI — Phase 1 (`frontend/src/pages/ConnectorsPage.tsx`, `frontend/src/App.tsx`, `frontend/src/components/AppShell.tsx`)**:
+  - Build `/connectors` following Corporate Precision (`docs/DESIGN_SYSTEM.md`) under the `Integrations` navigation group (`ADMIN` / `ACCOUNTANT`, gated by `CONNECTORS` module flag) with tabs for **External Apps (Google Workspace)** and **Inbound API Keys**.
+  - Provide 1-click API key creation with one-time copy modal, module scope matrix checkboxes, key revocation, and last-used audit display.
 
 ---
 
@@ -601,7 +597,7 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 The stages below are architecturally specified in `docs/modules/*.md` and `docs/PLUGINS.md` so the platform's data model, RBAC, and module boundaries remain forward-compatible, but they are **explicitly deferred** and not part of the active build queue until promoted.
 
 ### Deferred Stage D1: Cloud Storage Document Vault & Attachments (`DOCUMENTS`)
-- **Context Spec:** `docs/modules/documents.md` & `docs/PLUGINS.md` §4
+- **Context Spec:** `docs/modules/documents.md` & `docs/PLUGINS.md`
 - **Scope:** Provision GCS bucket configuration (`GCS_ATTACHMENTS_BUCKET`), `document_attachments` Prisma model, V4 presigned upload/download API (`/api/v1/documents/presign-upload`, `/confirm`, `/:id/download-url`, `DELETE /:id`), $\le 25\text{MB}$ MIME validation, and unified attachment dropzone/viewer across Bills, Invoices, Expense Claims, Direct Transactions, Journals, and Contacts.
 
 ### Deferred Stage D2: Project Accounting, Budgets, Time & Billing (`PROJECTS`)
@@ -609,13 +605,17 @@ The stages below are architecturally specified in `docs/modules/*.md` and `docs/
 - **Scope:** `projects`, `project_tasks`, and `project_time_entries` models bound automatically to `"Projects"` `TrackingOption` dimensions; budget vs. actual margin tracking via the native Module 8 dimensional P&L engine; employee time logging; and 1-click billing of unbilled time & expenses into Draft Customer Invoices (`RECEIVABLES`).
 
 ### Deferred Stage D3: Perpetual Inventory & Warehousing (`INVENTORY`)
-- **Context Spec:** `docs/modules/inventory.md` & `docs/PLUGINS.md` §3
+- **Context Spec:** `docs/modules/inventory.md` & `docs/PLUGINS.md`
 - **Scope:** `warehouses`, `stock_levels` (Weighted Average Cost in integer cents), and `stock_movements` models; module system GL accounts (`1300 Inventory Asset`, `2020 Accrued Purchases`, `5000 Cost of Goods Sold`); Purchase Order goods receipts; stocktake adjustments; and automated COGS journal posting on Invoice issuance for `Item.isTrackedInventory: true` SKUs.
 
 ### Deferred Stage D4: Fleet Management & Vehicle P&L (`FLEET`)
-- **Context Spec:** `docs/modules/fleet.md` & `docs/PLUGINS.md` §2
+- **Context Spec:** `docs/modules/fleet.md` & `docs/PLUGINS.md`
 - **Scope:** `fleet_vehicles` and `fleet_service_logs` models bound automatically to `"Fleet Vehicles"` `TrackingOption` dimensions; odometer and maintenance tracking; and native per-vehicle Profit & Loss & cost-per-kilometer reporting.
 
 ### Deferred Stage D5: Australian Payroll & Single Touch Payroll — STP Phase 2 (`PAYROLL`)
 - **Context Spec:** `docs/modules/payroll.md`
 - **Scope:** Significant enterprise standalone module covering `payroll_employees` (encrypted TFN via `AES-256-GCM`, super fund USI, banking), `pay_calendars`, `pay_runs`, `payslips`, and `leave_balances`/`leave_requests`; deterministic Australian PAYG withholding and Superannuation Guarantee (SG) calculation tables; module system GL accounts (`6100 Wages Expense`, `6110 Super Expense`, `2150 PAYG Withholding Payable`, `2160 Super Payable`, `2170 Wages Clearing`); `.ABA` net wage batch disbursement via `backend/src/lib/aba.ts`; ATO BAS **W1** / **W2** integration; employee self-service payslip/leave portal; and ATO STP Phase 2 reporting hooks.
+
+### Deferred Stage D6: Outbound Webhooks & n8n Automation Engine (`CONNECTORS` — Webhooks Extension)
+- **Context Spec:** `docs/modules/connectors.md` (§4) & `docs/INTEGRATIONS.md`
+- **Scope:** Add `webhook_endpoints` and `webhook_deliveries` Prisma models, non-blocking post-commit `emitWebhookEvent()` dispatcher signed with HMAC-SHA256 (`X-Webhook-Signature`) and `X-Webhook-Secret`, event subscriptions (`invoice.issued`, `invoice.payment_received`, `bill.approved`, `expense.reimbursed`, `bas.locked`, `bank.reconciled`), delivery logs with 1-click test ping & retry, and an **Outbound Webhooks** tab inside `/connectors`.

@@ -4,6 +4,15 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.25.4] — 2026-11-21 — Defer Outbound Webhooks / n8n to Stage D6 (Keep Connectors UI & Google Workspace Active)
+
+### Changed
+- **Roadmap & Connectors Scope (`docs/STAGES_ROADMAP.md`, `docs/modules/connectors.md`, `AGENT_SPECIFICATION.md`, `AGENTS.md`)**:
+  - Moved Outbound Webhooks & n8n Automation Engine out of Module 15 into **Deferred Stage D6** (`docs/STAGES_ROADMAP.md` §6).
+  - Kept the **`/connectors` UI**, **Inbound Scoped Bearer API Keys**, and **`AES-256-GCM` Secret Vault** active in **Module 15**, and **Google Workspace OAuth Connectors (Drive, Sheets & Calendar)** active in **Module 16**.
+
+---
+
 ## [0.25.3] — 2026-11-21 — Agent Context Deduplication & Tiered Zero-Memory Protocol
 
 ### Changed
