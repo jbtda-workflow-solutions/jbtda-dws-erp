@@ -620,17 +620,100 @@ export function ConnectorsPage() {
             {(!overview?.encryptionConfigured ||
               !overview?.googleOAuthConfigured) &&
               googleAccount?.status !== 'CONNECTED' && (
-                <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
-                  <strong>Cloud Run Configuration Required:</strong> Mount{' '}
-                  <span className="font-mono">ENCRYPTION_KEY</span> (64-char hex)
-                  and{' '}
-                  <span className="font-mono">GOOGLE_OAUTH_CLIENT_SECRET</span>{' '}
-                  in Secret Manager (plus optional{' '}
-                  <span className="font-mono">PUBLIC_BASE_URL</span>) and add{' '}
-                  <span className="font-mono">
-                    {window.location.origin}/api/v1/connectors/oauth/google/callback
-                  </span>{' '}
-                  as an Authorized Redirect URI in Google Cloud Console.
+                <div className="border-b border-amber-200 bg-amber-50/80 px-4 py-3 text-xs text-amber-950 space-y-2">
+                  <p className="font-semibold">
+                    Google Workspace Configuration Diagnostics
+                  </p>
+                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                    <div className="flex items-start gap-2 rounded border border-amber-200/80 bg-white/80 px-2.5 py-1.5">
+                      <span
+                        className={cn(
+                          'mt-0.5 font-mono text-[11px] font-semibold',
+                          overview?.diagnostics?.encryptionKey.configured
+                            ? 'text-emerald-700'
+                            : 'text-red-700',
+                        )}
+                      >
+                        {overview?.diagnostics?.encryptionKey.configured
+                          ? 'PASS'
+                          : 'FAIL'}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="font-mono font-medium text-slate-900">
+                          ENCRYPTION_KEY
+                        </p>
+                        <p className="text-[11px] text-slate-600">
+                          {overview?.diagnostics?.encryptionKey.reason ??
+                            'Not configured (requires 64-char hex string).'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-2 rounded border border-amber-200/80 bg-white/80 px-2.5 py-1.5">
+                      <span
+                        className={cn(
+                          'mt-0.5 font-mono text-[11px] font-semibold',
+                          overview?.diagnostics?.googleClientSecretConfigured
+                            ? 'text-emerald-700'
+                            : 'text-red-700',
+                        )}
+                      >
+                        {overview?.diagnostics?.googleClientSecretConfigured
+                          ? 'PASS'
+                          : 'FAIL'}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="font-mono font-medium text-slate-900">
+                          GOOGLE_OAUTH_CLIENT_SECRET
+                        </p>
+                        <p className="text-[11px] text-slate-600">
+                          {overview?.diagnostics?.googleClientSecretConfigured
+                            ? 'Mounted and non-empty.'
+                            : 'Missing or empty. Copy the Client Secret (GOCSPX-...) from your Google Cloud OAuth Web Client and mount as env var GOOGLE_OAUTH_CLIENT_SECRET.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-2 rounded border border-amber-200/80 bg-white/80 px-2.5 py-1.5">
+                      <span
+                        className={cn(
+                          'mt-0.5 font-mono text-[11px] font-semibold',
+                          overview?.diagnostics?.googleClientIdConfigured
+                            ? 'text-emerald-700'
+                            : 'text-red-700',
+                        )}
+                      >
+                        {overview?.diagnostics?.googleClientIdConfigured
+                          ? 'PASS'
+                          : 'FAIL'}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="font-mono font-medium text-slate-900">
+                          GOOGLE_CLIENT_ID
+                        </p>
+                        <p className="text-[11px] text-slate-600">
+                          {overview?.diagnostics?.googleClientIdConfigured
+                            ? 'Mounted and non-empty.'
+                            : 'Missing GOOGLE_CLIENT_ID env var.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-2 rounded border border-amber-200/80 bg-white/80 px-2.5 py-1.5">
+                      <span className="mt-0.5 font-mono text-[11px] font-semibold text-slate-600">
+                        INFO
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-mono font-medium text-slate-900">
+                          Authorized Redirect URI
+                        </p>
+                        <p className="truncate font-mono text-[11px] text-slate-600">
+                          {overview?.diagnostics?.expectedRedirectUri ??
+                            `${window.location.origin}/api/v1/connectors/oauth/google/callback`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 

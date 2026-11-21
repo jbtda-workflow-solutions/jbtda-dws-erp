@@ -2910,6 +2910,16 @@ export interface ConnectorSyncLogSummary {
 export interface ConnectorsOverviewResponse {
   encryptionConfigured: boolean;
   googleOAuthConfigured: boolean;
+  diagnostics?: {
+    encryptionKey: {
+      configured: boolean;
+      reason: string;
+    };
+    googleClientIdConfigured: boolean;
+    googleClientSecretConfigured: boolean;
+    publicBaseUrl: string | null;
+    expectedRedirectUri: string;
+  };
   activeApiKeyCount: number;
   connectedApps: ConnectorAccountSummary[];
   recentSyncLogs: ConnectorSyncLogSummary[];

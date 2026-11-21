@@ -56,6 +56,40 @@ export function isEncryptionKeyConfigured(): boolean {
 }
 
 /**
+ * Returns safe, non-secret diagnostic status for `ENCRYPTION_KEY` so admins
+ * can immediately tell whether the secret is missing vs. wrong length/format.
+ */
+export function getEncryptionKeyDiagnostics(): {
+  configured: boolean;
+  reason: string;
+} {
+  const raw = process.env['ENCRYPTION_KEY']?.trim();
+  if (!raw) {
+    return {
+      configured: false,
+      reason: 'Not mounted or empty in Cloud Run environment.',
+    };
+  }
+  if (/^[0-9a-fA-F]{64}$/.test(raw)) {
+    return {
+      configured: true,
+      reason: 'Valid 64-character hex key (32 bytes).',
+    };
+  }
+  const b64 = Buffer.from(raw, 'base64');
+  if (b64.length === 32) {
+    return {
+      configured: true,
+      reason: 'Valid 32-byte base64 key.',
+    };
+  }
+  return {
+    configured: false,
+    reason: `Invalid format (received ${raw.length} chars). Must be a 64-char hex string (generate with: openssl rand -hex 32) or 32-byte base64.`,
+  };
+}
+
+/**
  * Encrypts a UTF-8 plaintext secret using AES-256-GCM with a random 96-bit IV.
  */
 export function encryptSecret(plaintext: string): string {

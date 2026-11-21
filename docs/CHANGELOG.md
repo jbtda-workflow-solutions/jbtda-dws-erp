@@ -4,6 +4,15 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.28.1] — 2026-11-21 — Connectors Hub Per-Variable OAuth & Encryption Diagnostics
+
+### Added
+- **Live Per-Variable Configuration Diagnostics (`backend/src/lib/crypto.ts`, `backend/src/routes/connectors.ts`, `frontend/src/api/client.ts`, `frontend/src/pages/ConnectorsPage.tsx`)**:
+  - Added `getEncryptionKeyDiagnostics()` returning safe, non-secret validation reasons (missing vs. invalid length/format) for `ENCRYPTION_KEY`.
+  - Extended `GET /api/v1/connectors/overview` and the `/connectors` banner to display individual `PASS`/`FAIL` status cards for `ENCRYPTION_KEY`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`, and the exact `Authorized Redirect URI`.
+
+---
+
 ## [0.28.0] — 2026-11-21 — Module 16: Connectors Hub Phase 2 — Google Workspace OAuth Connectors (Drive, Sheets & Calendar)
 
 ### Added

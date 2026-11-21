@@ -12,7 +12,11 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { Role } from '@prisma/client';
 import { requireModule, requireRole } from '../plugins/auth.js';
-import { generateApiKey, isEncryptionKeyConfigured } from '../lib/crypto.js';
+import {
+  generateApiKey,
+  getEncryptionKeyDiagnostics,
+} from '../lib/crypto.js';
+import { resolveGoogleRedirectUri } from '../lib/google-oauth.js';
 import { API_KEY_SCOPES, VALID_API_KEY_SCOPES } from '../lib/modules.js';
 import { recordAuditLog } from '../lib/audit.js';
 
@@ -77,12 +81,25 @@ export const connectorRoutes: FastifyPluginAsync = async (fastify) => {
         }),
       ]);
 
+      const encryptionDiag = getEncryptionKeyDiagnostics();
+      const googleClientIdConfigured = Boolean(
+        process.env['GOOGLE_CLIENT_ID']?.trim(),
+      );
+      const googleClientSecretConfigured = Boolean(
+        process.env['GOOGLE_OAUTH_CLIENT_SECRET']?.trim(),
+      );
+
       return reply.code(200).send({
-        encryptionConfigured: isEncryptionKeyConfigured(),
-        googleOAuthConfigured: Boolean(
-          process.env['GOOGLE_CLIENT_ID'] &&
-            process.env['GOOGLE_OAUTH_CLIENT_SECRET'],
-        ),
+        encryptionConfigured: encryptionDiag.configured,
+        googleOAuthConfigured:
+          googleClientIdConfigured && googleClientSecretConfigured,
+        diagnostics: {
+          encryptionKey: encryptionDiag,
+          googleClientIdConfigured,
+          googleClientSecretConfigured,
+          publicBaseUrl: process.env['PUBLIC_BASE_URL']?.trim() || null,
+          expectedRedirectUri: resolveGoogleRedirectUri(request),
+        },
         activeApiKeyCount,
         connectedApps: accounts.map((a) => ({
           id: a.id,
