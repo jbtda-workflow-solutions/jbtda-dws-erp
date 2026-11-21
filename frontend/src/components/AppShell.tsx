@@ -119,6 +119,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Receivables (AR)',
         href: '/invoices',
         icon: FileText,
+        requiredModule: 'RECEIVABLES',
         allowedRoles: [
           'ADMIN',
           'ACCOUNTANT',
@@ -131,6 +132,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Payables (AP)',
         href: '/bills',
         icon: Receipt,
+        requiredModule: 'PAYABLES',
         allowedRoles: [
           'ADMIN',
           'ACCOUNTANT',
@@ -143,6 +145,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Expenses & Claims',
         href: '/expenses',
         icon: Wallet,
+        requiredModule: 'EXPENSES',
         allowedRoles: [
           'ADMIN',
           'ACCOUNTANT',
@@ -177,6 +180,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Developer & Context',
         href: '/developer',
         icon: Terminal,
+        requiredModule: 'DEVELOPER_PORTAL',
         allowedRoles: ['ADMIN'],
       },
     ],

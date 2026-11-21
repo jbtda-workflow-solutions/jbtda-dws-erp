@@ -44,6 +44,7 @@ import { reportRoutes } from './routes/reports.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { developerRoutes } from './routes/developer.js';
 import { bulkImportRoutes } from './routes/bulk-import.js';
+import { systemRoutes } from './routes/system.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -173,6 +174,7 @@ async function buildServer() {
   await fastify.register(dashboardRoutes);
   await fastify.register(developerRoutes);
   await fastify.register(bulkImportRoutes);
+  await fastify.register(systemRoutes);
 
   // -------------------------------------------------------------------------
   // Health check (unauthenticated — used by Cloud Run)

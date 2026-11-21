@@ -154,8 +154,9 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   ├── audit.ts           # Append-only immutable system audit log helper
 │       │   ├── gst.ts             # Integer-cent Australian GST calculation utilities
 │       │   ├── ledger-posting.ts  # Double-entry GL posting, anti-double-reversal, bidirectional sub-ledger sync & lock date validation
+│       │   ├── modules.ts         # Canonical 12-module Product Registry, tier metadata & legacy enabledModules normalizer
 │       │   ├── schema-sync.ts     # Prisma-native schema self-healer (prisma db push) & system account verifier
-│       │   └── system-accounts.ts # 10 Protected System GL Accounts definition & seeder
+│       │   └── system-accounts.ts # 10 Protected System GL Accounts definition, seeder & systemKey resolver
 │       ├── plugins/
 │       │   ├── auth.ts        # Fastify auth plugin, session cookies, 7-role requireRole hooks
 │       │   └── prisma.ts      # Fastify PrismaClient plugin with Cloud SQL discovery & Prisma-native self-heal
@@ -179,6 +180,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   ├── purchase-orders.ts # GET/POST/PATCH/DELETE /api/v1/purchase-orders, approval workflow, 1-click bill convert
 │       │   ├── quotes.ts          # GET/POST/PATCH/DELETE /api/v1/quotes, 1-click convert-to-invoice
 │       │   ├── reports.ts         # GET /api/v1/reports/* (Trial Balance, P&L, Balance Sheet, Aged AR/AP, ATO BAS Engine)
+│       │   ├── system.ts          # POST /api/v1/system/run-recurring (Cloud Scheduler X-Webhook-Secret & ADMIN recurring runner)
 │       │   └── vendor-credits.ts  # GET/POST/DELETE /api/v1/vendor-credits, /:id/issue (contra-AP GL), /:id/allocate, /:id/void
 │       └── server.ts          # Fastify server entry point, static serving, plugins
 ├── docs/                      # Technical Documentation

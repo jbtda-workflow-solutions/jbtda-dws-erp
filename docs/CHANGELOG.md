@@ -4,6 +4,26 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.26.0] — 2026-11-21 — Module 14: Commercial Product Module Architecture, Entitlement Gating, Recurring Runner & Developer Context Indexing
+
+### Added
+- **Canonical Product Module Registry & `requireModule()` Entitlement Enforcement (`14.1` — `backend/src/lib/modules.ts`, `backend/src/plugins/auth.ts`, `backend/src/routes/organizations.ts`, `backend/src/routes/auth.ts`, domain routes)**:
+  - Created `MODULE_REGISTRY` covering all 12 Product Modules (`CORE_PLATFORM`, `CORE_ACCOUNTING`, `RECEIVABLES`, `PAYABLES`, `EXPENSES`, `CONNECTORS`, `DOCUMENTS`, `PROJECTS`, `INVENTORY`, `FLEET`, `PAYROLL`, `DEVELOPER_PORTAL`) with tier (`BASE` | `STANDARD` | `PRO` | `ENTERPRISE` | `INTERNAL`), live/planned/deferred status, and transparent legacy flag normalization (`CORE_FINANCE` → base + AR/AP/DevPortal, `ATTACHMENTS` → `DOCUMENTS`).
+  - Added `GET /api/v1/organizations/modules` and `requireModule(moduleKey)` Fastify `preHandler` guard returning `403 { code: 'MODULE_NOT_ENABLED', module }`, attached to `RECEIVABLES` (`invoices`, `quotes`, `credit-notes`), `PAYABLES` (`bills`, `purchase-orders`, `vendor-credits`, `batch-payments`), `EXPENSES` (`direct-transactions`, `expense-claims`), and `DEVELOPER_PORTAL` (`developer`).
+- **Automated Recurring Schedule Execution Engine (`14.3` — `backend/src/routes/system.ts`, `backend/src/lib/system-accounts.ts`, `backend/src/server.ts`)**:
+  - Added `POST /api/v1/system/run-recurring` supporting dual auth (`X-Webhook-Secret` for Cloud Scheduler cron jobs OR `ADMIN` session cookie scoped to active organization) with optional `{ asOfDate, dryRun, organizationId }`.
+  - Atomically executes due `MANUAL_JOURNAL`, `INVOICE`, and `BILL` schedules, enforces `enabledModules` and `organization.lockDate`, posts balanced double-entry GL journals when `autoPost: true`, advances `nextRunDate`, and appends `RECURRING_SCHEDULE_EXECUTED` audit logs.
+- **Developer Console Module Context Indexing & Deferred Stages UI (`14.4` — `backend/src/routes/developer.ts`, `frontend/src/api/client.ts`, `frontend/src/pages/DeveloperPage.tsx`)**:
+  - Extended `/api/v1/developer/docs` allowlist to index `docs/modules/*.md` under the new `MODULE_CONTEXT` category ("Product Module Contexts").
+  - Extended `/api/v1/developer/roadmap-summary` and `DeveloperPage.tsx` Roadmap Tracker to parse and display **Section 6: Deferred Stages (D1–D6)** separately from active module completion totals.
+
+### Changed
+- **Module-Gated Navigation & Workspace Module Controls (`14.2` — `frontend/src/components/AppShell.tsx`, `frontend/src/pages/SettingsPage.tsx`)**:
+  - Added `requiredModule` gating to `AppShell.tsx` navigation items (`RECEIVABLES`, `PAYABLES`, `EXPENSES`, `DEVELOPER_PORTAL`).
+  - Upgraded the Workspace Settings Enabled Modules grid (`SettingsPage.tsx`) to the canonical 12-module catalog displaying commercial tier badges, locked base modules (`CORE_PLATFORM`, `CORE_ACCOUNTING`), and disabled planned/deferred placeholders.
+
+---
+
 ## [0.25.4] — 2026-11-21 — Defer Outbound Webhooks / n8n to Stage D6 (Keep Connectors UI & Google Workspace Active)
 
 ### Changed

@@ -63,12 +63,14 @@ interface ParsedChangelogRelease {
 
 const CATEGORY_LABELS: Record<DocCategory, string> = {
   ROOT_GOVERNANCE: 'Root Agent Governance',
+  MODULE_CONTEXT: 'Product Module Contexts',
   ROADMAP_AND_HISTORY: 'Roadmap & Release History',
   TECHNICAL_SPECIFICATION: 'Technical Specifications',
 };
 
 const CATEGORY_ORDER: DocCategory[] = [
   'ROOT_GOVERNANCE',
+  'MODULE_CONTEXT',
   'ROADMAP_AND_HISTORY',
   'TECHNICAL_SPECIFICATION',
 ];
@@ -1784,6 +1786,56 @@ export function DeveloperPage() {
                   );
                 })}
               </div>
+
+              {roadmap.deferredStages && roadmap.deferredStages.length > 0 && (
+                <div className="space-y-2.5 pt-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-sm font-medium text-slate-900">
+                        Deferred Stages (Architectural Placeholders)
+                      </h2>
+                      <p className="text-xs text-slate-500">
+                        Specified in <span className="font-mono">docs/modules/*.md</span> for forward-compatibility; excluded from active completion totals until promoted.
+                      </p>
+                    </div>
+                    <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-600">
+                      {roadmap.deferredStages.length} DEFERRED
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+                    {roadmap.deferredStages.map((stage) => (
+                      <div
+                        key={stage.id}
+                        className="rounded-md border border-slate-200 bg-white p-3.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                            Stage {stage.id}
+                          </span>
+                          {stage.moduleKey && (
+                            <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700">
+                              {stage.moduleKey}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-sm font-medium text-slate-900">
+                          {stage.title}
+                        </p>
+                        {stage.contextSpec && (
+                          <p className="mt-1 font-mono text-[11px] text-forest-800">
+                            {stage.contextSpec}
+                          </p>
+                        )}
+                        {stage.scope && (
+                          <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                            {renderInlineTokens(stage.scope)}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           ) : null}
         </div>

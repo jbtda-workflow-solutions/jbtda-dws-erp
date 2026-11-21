@@ -27,6 +27,11 @@ import {
 import { validateABN } from '../lib/abn.js';
 import { ensureOrganizationSystemAccounts } from '../lib/system-accounts.js';
 import { recordAuditLog } from '../lib/audit.js';
+import {
+  DEFAULT_ENABLED_MODULES,
+  MODULE_REGISTRY,
+  normalizeEnabledModules,
+} from '../lib/modules.js';
 import { Role } from '@prisma/client';
 
 const RoleEnum = z.nativeEnum(Role);
@@ -186,7 +191,7 @@ const organizationRoutes: FastifyPluginAsync = async (fastify) => {
               bankBsb: normalizeBsb(bankBsb),
               bankAccountNumber: bankAccountNumber?.trim() || null,
               bankAccountName: bankAccountName?.trim() || name,
-              enabledModules: ['CORE_FINANCE', 'EXPENSES'],
+              enabledModules: [...DEFAULT_ENABLED_MODULES],
             },
           });
 
@@ -289,9 +294,34 @@ const organizationRoutes: FastifyPluginAsync = async (fastify) => {
           role: m.role,
           jobTitle: m.jobTitle,
           department: m.department,
-          organization: m.organization,
+          organization: {
+            ...m.organization,
+            enabledModules: normalizeEnabledModules(m.organization.enabledModules),
+          },
           isActiveSession: m.organizationId === request.user.organizationId,
         })),
+      });
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // GET /api/v1/organizations/modules — Canonical Product Module registry & tenant flags
+  // -------------------------------------------------------------------------
+  fastify.get(
+    '/api/v1/organizations/modules',
+    { preHandler: [requireOrgAuth] },
+    async (request, reply) => {
+      const organizationId = request.user.organizationId!;
+      const organization = await fastify.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { enabledModules: true },
+      });
+      if (!organization) {
+        return reply.code(404).send({ error: 'Organization not found' });
+      }
+      return reply.code(200).send({
+        registry: MODULE_REGISTRY,
+        enabledModules: normalizeEnabledModules(organization.enabledModules),
       });
     },
   );
@@ -325,7 +355,10 @@ const organizationRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       return reply.code(200).send({
-        organization,
+        organization: {
+          ...organization,
+          enabledModules: normalizeEnabledModules(organization.enabledModules),
+        },
         memberProfile: myMembership,
       });
     },
@@ -350,11 +383,10 @@ const organizationRoutes: FastifyPluginAsync = async (fastify) => {
       const userId = request.user.userId;
       const data = parse.data;
 
-      // Ensure CORE_FINANCE is always present in enabledModules
+      // Normalize canonical Product Modules (always preserves CORE_PLATFORM & CORE_ACCOUNTING)
       let enabledModules: string[] | undefined = undefined;
       if (data.enabledModules !== undefined) {
-        const set = new Set(['CORE_FINANCE', ...data.enabledModules]);
-        enabledModules = Array.from(set);
+        enabledModules = normalizeEnabledModules(data.enabledModules);
       }
 
       let parsedLockDate: Date | null | undefined = undefined;

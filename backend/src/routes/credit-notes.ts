@@ -13,7 +13,7 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { requireRole } from '../plugins/auth.js';
+import { requireModule, requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
 import { checkOrganizationLockDate, reverseJournalEntry } from '../lib/ledger-posting.js';
@@ -80,6 +80,7 @@ function serializeCreditNote<T extends Record<string, any>>(data: T): any {
 }
 
 export const creditNoteRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', requireModule('RECEIVABLES'));
   // GET /api/v1/credit-notes
   fastify.get(
     '/api/v1/credit-notes',

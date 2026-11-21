@@ -13,7 +13,7 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { requireRole } from '../plugins/auth.js';
+import { requireModule, requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
 import { QuoteStatus, Role, TaxTreatment, InvoiceStatus } from '@prisma/client';
@@ -69,6 +69,7 @@ function serializeQuote<T extends Record<string, any>>(data: T): any {
 }
 
 const quoteRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', requireModule('RECEIVABLES'));
   // -------------------------------------------------------------------------
   // GET /api/v1/quotes — List organization quotes
   // -------------------------------------------------------------------------

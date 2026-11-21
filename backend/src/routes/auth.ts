@@ -15,6 +15,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import { getSession, requireAuth, setSession, SESSION_COOKIE_NAME } from '../plugins/auth.js';
 import { recordAuditLog } from '../lib/audit.js';
+import { normalizeEnabledModules } from '../lib/modules.js';
 
 type MemberWithOrg = Prisma.OrganizationMemberGetPayload<{
   include: {
@@ -198,7 +199,10 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
           name: user.name,
           avatarUrl: user.avatarUrl,
         },
-        organization: primary.organization,
+        organization: {
+          ...primary.organization,
+          enabledModules: normalizeEnabledModules(primary.organization.enabledModules),
+        },
         organizationId: primary.organizationId,
         role: primary.role,
         memberships: memberships.map((m) => ({
@@ -207,7 +211,10 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
           role: m.role,
           jobTitle: m.jobTitle,
           department: m.department,
-          organization: m.organization,
+          organization: {
+            ...m.organization,
+            enabledModules: normalizeEnabledModules(m.organization.enabledModules),
+          },
         })),
       });
     }
@@ -335,7 +342,10 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(200).send({
         status: 'authenticated',
         user,
-        organization: activeMembership.organization,
+        organization: {
+          ...activeMembership.organization,
+          enabledModules: normalizeEnabledModules(activeMembership.organization.enabledModules),
+        },
         organizationId: activeMembership.organizationId,
         role: activeMembership.role,
         memberProfile: {
@@ -353,7 +363,10 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
           role: m.role,
           jobTitle: m.jobTitle,
           department: m.department,
-          organization: m.organization,
+          organization: {
+            ...m.organization,
+            enabledModules: normalizeEnabledModules(m.organization.enabledModules),
+          },
         })),
       });
     } catch (err: unknown) {

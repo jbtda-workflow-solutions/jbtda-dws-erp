@@ -1,6 +1,7 @@
 import fp from 'fastify-plugin';
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import type { Role } from '@prisma/client';
+import { isModuleEnabled, type ProductModuleKey } from '../lib/modules.js';
 
 // ---------------------------------------------------------------------------
 // Type declarations
@@ -16,6 +17,8 @@ declare module 'fastify' {
   interface FastifyRequest {
     /** Decoded session — populated by the requireAuth preHandler. */
     user: SessionPayload;
+    /** Cached raw enabledModules for the active organization during this request. */
+    organizationEnabledModules?: string[];
   }
 }
 
@@ -155,6 +158,57 @@ export function requireRole(...roles: Role[]) {
       }
       done();
     });
+  };
+}
+
+/**
+ * Product Module entitlement preHandler guard (Module 14).
+ * Can be attached at the plugin level (`fastify.addHook('preHandler', requireModule('RECEIVABLES'))`)
+ * or per route. Resolves the session if not already populated and verifies that the active
+ * organization has `moduleKey` enabled (with legacy flag normalization).
+ */
+export function requireModule(moduleKey: ProductModuleKey) {
+  return async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<void> => {
+    if (!request.user) {
+      const secret = process.env['SESSION_SECRET'];
+      if (!secret) {
+        return reply.code(500).send({ error: 'Server misconfiguration' });
+      }
+      const session = getSession(request, secret);
+      if (!session) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+      request.user = session;
+    }
+
+    const organizationId = request.user.organizationId;
+    if (!organizationId) {
+      return reply.code(403).send({ error: 'Organization required' });
+    }
+
+    let enabledModules = request.organizationEnabledModules;
+    if (!enabledModules) {
+      const org = await request.server.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { enabledModules: true },
+      });
+      if (!org) {
+        return reply.code(404).send({ error: 'Organization not found' });
+      }
+      enabledModules = org.enabledModules;
+      request.organizationEnabledModules = enabledModules;
+    }
+
+    if (!isModuleEnabled(enabledModules, moduleKey)) {
+      return reply.code(403).send({
+        error: `Module '${moduleKey}' is not enabled for this organization.`,
+        code: 'MODULE_NOT_ENABLED',
+        module: moduleKey,
+      });
+    }
   };
 }
 

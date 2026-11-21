@@ -15,7 +15,7 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { requireRole } from '../plugins/auth.js';
+import { requireModule, requireRole } from '../plugins/auth.js';
 import { calculateGST, sumGSTResults } from '../lib/gst.js';
 import { recordAuditLog } from '../lib/audit.js';
 import { PurchaseOrderStatus, Role, TaxTreatment, BillStatus } from '@prisma/client';
@@ -73,6 +73,7 @@ function serializePO<T extends Record<string, any>>(data: T): any {
 }
 
 export const purchaseOrderRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', requireModule('PAYABLES'));
   // GET /api/v1/purchase-orders
   fastify.get(
     '/api/v1/purchase-orders',

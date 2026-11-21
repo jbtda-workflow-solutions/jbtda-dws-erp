@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { requireRole } from '../plugins/auth.js';
+import { requireModule, requireRole } from '../plugins/auth.js';
 import { runStartupSchemaSync } from '../lib/schema-sync.js';
 import { recordAuditLog } from '../lib/audit.js';
 
@@ -11,6 +11,7 @@ const __dirname = path.dirname(__filename);
 
 export type DocCategory =
   | 'ROOT_GOVERNANCE'
+  | 'MODULE_CONTEXT'
   | 'ROADMAP_AND_HISTORY'
   | 'TECHNICAL_SPECIFICATION';
 
@@ -44,6 +45,15 @@ export interface RoadmapModuleSummary {
   items: RoadmapChecklistItem[];
 }
 
+export interface DeferredStageSummary {
+  id: string;
+  heading: string;
+  title: string;
+  moduleKey: string | null;
+  contextSpec: string;
+  scope: string;
+}
+
 export interface ApiEndpointItem {
   verb: string;
   path: string;
@@ -64,6 +74,7 @@ const ROOT_ALLOWLIST = ['AGENTS.md', 'AGENT_SPECIFICATION.md'] as const;
 const DOCS_PRIORITY_ORDER: string[] = [
   'AGENTS.md',
   'AGENT_SPECIFICATION.md',
+  'docs/modules/README.md',
   'docs/STAGES_ROADMAP.md',
   'docs/CHANGELOG.md',
   'docs/ARCHITECTURE.md',
@@ -97,6 +108,9 @@ function resolveRepoRoot(): string {
 function classifyDocCategory(docKey: string): DocCategory {
   if (docKey === 'AGENTS.md' || docKey === 'AGENT_SPECIFICATION.md') {
     return 'ROOT_GOVERNANCE';
+  }
+  if (docKey.startsWith('docs/modules/')) {
+    return 'MODULE_CONTEXT';
   }
   if (docKey === 'docs/STAGES_ROADMAP.md' || docKey === 'docs/CHANGELOG.md') {
     return 'ROADMAP_AND_HISTORY';
@@ -145,6 +159,20 @@ function buildAllowlistedDocsMap(): Map<string, string> {
       if (path.dirname(absPath) !== docsDir) continue;
 
       map.set(`docs/${entry.name}`, absPath);
+    }
+
+    const modulesDir = path.resolve(docsDir, 'modules');
+    if (fs.existsSync(modulesDir) && fs.statSync(modulesDir).isDirectory()) {
+      const moduleEntries = fs.readdirSync(modulesDir, { withFileTypes: true });
+      for (const entry of moduleEntries) {
+        if (!entry.isFile()) continue;
+        if (!/^[A-Za-z0-9_-]+\.md$/.test(entry.name)) continue;
+
+        const absPath = path.resolve(modulesDir, entry.name);
+        if (path.dirname(absPath) !== modulesDir) continue;
+
+        map.set(`docs/modules/${entry.name}`, absPath);
+      }
     }
   }
 
@@ -262,6 +290,56 @@ function parseStagesRoadmap(markdown: string): RoadmapModuleSummary[] {
   }
 
   return modules;
+}
+
+function parseDeferredStages(markdown: string): DeferredStageSummary[] {
+  const lines = markdown.split(/\r?\n/);
+  const deferred: DeferredStageSummary[] = [];
+  let current: DeferredStageSummary | null = null;
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    const headingMatch = /^###\s+Deferred\s+Stage\s+(D\d+):\s+(.+)$/.exec(trimmed);
+    if (headingMatch && headingMatch[1] && headingMatch[2]) {
+      const id = headingMatch[1];
+      const rawTitle = headingMatch[2].trim();
+      const keyMatch = /\(`([A-Z0-9_]+)`[^)]*\)\s*$/.exec(rawTitle);
+      const moduleKey = keyMatch && keyMatch[1] ? keyMatch[1] : null;
+      const cleanTitle = rawTitle.replace(/\s*\([^)]*\)\s*$/, '').trim();
+
+      current = {
+        id,
+        heading: `Deferred Stage ${id}: ${cleanTitle}`,
+        title: cleanTitle,
+        moduleKey,
+        contextSpec: '',
+        scope: '',
+      };
+      deferred.push(current);
+      continue;
+    }
+
+    if (!current) continue;
+
+    if (/^##\s+/.test(trimmed)) {
+      current = null;
+      continue;
+    }
+
+    const specMatch = /^-\s+\*\*Context Spec:\*\*\s*(.+)$/.exec(trimmed);
+    if (specMatch && specMatch[1]) {
+      current.contextSpec = specMatch[1].replace(/`/g, '').trim();
+      continue;
+    }
+
+    const scopeMatch = /^-\s+\*\*Scope:\*\*\s*(.+)$/.exec(trimmed);
+    if (scopeMatch && scopeMatch[1]) {
+      current.scope = scopeMatch[1].trim();
+      continue;
+    }
+  }
+
+  return deferred;
 }
 
 function parseArchitectureApiCatalog(markdown: string): ApiEndpointGroup[] {
@@ -389,6 +467,7 @@ function hasFrontendDistBundle(): boolean {
 }
 
 export const developerRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', requireModule('DEVELOPER_PORTAL'));
   // -------------------------------------------------------------------------
   // GET /api/v1/developer/docs
   // Whitelisted directory index of repository governance & specification files
@@ -467,6 +546,7 @@ export const developerRoutes: FastifyPluginAsync = async (fastify) => {
       const stat = fs.statSync(roadmapPath);
       const markdown = fs.readFileSync(roadmapPath, 'utf8');
       const modules = parseStagesRoadmap(markdown);
+      const deferredStages = parseDeferredStages(markdown);
 
       const totalModules = modules.length;
       const completedModules = modules.filter(
@@ -493,6 +573,7 @@ export const developerRoutes: FastifyPluginAsync = async (fastify) => {
         pendingChecklistItems,
         overallCompletionPercent,
         modules,
+        deferredStages,
       };
     },
   );

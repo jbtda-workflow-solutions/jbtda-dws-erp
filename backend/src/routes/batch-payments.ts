@@ -11,7 +11,7 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { requireRole } from '../plugins/auth.js';
+import { requireModule, requireRole } from '../plugins/auth.js';
 import { generateAbaFile, AbaDetailRecord } from '../lib/aba.js';
 import { recordAuditLog } from '../lib/audit.js';
 import { checkOrganizationLockDate } from '../lib/ledger-posting.js';
@@ -47,6 +47,7 @@ function serializeBatch<T extends Record<string, any>>(data: T): any {
 }
 
 export const batchPaymentRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', requireModule('PAYABLES'));
   // GET /api/v1/batch-payments
   fastify.get(
     '/api/v1/batch-payments',

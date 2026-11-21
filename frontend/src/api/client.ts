@@ -2564,6 +2564,7 @@ export const dashboardApi = {
 
 export type DocCategory =
   | 'ROOT_GOVERNANCE'
+  | 'MODULE_CONTEXT'
   | 'ROADMAP_AND_HISTORY'
   | 'TECHNICAL_SPECIFICATION';
 
@@ -2602,6 +2603,15 @@ export interface RoadmapModuleSummary {
   items: RoadmapChecklistItem[];
 }
 
+export interface DeferredStageSummary {
+  id: string;
+  heading: string;
+  title: string;
+  moduleKey: string | null;
+  contextSpec: string;
+  scope: string;
+}
+
 export interface RoadmapSummaryResponse {
   sourcePath: string;
   lastModified: string;
@@ -2612,6 +2622,7 @@ export interface RoadmapSummaryResponse {
   pendingChecklistItems: number;
   overallCompletionPercent: number;
   modules: RoadmapModuleSummary[];
+  deferredStages?: DeferredStageSummary[];
 }
 
 export interface ApiEndpointItem {

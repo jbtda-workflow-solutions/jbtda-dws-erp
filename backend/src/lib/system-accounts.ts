@@ -172,3 +172,33 @@ export async function ensureOrganizationSystemAccounts(
   }
 }
 
+/**
+ * Resolves the Account ID for one of the 10 Protected System Accounts by its
+ * canonical `systemKey` (e.g. `ACCOUNTS_RECEIVABLE`, `GST_COLLECTED`).
+ */
+export async function getSystemAccountId(
+  db: Prisma.TransactionClient | PrismaClient,
+  organizationId: string,
+  systemKey: string,
+): Promise<string> {
+  const spec = PROTECTED_SYSTEM_ACCOUNTS.find((a) => a.systemKey === systemKey);
+  const account = await db.account.findFirst({
+    where: {
+      organizationId,
+      OR: [
+        { systemKey },
+        ...(spec ? [{ code: spec.code }] : []),
+      ],
+    },
+    select: { id: true },
+  });
+
+  if (!account) {
+    throw new Error(
+      `Protected system account "${systemKey}" not found for organization ${organizationId}.`,
+    );
+  }
+
+  return account.id;
+}
+

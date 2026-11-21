@@ -139,6 +139,7 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `PATCH` | `/api/v1/organizations/current/members/:id` | Cookie Session | `ADMIN` | Updates member's assigned role. Logs audit event. |
 | `DELETE` | `/api/v1/organizations/current/members/:id` | Cookie Session | `ADMIN` | Removes member from organization. Prevents removing last admin. Logs audit event. |
 | `POST` | `/api/v1/organizations/current/invites` | Cookie Session | `ADMIN` | Creates email invitation with assigned role. |
+| `GET` | `/api/v1/organizations/modules` | Cookie Session | All Roles | Returns the canonical 12-module `MODULE_REGISTRY` metadata and normalized `enabledModules` array for the active organization. |
 | `GET` | `/api/v1/organizations/current/audit-logs` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Paginated query of immutable system audit trail with user and entity filters. |
 
 ### 4. Chart of Accounts & Tracking Dimensions API (`/api/v1/accounts`, `/api/v1/tracking-categories`)
@@ -350,7 +351,12 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `POST` | `/api/v1/bulk-import/validate` | Cookie Session | `ADMIN` | Step 1 Validate & Preview: Parses CSV rows for the selected `entityType`, groups multi-line documents by reference number, strictly validates foreign keys against existing organization Contacts, Accounts, Items, Tracking Options, and Lock Dates, and returns row/document validation previews without mutating the database. |
 | `POST` | `/api/v1/bulk-import/commit` | Cookie Session | `ADMIN` | Step 2 Commit: Atomically persists all validated records/documents inside a Prisma transaction, executing full `LedgerPostingService` double-entry GL postings for any documents flagged as `ISSUED`, `AWAITING_PAYMENT`, `APPROVED`, or `POSTED`, and appends an immutable `AuditLog` summary. |
 
-### 22. Frontend Client Routes (`frontend/src/App.tsx`)
+### 22. System & Scheduled Execution API (`/api/v1/system/*`)
+| Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/system/run-recurring` | `X-Webhook-Secret` OR Cookie Session | Cron Secret OR `ADMIN` | Deterministically executes all due active `RecurringSchedule` records (`nextRunDate <= asOfDate`) across `MANUAL_JOURNAL`, `INVOICE`, and `BILL` types, respecting `enabledModules` and `organization.lockDate`, auto-posting GL journals when `autoPost: true`, advancing `nextRunDate`, and writing an immutable `AuditLog` entry. Supports `{ asOfDate?, dryRun?, organizationId? }`. |
+
+### 23. Frontend Client Routes (`frontend/src/App.tsx`)
 | Client Route | Guard Status | Rendered Component | Purpose / Description |
 | :--- | :--- | :--- | :--- |
 | `/` | Authenticated | `<DashboardPage />` | Executive dashboard overview, live working capital metrics, actionable approvals banner, and financial KPIs. |

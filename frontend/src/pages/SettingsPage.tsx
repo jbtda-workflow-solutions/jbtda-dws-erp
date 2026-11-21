@@ -84,41 +84,133 @@ const ALL_ROLES: { value: Role; label: string; description: string }[] = [
   },
 ];
 
-const AVAILABLE_MODULES = [
+const AVAILABLE_MODULES: Array<{
+  key: string;
+  label: string;
+  tier: 'BASE' | 'STANDARD' | 'PRO' | 'ENTERPRISE' | 'INTERNAL';
+  status: 'LIVE' | 'PLANNED' | 'DEFERRED';
+  stageRef: string;
+  description: string;
+  locked: boolean;
+}> = [
   {
-    key: 'CORE_FINANCE',
-    label: 'Core Financial Ledger, AR & AP',
-    description: 'General Ledger, Chart of Accounts, Invoices, Bills, Contacts, and Financial Statements.',
+    key: 'CORE_PLATFORM',
+    label: 'Core Workspace, Master Data & Governance',
+    tier: 'BASE',
+    status: 'LIVE',
+    stageRef: 'Base',
+    description:
+      'Multi-company workspace, 7-role RBAC, immutable audit log, contacts, items catalog, and admin bulk CSV import.',
     locked: true,
   },
   {
+    key: 'CORE_ACCOUNTING',
+    label: 'General Ledger, Banking & ATO BAS',
+    tier: 'BASE',
+    status: 'LIVE',
+    stageRef: 'Base',
+    description:
+      'Chart of Accounts, 10 protected system accounts, tracking dimensions, journals, bank reconciliation, financial reports, and ATO BAS.',
+    locked: true,
+  },
+  {
+    key: 'RECEIVABLES',
+    label: 'Accounts Receivable (AR) & Sales',
+    tier: 'STANDARD',
+    status: 'LIVE',
+    stageRef: 'Live',
+    description:
+      'Quotes, customer tax invoices, recurring billing, AR credit notes, customer prepayments, and incoming receipts.',
+    locked: false,
+  },
+  {
+    key: 'PAYABLES',
+    label: 'Accounts Payable (AP) & .ABA Batches',
+    tier: 'STANDARD',
+    status: 'LIVE',
+    stageRef: 'Live',
+    description:
+      'Purchase orders, vendor bills, recurring bills, vendor credits, single payments out, and Australian APCA .ABA batch files.',
+    locked: false,
+  },
+  {
     key: 'EXPENSES',
-    label: 'Spend Money & Employee Expense Claims',
-    description: 'Direct bank/card spend coding and employee reimbursement workflows (Account 2050).',
-    locked: false,
-  },
-  {
-    key: 'FLEET',
-    label: 'Fleet & Asset Management Extension',
-    description: 'Dedicated vehicle/asset tracking dimensions and maintenance cost allocation.',
-    locked: false,
-  },
-  {
-    key: 'INVENTORY',
-    label: 'Inventory & Catalog Extension',
-    description: 'Standardized SKU items, unit pricing, and stock movement hooks.',
-    locked: false,
-  },
-  {
-    key: 'ATTACHMENTS',
-    label: 'Cloud Storage Source Document Vault',
-    description: 'PDF tax invoice and receipt attachment storage via Google Cloud Storage.',
+    label: 'Direct Spend & Employee Expense Claims',
+    tier: 'STANDARD',
+    status: 'LIVE',
+    stageRef: 'Live',
+    description:
+      'Immediate bank/card spend coding and employee reimbursement workflows (Account 2050).',
     locked: false,
   },
   {
     key: 'DEVELOPER_PORTAL',
     label: 'Developer & Agent Context Console',
-    description: 'In-app read-only governance console for agent specifications, roadmaps, changelogs, and runtime diagnostics.',
+    tier: 'INTERNAL',
+    status: 'LIVE',
+    stageRef: 'Admin',
+    description:
+      'Admin-only governance docs reader, API reference catalog, roadmap tracker, runtime diagnostics, and database table manager.',
+    locked: false,
+  },
+  {
+    key: 'CONNECTORS',
+    label: 'Connectors Hub, API Keys & Google Workspace',
+    tier: 'PRO',
+    status: 'PLANNED',
+    stageRef: 'Stages 15–16',
+    description:
+      'Tenant-scoped inbound Bearer API keys, AES-256-GCM token vault, and Google Workspace OAuth (Drive, Sheets, Calendar).',
+    locked: false,
+  },
+  {
+    key: 'DOCUMENTS',
+    label: 'Cloud Storage Document Vault',
+    tier: 'PRO',
+    status: 'DEFERRED',
+    stageRef: 'Deferred D1',
+    description:
+      'Google Cloud Storage V4 presigned PDF and receipt attachment vault linked across ERP records.',
+    locked: false,
+  },
+  {
+    key: 'PROJECTS',
+    label: 'Project Accounting, Time & Billing',
+    tier: 'ENTERPRISE',
+    status: 'DEFERRED',
+    stageRef: 'Deferred D2',
+    description:
+      'Project budgets vs. actuals bound to Tracking Dimensions, time tracking, WIP capture, and 1-click invoicing.',
+    locked: false,
+  },
+  {
+    key: 'INVENTORY',
+    label: 'Perpetual Inventory & Warehousing',
+    tier: 'ENTERPRISE',
+    status: 'DEFERRED',
+    stageRef: 'Deferred D3',
+    description:
+      'Multi-warehouse stock levels, Weighted Average Cost valuation, PO goods receipts, and automated COGS journals.',
+    locked: false,
+  },
+  {
+    key: 'FLEET',
+    label: 'Fleet Management & Vehicle P&L',
+    tier: 'ENTERPRISE',
+    status: 'DEFERRED',
+    stageRef: 'Deferred D4',
+    description:
+      'Vehicle registry bound to Tracking Dimensions with odometer/service logs and native per-vehicle P&L.',
+    locked: false,
+  },
+  {
+    key: 'PAYROLL',
+    label: 'Australian Payroll & STP Phase 2',
+    tier: 'ENTERPRISE',
+    status: 'DEFERRED',
+    stageRef: 'Deferred D5',
+    description:
+      'Employee pay runs, PAYG withholding, Superannuation Guarantee accruals, leave tracking, .ABA wage runs, and STP Phase 2.',
     locked: false,
   },
 ];
@@ -205,8 +297,12 @@ export function SettingsPage() {
   const [enforceTwoPersonApproval, setEnforceTwoPersonApproval] =
     useState(false);
   const [enabledModules, setEnabledModules] = useState<string[]>([
-    'CORE_FINANCE',
+    'CORE_PLATFORM',
+    'CORE_ACCOUNTING',
+    'RECEIVABLES',
+    'PAYABLES',
     'EXPENSES',
+    'DEVELOPER_PORTAL',
   ]);
   const [savingGovernance, setSavingGovernance] = useState(false);
 
@@ -379,7 +475,7 @@ export function SettingsPage() {
         defaultPaymentTermsDays,
         enforceTwoPersonApproval,
         enabledModules: Array.from(
-          new Set(['CORE_FINANCE', ...enabledModules]),
+          new Set(['CORE_PLATFORM', 'CORE_ACCOUNTING', ...enabledModules]),
         ),
       });
       await refreshSession();
@@ -1029,8 +1125,11 @@ export function SettingsPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {AVAILABLE_MODULES.map((mod) => {
+                const isUnreleased = mod.status !== 'LIVE';
                 const checked =
-                  mod.locked || enabledModules.includes(mod.key);
+                  mod.locked || (!isUnreleased && enabledModules.includes(mod.key));
+                const disabled =
+                  mod.locked || isUnreleased || !isAdmin || savingGovernance;
                 return (
                   <label
                     key={mod.key}
@@ -1039,26 +1138,34 @@ export function SettingsPage() {
                       checked
                         ? 'border-forest-200 bg-forest-50/40'
                         : 'border-slate-200 bg-white',
-                      !mod.locked && isAdmin ? 'cursor-pointer' : 'opacity-90',
+                      !disabled ? 'cursor-pointer' : 'opacity-75',
                     )}
                   >
                     <input
                       type="checkbox"
                       checked={checked}
-                      disabled={mod.locked || !isAdmin || savingGovernance}
+                      disabled={disabled}
                       onChange={() => toggleModule(mod.key)}
                       className="mt-0.5 rounded border-slate-300 text-forest-900 focus:ring-forest-600"
                     />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <span className="text-xs font-semibold text-slate-900">
                           {mod.label}
                         </span>
                         <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
                           {mod.key}
                         </span>
+                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-slate-200 bg-white text-slate-600">
+                          {mod.tier}
+                        </span>
+                        {mod.status !== 'LIVE' && (
+                          <span className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-800">
+                            {mod.stageRef}
+                          </span>
+                        )}
                       </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className="text-xs text-slate-500 mt-1">
                         {mod.description}
                       </p>
                     </div>

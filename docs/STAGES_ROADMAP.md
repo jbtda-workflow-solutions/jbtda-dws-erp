@@ -541,20 +541,20 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 
 ---
 
-### Module 14: Commercial Product Module Architecture, Entitlement Gating, Recurring Runner & Agent Module Contexts
+### Module 14: Commercial Product Module Architecture, Entitlement Gating, Recurring Runner & Agent Module Contexts (✅ COMPLETED)
 **Objective:** Formalize the canonical industry-standard Product Module taxonomy (`CORE_PLATFORM`, `CORE_ACCOUNTING`, `RECEIVABLES`, `PAYABLES`, `EXPENSES`, `CONNECTORS`, `DOCUMENTS`, `PROJECTS`, `INVENTORY`, `FLEET`, `PAYROLL`, `DEVELOPER_PORTAL`) across backend route guards, frontend navigation/content groups, workspace module settings, and the `/developer` docs viewer; add an automated Recurring Schedule execution engine; and synchronize `docs/DATABASE_SCHEMA.md` with `schema.prisma`.
 
-- [ ] **14.1 Canonical Product Module Registry & `requireModule()` Backend Enforcement (`backend/src/lib/modules.ts`, `backend/src/plugins/auth.ts`, route files)**:
+- [x] **14.1 Canonical Product Module Registry & `requireModule()` Backend Enforcement (`backend/src/lib/modules.ts`, `backend/src/plugins/auth.ts`, route files)**:
   - Define the canonical Product Module registry (`MODULE_REGISTRY`) containing `key`, `label`, `tier` (`BASE` | `STANDARD` | `PRO` | `ENTERPRISE` | `INTERNAL`), `alwaysEnabled`, `status` (`LIVE` | `DEFERRED`), `navGroup`, and `description`.
   - Normalize legacy `enabledModules` flags (e.g. `CORE_FINANCE` $\rightarrow$ `CORE_PLATFORM` + `CORE_ACCOUNTING` + `RECEIVABLES` + `PAYABLES`; `ATTACHMENTS` $\rightarrow$ `DOCUMENTS`) transparently on read/migration so existing tenants suffer zero disruption.
   - Implement Fastify `requireModule(moduleKey)` preHandler hook verifying `organization.enabledModules.includes(moduleKey)` (returning `403 Forbidden` with `{ code: 'MODULE_NOT_ENABLED', module }`), and attach it across `RECEIVABLES`, `PAYABLES`, `EXPENSES`, `CONNECTORS`, and `DEVELOPER_PORTAL` routes.
-- [ ] **14.2 Module-Gated Navigation, Content Groups & Workspace Module Controls (`frontend/src/components/AppShell.tsx`, `frontend/src/pages/SettingsPage.tsx`)**:
+- [x] **14.2 Module-Gated Navigation, Content Groups & Workspace Module Controls (`frontend/src/components/AppShell.tsx`, `frontend/src/pages/SettingsPage.tsx`)**:
   - Align `AppShell.tsx` navigation groups cleanly to Product Modules (`General Ledger`, `Sales (AR)`, `Purchases (AP)`, `Spend & Claims`, `Integrations`, `Operations`, `Governance`) and filter visible links/routes strictly by both `Role` and `organization.enabledModules`.
   - Upgrade the **Enabled Modules** panel in `SettingsPage.tsx` (`ADMIN` only) to display commercial tiers, live vs. deferred module badges, and safe toggles (preventing disabling `CORE_PLATFORM` / `CORE_ACCOUNTING`).
-- [ ] **14.3 Automated Recurring Schedule Execution Engine (`backend/src/routes/system.ts` or `ledger.ts`, `invoices.ts`, `bills.ts`)**:
+- [x] **14.3 Automated Recurring Schedule Execution Engine (`backend/src/routes/system.ts` or `ledger.ts`, `invoices.ts`, `bills.ts`)**:
   - Implement a deterministic scheduled runner endpoint (`POST /api/v1/system/run-recurring`) authenticated via `X-Webhook-Secret` (for Cloud Scheduler / n8n cron triggers) and an `ADMIN`-callable manual trigger.
   - Scans active `RecurringSchedule` rows where `nextRunDate <= today`, atomically generates the due `JournalEntry`, `Invoice`, or `Bill` (auto-posting/issuing only when `autoPost: true` and effective date > `organization.lockDate`), advances `nextRunDate` by `frequency`, and writes an immutable `AuditLog` entry.
-- [ ] **14.4 Developer Console Module Context Indexing & Schema Documentation Sync (`backend/src/routes/developer.ts`, `docs/DATABASE_SCHEMA.md`)**:
+- [x] **14.4 Developer Console Module Context Indexing & Schema Documentation Sync (`backend/src/routes/developer.ts`, `docs/DATABASE_SCHEMA.md`)**:
   - Extend `backend/src/routes/developer.ts` allowlist to index `docs/modules/*.md` under a dedicated `MODULE_CONTEXT` category in `/developer` and parse **Section 6: Deferred Stages** separately in `/api/v1/developer/roadmap-summary`.
   - Synchronize `docs/DATABASE_SCHEMA.md` so its top-level tables and enums match the live `backend/prisma/schema.prisma` 1-for-1.
 
