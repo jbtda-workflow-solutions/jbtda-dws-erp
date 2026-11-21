@@ -4,6 +4,19 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.25.3] — 2026-11-21 — Agent Context Deduplication & Tiered Zero-Memory Protocol
+
+### Changed
+- **Tiered Zero-Memory Protocol (`AGENTS.md`)**:
+  - Updated `AGENTS.md` to a two-tier loading strategy (Tier 1 startup: `AGENTS.md` + `docs/modules/README.md` + top ~60 lines of `docs/CHANGELOG.md`; Tier 2 on-demand: task-specific `docs/modules/<module>.md` and specialized specs), reducing session startup token overhead by ~85%.
+- **Single Source of Truth Enforcement (`AGENTS.md`, `AGENT_SPECIFICATION.md`, `docs/STAGES_ROADMAP.md`, `docs/DATABASE_SCHEMA.md`, `docs/PLUGINS.md`, `docs/INTEGRATIONS.md`, `docs/modules/connectors.md`, `docs/modules/inventory.md`)**:
+  - Removed 3×–4× duplicated tables across docs: Cloud Run Env Vars & Secrets now live solely in `docs/ARCHITECTURE.md`; 7-Role RBAC Matrix solely in `docs/SECURITY.md`; 10 Protected System Accounts solely in `docs/modules/core-accounting.md`.
+  - Slimmed `AGENT_SPECIFICATION.md` to core architectural & financial-mechanics invariants with links to canonical docs.
+  - Slimmed `docs/DATABASE_SCHEMA.md` to schema invariants, domain table map, and migration log pointing to `backend/prisma/schema.prisma`.
+  - Folded unique webhook event contracts and Inventory schema details into `docs/modules/connectors.md` and `docs/modules/inventory.md`, converting `docs/PLUGINS.md` and `docs/INTEGRATIONS.md` into thin canonical pointers.
+
+---
+
 ## [0.25.2] — 2026-11-21 — Product Module Architecture, Agent Module Contexts (`docs/modules/`) & Restructured Roadmap (Stages 14–16 + Deferred D1–D5)
 
 ### Added

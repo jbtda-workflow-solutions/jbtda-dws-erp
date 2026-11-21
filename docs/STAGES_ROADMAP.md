@@ -73,20 +73,7 @@ Unlike basic small-business CRUD tools, this platform is architected as a **Ledg
 
 ## 3. Protected System Accounts (Seeded per Organization)
 
-To guarantee that automated sub-ledger postings, tax calculations, and employee reimbursements never fail, every organization is seeded with **10 Protected System Accounts** (`isSystem: true`). Users may rename descriptions or create child sub-accounts under them, but system accounts **cannot be deleted or have their codes/types altered**:
-
-| Code | Account Name | Type | Normal Balance | System Key | Purpose |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `1000` | Operating Bank Account | `ASSET` | `DEBIT` | `OPERATING_BANK` | Default primary bank account for settlements |
-| `1200` | Accounts Receivable (A/R) | `ASSET` | `DEBIT` | `ACCOUNTS_RECEIVABLE` | Control account for issued customer invoices & credit notes |
-| `2000` | Accounts Payable (A/P) | `LIABILITY` | `CREDIT` | `ACCOUNTS_PAYABLE` | Control account for approved vendor bills & vendor credits |
-| `2050` | Employee Reimbursements Payable | `LIABILITY` | `CREDIT` | `EMPLOYEE_REIMBURSEMENTS` | Liability control account for approved staff expense claims |
-| `2100` | GST Collected (Sales) | `LIABILITY` | `CREDIT` | `GST_COLLECTED` | 10% Australian GST collected on sales (BAS Label 1A) |
-| `2200` | GST Paid (Purchases) | `ASSET` | `DEBIT` | `GST_PAID` | 10% Australian GST paid on bills & expenses (BAS Label 1B) |
-| `2300` | Customer Prepayments / Unearned | `LIABILITY` | `CREDIT` | `CUSTOMER_PREPAYMENTS` | Unallocated customer deposits / retainers received on account |
-| `3000` | Retained Earnings | `EQUITY` | `CREDIT` | `RETAINED_EARNINGS` | Cumulative historical net profit/loss equity account |
-| `4000` | Sales Revenue | `REVENUE` | `CREDIT` | `DEFAULT_REVENUE` | Default operating income account for invoice lines & direct receipts |
-| `6000` | Operating Expenses | `EXPENSE` | `DEBIT` | `DEFAULT_EXPENSE` | Default operating expense account for bill lines & expense claims |
+Every organization is seeded with **10 Protected System Accounts** (`isSystem: true`, codes `1000`–`6000`). Users may rename descriptions or create child sub-accounts under them, but system accounts **cannot be deleted or have their codes/types altered**. See **`docs/modules/core-accounting.md`** (single source of truth) for the full 10-account table and `systemKey` definitions.
 
 > **Sub-Account Decommissioning Rule:** Custom accounts with posted journal lines cannot be hard-deleted. They can either be marked inactive (`isActive: false`) or decommissioned via an automated **Balance Sweep Journal** that transfers their remaining balance into their parent/main account.
 
@@ -94,22 +81,7 @@ To guarantee that automated sub-ledger postings, tax calculations, and employee 
 
 ## 4. Enterprise 7-Role RBAC Matrix
 
-Access is strictly compartmentalized by domain so regular staff and specialists only see what their role permits:
-
-| Capability | `ADMIN` | `ACCOUNTANT` | `MANAGER` | `AR_SPECIALIST` | `AP_SPECIALIST` | `EMPLOYEE` | `AUDITOR` |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Org Settings, Lock Dates, Modules & User Invites | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Manage Chart of Accounts & Tracking Dimensions | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | 🔍 Read |
-| General Ledger, Manual Journals & Financial Reports | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | 🔍 Read |
-| 1-Click "Approve & Post" (Journals, Bills, Invoices) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Approve Purchase Orders & Team Expense Claims | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| View & Manage Contacts & Items Catalog | ✅ | ✅ | 🔍 Read | ✅ (Cust) | ✅ (Vend) | ❌ | 🔍 Read |
-| Quotes, Customer Invoices, AR Credits & Receipts | ✅ | ✅ | 🔍 Read | ✅ | ❌ | ❌ | 🔍 Read |
-| Purchase Orders, Vendor Bills & AP Credits | ✅ | ✅ | ✅ (POs) | ❌ | ✅ | ❌ | 🔍 Read |
-| Execute Payments Out & Export `.ABA` Bank Files | ✅ | ✅ | ❌ | ❌ | Draft/Prep | ❌ | ❌ |
-| Record Direct "Spend Money" Bank/Card Expenses | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | 🔍 Read |
-| Submit & View **Own** Employee Expense Claims | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (Own Only) | 🔍 Read |
-| View System Audit Log | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+Access is strictly compartmentalized across 7 domain-isolated roles (`ADMIN`, `ACCOUNTANT`, `MANAGER`, `AR_SPECIALIST`, `AP_SPECIALIST`, `EMPLOYEE`, `AUDITOR`). See **`docs/SECURITY.md`** (single source of truth) for the complete capability matrix and adaptive maker-checker rules.
 
 ---
 

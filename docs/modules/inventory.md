@@ -14,7 +14,10 @@ Extends `Item` (`isTrackedInventory: true` in `CORE_PLATFORM`) into a multi-ware
 
 ## 2. Planned Data Model & GL Accounts
 
-- **Tables:** `warehouses`, `stock_levels` (with `averageUnitCostCents` in `BIGINT`), `stock_movements` (`GOODS_RECEIPT`, `SALES_DISPATCH`, `TRANSFER_IN`, `TRANSFER_OUT`, `STOCKTAKE_ADJUST`).
+- **Tables:**
+  - `warehouses`: `id`, `organizationId`, `code` (unique per org), `name`, `address`, `isActive`, `createdAt`.
+  - `stock_levels`: `id`, `organizationId`, `itemId`, `warehouseId`, `quantityOnHand` (`Decimal(12,4)`), `quantityAllocated` (`Decimal(12,4)`), `averageUnitCostCents` (`BigInt`), unique `(organizationId, itemId, warehouseId)`.
+  - `stock_movements`: `id`, `organizationId`, `itemId`, `warehouseId`, `movementType` (`GOODS_RECEIPT` | `SALES_DISPATCH` | `TRANSFER_IN` | `TRANSFER_OUT` | `STOCKTAKE_ADJUST`), `quantity` (`Decimal(12,4)`), `unitCostCents` (`BigInt`), `totalCostCents` (`BigInt`), `referenceType` (`PURCHASE_ORDER` | `INVOICE` | `ADJUSTMENT`), `referenceId`, `journalEntryId`, `createdAt`.
 - **Module System Accounts (seeded on module enable):**
   - `1300` Inventory Asset (`ASSET`, `DEBIT`)
   - `2020` Accrued Purchases — Goods Received Not Invoiced (`LIABILITY`, `CREDIT`)

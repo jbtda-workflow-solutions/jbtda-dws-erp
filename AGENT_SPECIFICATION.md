@@ -1,333 +1,64 @@
-# Master System Specification & AI Agent Operating Manual
+# Master System Specification
 
-This document defines the complete technical architecture, operational guidelines, design system, and multi-stage development roadmap for building a modular, multi-tenant accounting application deployed on Google Cloud Platform (GCP).
+Concise architectural invariants and financial mechanics for **JBTDA-DWS-ERP** — a modular, multi-tenant Australian accounting & business services platform deployed as a unified monolith on Google Cloud Platform (GCP).
 
----
-
-## 1. Zero-Memory Agent Operating Protocol
-
-You are operating as a senior full-stack software architect, cloud engineer, and financial security specialist.
-
-### Critical Production Principle: Deterministic Runtime (Zero AI in Production)
-- **AI Agents are the builders during development; they are NOT runtime dependencies.**
-- The production application must be 100% deterministic, traditional web software (TypeScript, Fastify, React, Prisma, PostgreSQL).
-- The production app must **NEVER** make runtime LLM API calls, run AI inference, or require background agents to process transactions, compute balances, or run authentication. Every workflow must be explicit, testable, compiled code.
-
-### Mandatory Agent Rules
-1. **Zero Session Memory Dependency:** Never assume context from previous chat sessions or prompt turns. The single source of truth is the code and documentation committed to this repository.
-2. **Persistent Documentation First:** Every architectural decision, data model change, API contract, and security constraint must be documented in dedicated markdown files in the `/docs` directory before or immediately upon implementation.
-3. **Changelog Maintenance:** Any task that introduces a new route, migration, dependency, or schema modification must append an entry to `docs/CHANGELOG.md`.
-4. **Clean-Slate Baseline:** The database is a fresh testing environment. Generate clean baseline Prisma migrations with standard `snake_case` PostgreSQL naming conventions.
-5. **Local Type Verification Allowed / No Runtime Execution:** Agents MAY run `npm install --cache /tmp/.npm-cache`, `npx prisma generate`, and non-emitting typecheck/build commands (`npm run typecheck`, `tsc --noEmit`, `npm run build`) solely to verify TypeScript compilation before concluding tasks. Do NOT run `npm run dev`, start background dev servers, or execute runtime application code on the host machine; production builds, runtime execution, and migrations are handled by Cloud Build / Docker on Cloud Run.
-6. **Local Git Commits Allowed / Push Requires Explicit Authorization:** Agents may stage and create local `git commit`s using concise, conventional commit messages when a logical revision is completed, and must report the commit hash and message. Agents must NEVER run `git push` without explicit user authorization for each push; once authorized, the agent may push commits to the remote repository.
-7. **Clean Imports & Compiler Tolerance:** Prune unused imports and variables during every revision. The frontend `tsconfig.json` maintains `noUnusedLocals: false` and `noUnusedParameters: false` to prevent trivial unused import warnings from breaking production container compilation in Cloud Build.
-8. **Chat-First Visibility & Agent Studio Reporting:** Always summarize modified routes, schema fields, UI behavior, and verification results directly in chat; include an unpushed commit and file summary (`git log origin/main..HEAD --oneline`) whenever requesting `git push` authorization; and emit Markdown Artifacts for large plans or schema proposals.
-
-### Phase 0 Repository Scaffold
-Before writing feature code, ensure the following directory structure and documentation files are present:
-
-```
-.
-├── AGENTS.md                  # Root agent instructions and execution constraints
-├── docs/
-│   ├── ARCHITECTURE.md        # Topology, service boundaries, and GCP layout
-│   ├── DATABASE_SCHEMA.md     # PostgreSQL tables, relations, and migration log
-│   ├── SECURITY.md            # Auth mechanics, RBAC matrix, and crypto standards
-│   ├── DESIGN_SYSTEM.md       # Typography, Tailwind tokens, and table conventions
-│   ├── INTEGRATIONS.md        # Async webhook payloads and n8n job contracts
-│   ├── STAGES_ROADMAP.md      # Detailed breakdown of Stage 1 (MVP) through Stage 3
-│   └── CHANGELOG.md           # Chronological log of changes and schema diffs
-├── frontend/                  # React SPA (Vite + TypeScript + Tailwind)
-└── backend/                   # Core Modular Monolith API (Fastify + TypeScript + Prisma)
-```
+> **Single Source of Truth Map (Zero Duplication):**
+> - **Operating Rules & Directory Tree:** `AGENTS.md`
+> - **Topology, Env Vars, Secrets & Full API Catalog:** `docs/ARCHITECTURE.md`
+> - **Database Schema:** `backend/prisma/schema.prisma` (invariants & migrations in `docs/DATABASE_SCHEMA.md`)
+> - **Auth, Session Crypto & 7-Role RBAC Matrix:** `docs/SECURITY.md`
+> - **UI/UX & Corporate Precision Design System:** `docs/DESIGN_SYSTEM.md`
+> - **Product Module Registry & Domain Contexts:** `docs/modules/README.md` (`docs/modules/*.md`)
+> - **Reproducible Delivery Roadmap (Stages 1–16 + Deferred D1–D5):** `docs/STAGES_ROADMAP.md`
 
 ---
 
-## 2. System Architecture & GCP Topology (Unified Monolith)
+## 1. Core Architectural Principles
 
-The application is deployed as a single, unified container on Google Cloud Run to eliminate cross-origin (CORS) complexity and ensure robust `SameSite=Strict` cookie security:
-
-```
-                          ┌────────────────────────────────────────┐
-                          │         GCP Cloud Run Service          │
-                          │                                        │
-                          │  ┌──────────────────────────────────┐  │
-                          │  │    Static React SPA (Vite/TS)    │  │
-                          │  │  (Served via @fastify/static)    │  │
-                          │  └──────────────────────────────────┘  │
-                          │                                        │
-                          │     Fastify + TypeScript + Prisma      │
-                          └───────┬────────────────────────────┬───┘
-                                  │                            │
-            Direct Queries (ACID) │                            │ Async Webhooks
-            (Cloud SQL Proxy)     │                            │ (X-Webhook-Secret)
-                                  ▼                            ▼
-                         ┌──────────────┐               ┌────────────────┐
-                         │GCP Cloud SQL │               │ GCP Cloud Run  │
-                         │ (PostgreSQL) │               │(n8n Automation)│
-                         └──────────────┘               └────────┬───────┘
-                                                                 │
-                                                                 ▼
-                                                         External Services
-                                                         (Email, Plaid)
-```
-
-### Stack Components
-
-1. **Frontend (`/frontend`):**
-   - Single Page Application (React 18/19, TypeScript, Vite, Tailwind CSS).
-   - Component primitives: Radix UI / shadcn/ui patterns with Lucide React icons.
-   - Dynamic code-splitting via `React.lazy()` for module boundaries (Contacts, AP, AR, Ledger).
-   - **Delivery:** Compiled at build time (`dist/`) and served directly by the Fastify backend from the root path (`GET /`). Not hosted separately.
-   - **API Client:** Makes relative requests to the backend (e.g., `fetch('/api/v1/auth/google')`), avoiding CORS preflight checks entirely.
-
-2. **Core Backend API (`/backend`):**
-   - **Framework:** Fastify with TypeScript.
-   - **ORM:** Prisma ORM with PostgreSQL client.
-   - **Routing Isolation:**
-     - Serve the React static build directory using `@fastify/static` at the root `/`.
-     - Mount all core API logic under `/api/v1/`.
-     - SPA Fallback: Any `GET` request failing to match `/api/*` returns `index.html` to allow React Router to handle client-side routing.
-   - **Statelessness:** No local session caches. Autoscales horizontally across Cloud Run replicas.
-   - **Connection Pool Ceiling:** Explicitly configure Prisma connection limits:
-     `DATABASE_URL="postgresql://user:pass@host/db?connection_limit=7&pool_timeout=10"`
-     This prevents multiple Cloud Run containers from exhausting Cloud SQL connection limits.
-   - **Containerization:** Built via a multi-stage root `Dockerfile` that compiles the React app, compiles the TypeScript API, and packages both into a single unprivileged Node 20 runtime listening on `$PORT`.
-
-3. **Database (Cloud SQL PostgreSQL):**
-   - Managed PostgreSQL instance with private VPC connection or Cloud SQL Auth Proxy.
-   - Zero direct public exposure.
-
-4. **Automation & Integration Engine (n8n on Cloud Run):**
-   - Worker engine for background automations (email dispatches, PDF generation, external syncing).
-   - Triggered via asynchronous webhooks with `X-Webhook-Secret` verification. Does **not** process user authentication or synchronous financial queries.
-
-### Cloud Run Runtime Configuration (Variables & Secrets)
-
-The application relies strictly on Google Cloud Run container configuration (zero `.env` files in production).
-Every variable and secret must be explicitly defined. **No configuration values may be left empty or omitted.**
-
-1. **Cloud SQL Connections (Cloud Run UI):**
-   - Attached Instance: `PROJECT_ID:REGION:INSTANCE_NAME` (e.g. `digitalworkflowsolutions-erp:us-central1:erp`).
-   - Cloud Run mounts the Unix socket at `/cloudsql/<INSTANCE_CONNECTION_NAME>`, which Fastify discovers automatically.
-
-2. **Environment Variables (Cloud Run UI):**
-   | Variable | Source | Required / Default | Permitted Values | Failure Behavior | Description / Purpose |
-   | :--- | :--- | :--- | :--- | :--- | :--- |
-   | `INSTANCE_CONNECTION_NAME` | Cloud Run Env | Required in Cloud Run | Format: `PROJECT:REGION:INSTANCE` (non-empty string) | If missing or invalid, Unix socket `/cloudsql/<INSTANCE>` is not found; database connection fails | Cloud SQL instance connection name (`PROJECT_ID:REGION:INSTANCE_NAME`). Points database client explicitly to mounted socket at `/cloudsql/<INSTANCE_CONNECTION_NAME>`. Essential for multi-tenant isolation and portable client forks. |
-   | `GOOGLE_CLIENT_ID` | Cloud Run Env | Required | Non-empty Google OAuth Client ID string ending in `.apps.googleusercontent.com` | Google token verification rejects all tokens with `401 Unauthorized`; `/api/v1/auth/config` returns empty ID | Google OAuth 2.0 Web Client ID for authentication (used for token verification & served to frontend via `/api/v1/auth/config`). |
-   | `DB_USER` | Cloud Run Env | Required | Non-empty string (e.g. `erp_admin`) | Prisma connection throws PostgreSQL authentication error; `/healthz` returns `503 Service Unavailable` | Database username on the Cloud SQL PostgreSQL instance. |
-   | `DB_NAME` | Cloud Run Env | Required | Non-empty string (e.g. `erp`) | Prisma connection fails (database does not exist); `/healthz` returns `503 Service Unavailable` | Database name on the Cloud SQL instance. |
-   | `FRONTEND_ORIGIN` | Cloud Run Env | Required if cross-origin | Valid URL string (e.g. `http://localhost:5173`) | CORS preflight checks reject cross-origin requests in dev/preview | Allowed origin for CORS (e.g. preview deployment URL or `http://localhost:5173`). In unified production, frontend and API share the exact same origin. |
-   | `NODE_ENV` | Cloud Run Env | Required | `"production"` \| `"development"` | Defaults to development logging; cookie `Secure` flag may not be strictly enforced | Runtime environment mode. Must be set to `"production"` on Cloud Run. |
-   | `PORT` | Cloud Run Env | Optional (Default: `8080`) | Numeric integer string (e.g. `"8080"`) | Container fails Cloud Run health check if not listening on the port Cloud Run expects | Port Fastify binds to. Automatically injected by Cloud Run. |
-   | `HOST` | Cloud Run Env | Optional (Default: `"0.0.0.0"`) | IP string (e.g. `"0.0.0.0"`) | Binding to `127.0.0.1` causes container to be unreachable from outside | Host interface Fastify binds to. |
-   | `FRONTEND_DIST_PATH` | Cloud Run Env | Optional (Default: auto-discovery) | Valid directory path containing `index.html` (e.g. `"/app/frontend/dist"`) | Fastify logs warning and serves API-only fallback HTML page on root; SPA routes return 404 | Custom filesystem path for compiled frontend SPA assets. |
-
-3. **Secrets Exposed as Environment Variables (Secret Manager):**
-   | Secret in Secret Manager | Mounted Variable | Required | Permitted Values | Failure Behavior | Purpose |
-   | :--- | :--- | :--- | :--- | :--- | :--- |
-   | Database user password (e.g. `user_erp_admin_pass...`) | `DB_PASSWORD` | Required | Non-empty string | Prisma connection throws PostgreSQL authentication error; `/healthz` returns `503` | PostgreSQL database user password. |
-   | Cookie session secret (e.g. `erp_session_secret`) | `SESSION_SECRET` | Required | Cryptographically random string $\ge 32$ characters | Unsigned session cookies cannot be parsed or verified; auth fails | Secret key used for signing and encrypting `erp_session` HttpOnly cookies. |
-   | Webhook secret (Stage 2) (e.g. `erp_webhook_secret`) | `WEBHOOK_SECRET` | Required for automations | Cryptographically random hex string of 64 characters | Outbound n8n webhook dispatches fail signature verification | 64-character webhook secret transmitted in `X-Webhook-Secret` header for n8n automations. |
+1. **Deterministic Runtime (Zero AI in Production):**
+   - AI agents are development-time builders only; they are **never** runtime dependencies.
+   - Production code is 100% deterministic TypeScript (Fastify + Prisma + PostgreSQL + React). Never make runtime LLM API calls to process transactions, compute balances, or handle auth.
+2. **Unified Monolith Container (Cloud Run):**
+   - Built via a single multi-stage root `Dockerfile`: compiles the React SPA (`frontend/dist`) and Fastify API (`backend/dist`) into one unprivileged Node 20 container.
+   - Fastify serves static SPA assets via `@fastify/static`, mounts all API routes under `/api/v1/*`, and falls back non-API `GET` routes to `index.html`. Same-origin delivery eliminates CORS overhead and supports `SameSite=Strict` cookies natively.
+   - Stateless replicas connected to Cloud SQL PostgreSQL via Unix socket (`/cloudsql/<INSTANCE_CONNECTION_NAME>`) with `connection_limit=7&pool_timeout=10`.
+3. **Async External Automation:**
+   - External integrations (n8n, webhooks, Google Workspace connectors) run asynchronously and must **never** sit in the synchronous path of authentication, balance calculation, or GL posting.
 
 ---
 
-## 3. Financial Mechanics, Currency & Tax Specifications
+## 2. Financial Mechanics, Currency & Australian Tax Invariants
 
-### Multi-Tenancy Architecture
-- Every business table MUST include:
-  ```sql
-  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT
-  ```
-- Every database query in the Fastify backend MUST explicitly include `where: { organizationId: request.organizationId }`.
+### Multi-Tenancy Isolation
+- Every business table includes `organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT`.
+- Every business-domain Prisma query MUST explicitly filter `where: { organizationId: request.organizationId }`.
 
-### Currency: Australian Dollars (AUD) in Cents
-- **Strict Integer Arithmetic:** Currencies are stored as integers (`BIGINT` in PostgreSQL, `bigint` or integer `number` in TypeScript) representing **cents**.
-  - Example: $\$1,250.50 \rightarrow 125050$
-  - Example: $\$0.05 \rightarrow 5$
-- **Floating-point types (`FLOAT`, `DOUBLE`, `REAL`) are strictly banned from database schemas and calculation logic.**
-- Monetary display formatting is performed client-side using `Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' })`.
+### Currency: AUD Integer Cents
+- Store all monetary values as `BIGINT` cents (`$1,250.50` → `125050n`).
+- Floating-point types (`FLOAT`, `DOUBLE`, `REAL`) are strictly banned from schemas and monetary math.
+- Client-side display uses `Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' })`.
 
-### Australian GST (Goods and Services Tax)
-- Default Australian GST rate is a flat **10%**.
-- Line items must explicitly track their tax treatment: `TAX_EXCLUSIVE`, `TAX_INCLUSIVE`, or `GST_FREE`.
-- Calculation rules:
+### Australian GST (10%)
+- Every line item tracks `TaxTreatment`: `TAX_EXCLUSIVE`, `TAX_INCLUSIVE`, or `GST_FREE`.
   - **Tax-Exclusive:** $\text{GST Cents} = \text{round}(\text{Subtotal Cents} \times 0.10)$
   - **Tax-Inclusive:** $\text{GST Cents} = \text{round}\left(\text{Gross Cents} - \frac{\text{Gross Cents}}{1.10}\right)$
-- All totals must balance: $\text{Gross Cents} = \text{Subtotal Cents} + \text{GST Cents}$.
+  - **Balance Rule:** $\text{Gross Cents} = \text{Subtotal Cents} + \text{GST Cents}$.
 
-### Double-Entry Accounting Invariant (Automated Behind the Scenes)
-- The General Ledger records transactions automatically on every confirmed invoice, bill, or payment.
-- Invariant:
+### Double-Entry General Ledger Invariant
+- Every confirmed financial event posts an atomic, balanced `JournalEntry` inside `prisma.$transaction([...])`:
   $$\sum \text{Debits} = \sum \text{Credits}$$
-- Balance checks must occur in integer cents within an atomic Prisma transaction (`prisma.$transaction([...])`). If debits $\neq$ credits, the transaction automatically rolls back.
+- All postings enforce `effectiveDate > organization.lockDate`.
+- The **10 Protected System Accounts** (`1000`–`6000`) are seeded automatically per organization and cannot be deleted or re-coded (canonical list in `docs/modules/core-accounting.md`).
+
+### Dimensional Accounting & Adaptive Governance
+- **Tracking Dimensions (`tracking_categories` / `tracking_options`):** Every `JournalLine` and sub-ledger line item accepts an optional `trackingOptionId` so P&L and operational reports slice cleanly by Department, Project, Location, or Fleet Vehicle without duplicating GL accounts.
+- **Smart Approvals:** `ADMIN` and `ACCOUNTANT` can "Approve & Post Immediately" in 1 click unless `organization.enforceTwoPersonApproval === true` (strict maker-checker mode).
+- **Immutable Audit Log:** Every mutation appends to `audit_logs` within the same Prisma transaction.
+- **Contact Payment Rule (`requires_invoice_for_payment`):** Default `true` (incoming receipts must apply to an open Invoice); when `false`, permits Direct Income Receipts or Customer Prepayments (`2300`).
 
 ---
 
-## 4. Default Seed Chart of Accounts (Protected System Accounts)
+## 3. Product Modules & Delivery Roadmap
 
-When a new organization is created, the system automatically seeds **10 Protected System Accounts** (`isSystem: true`). Users can add custom accounts and hierarchical sub-accounts (`parentId`), and can transfer sub-account balances back into main accounts when decommissioning them, but the 10 system accounts cannot be deleted or re-coded:
-
-| Code | Account Name | Type | Normal Balance | System Key | Description |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `1000` | Operating Bank Account | `ASSET` | Debit | `OPERATING_BANK` | Primary cash account for payments in and out |
-| `1200` | Accounts Receivable (A/R) | `ASSET` | Debit | `ACCOUNTS_RECEIVABLE` | Money owed by customers for issued invoices |
-| `2000` | Accounts Payable (A/P) | `LIABILITY` | Credit | `ACCOUNTS_PAYABLE` | Money owed to suppliers for recorded bills |
-| `2050` | Employee Reimbursements Payable | `LIABILITY` | Credit | `EMPLOYEE_REIMBURSEMENTS` | Liability for approved staff out-of-pocket expense claims |
-| `2100` | GST Collected (Sales) | `LIABILITY` | Credit | `GST_COLLECTED` | 10% GST collected on sales to be remitted to the ATO |
-| `2200` | GST Paid (Purchases) | `ASSET` | Debit | `GST_PAID` | 10% GST paid on bills & expenses, claimable from the ATO |
-| `2300` | Customer Prepayments / Unearned | `LIABILITY` | Credit | `CUSTOMER_PREPAYMENTS` | Unallocated customer deposits / retainers on account |
-| `3000` | Retained Earnings | `EQUITY` | Credit | `RETAINED_EARNINGS` | Cumulative historical net profit/loss equity account |
-| `4000` | Sales Revenue | `REVENUE` | Credit | `DEFAULT_REVENUE` | Default operating income account |
-| `6000` | Operating Expenses | `EXPENSE` | Debit | `DEFAULT_EXPENSE` | Default operating vendor and employee expense account |
-
----
-
-## 5. Master Data, Dimensional Accounting & Governance Rules
-
-### Contact Entity Design (`contacts`)
-Contacts represent Customers (AR), Vendors/Suppliers (AP), or Both:
-- `type`: `'CUSTOMER' | 'VENDOR' | 'BOTH'`
-- `name` & `legal_name`: Trading and legal entity names
-- `email`, `phone`, `billing_address`: Contact details
-- `abn`: 11-digit Australian Business Number (validated via ATO checksum)
-- `payment_terms_days`: Default net payment terms (e.g., 7, 14, 30 days)
-- `bank_bsb`, `bank_account_number`, `bank_account_name`: Australian EFT banking details for `.aba` batch payment exports
-- **`requires_invoice_for_payment` (Boolean, Default: `true`):**
-  - When `true`: Incoming customer payments must be applied against an open Customer Invoice.
-  - When `false`: Uninvoiced receipts are permitted, allowing the user to record either a **Direct Income Receipt** (coded straight to a `REVENUE` account + GST) or a **Customer Prepayment on Account** (`2300`).
-
-### Dimensional Accounting (Tracking Categories / Cost Centers)
-- Every organization can define custom **Tracking Categories** (e.g., *Department*, *Project*, *Location*, *Fleet Vehicle*) and **Tracking Options**.
-- Every `JournalLine` and sub-ledger line item (`InvoiceLineItem`, `BillLineItem`, `QuoteLineItem`, `PurchaseOrderLineItem`, `ExpenseLineItem`) supports dimensional tagging so P&L and operational reports can be sliced by cost center or asset without duplicating GL accounts.
-
-### Adaptive Approval Workflows & Period Controls
-- **Smart Role Approvals:** `ADMIN` and `ACCOUNTANT` users can "Approve & Post Immediately" in 1 click (zero friction for small businesses) or save as Draft. Lower roles (`EMPLOYEE`, `AP_SPECIALIST`, `AR_SPECIALIST`) submit records into a `PENDING_APPROVAL` state. Organizations can optionally toggle `enforceTwoPersonApproval: true` to require maker-checker signoff across all roles.
-- **Immutable System Audit Log:** Every mutation writes an append-only record to `audit_logs` capturing `actorUserId`, `organizationId`, `action`, `entityType`, `entityId`, and change metadata.
-- **Accounting Period Lock Date:** Transactions cannot be created, edited, reversed, or voided with an effective date on or before `organization.lockDate`.
-
----
-
-## 6. 13-Module Enterprise Architecture Scope
-
-The platform is organized into **13 cohesive, deep-built modules** (see `docs/STAGES_ROADMAP.md` for full specifications):
-
-1. **Module 1 — Enterprise Workspace, RBAC, Governance & Unified Schema:** Multi-company switcher, 7-tier domain-isolated RBAC, Organization remittance profile (BSB/Account #/APCA ID), Period Lock Dates, `enabledModules` feature flags (`['CORE_FINANCE', 'EXPENSES', 'FLEET', 'INVENTORY', 'DEVELOPER_PORTAL']`), and Immutable System Audit Log.
-2. **Module 2 — The Financial Spine (CoA, Dimensions & GL Engine):** Full CRUD Chart of Accounts (`/accounts`), 10 protected system accounts, sub-account balance sweep decommissioning, Tracking Categories/Cost Centers, Manual & Recurring Adjusting Journals, and 1-click Journal Reversals.
-3. **Module 3 — Master Data (Contacts & Items Catalog):** Customers & Vendors with Australian banking details and Contact 360 history; Products & Services Catalog (`/items`) with default sales/purchase pricing, GST treatments, and linked GL accounts.
-4. **Module 4 — Accounts Receivable (AR):** Quotes/Estimates (with 1-click Invoice conversion), Coded Customer Invoices (with EFT remittance slip), Recurring Invoices, Customer Credit Notes, and Payments In (Invoice settlement, Direct Income Receipt, or Customer Prepayment).
-5. **Module 5 — Accounts Payable (AP):** Purchase Orders (with manager approval & 1-click Bill conversion), Coded Vendor Bills, Recurring Bills, Vendor Credit Notes, Single Payments Out, and **Australian `.ABA` (Cemtex) Batch Payment File Export**.
-6. **Module 6 — Enterprise Expenses (`/expenses`):** Direct "Spend Money" (Bank & Corporate Card purchases coded directly to GL) and Employee Expense Claims (`DRAFT` $\rightarrow$ `SUBMITTED` $\rightarrow$ `APPROVED` crediting `2050 Employee Reimbursements Payable` $\rightarrow$ `PAID` via single or `.aba` batch reimbursement).
-7. **Module 7 — Multi-Account Banking, Transfers & Reconciliation (`/banking`):** Multiple Bank & Corporate Card accounts, Inter-Account Money Transfers, and CSV/OFX Bank Statement Import & Matching Reconciliation workspace.
-8. **Module 8 — Financial Statements, Australian BAS Engine, Live Dashboard & Plug-Ins (`/reports` & `/`):** Trial Balance, Dimensional Profit & Loss, Balance Sheet, AR/AP Aging (Current, 1–30, 31–60, 61–90, 90+ days), ATO BAS Worksheet (G1, 1A, 1B), 100% live database Dashboard, and plug-in hooks for Fleet Management, Inventory, and GCS Attachments.
-9. **Module 9 — Developer & Agent Context Interface (`/developer`):** `ADMIN`-gated governance console providing an allowlisted Markdown documentation reader (`AGENTS.md`, `AGENT_SPECIFICATION.md`, `docs/*.md`), deterministic API Reference catalog (`GET /api/v1/developer/api-catalog`), live Roadmap Tracker, Changelog & Audit Feed, and secret-redacted Runtime Diagnostics.
-10. **Module 10 — Corporate Precision UI/UX Alignment, Overlay Architecture, Expenses Remediation & A4 Report Print Engine:** Universal `createPortal(..., document.body)` overlay architecture (`!mt-0`), `/expenses` data contract alignment and GL inspector integration, dedicated `@media print` A4 financial statement isolation (`#report-print-sheet`), and platform-wide geometry/typography standardization.
-11. **Module 11 — Transactional Integrity, Bidirectional Sub-Ledger/GL Synchronization & Full Record Lifecycle Control:** Mutual `REVERSED` journal status with strict anti-double-reversal guard, bidirectional cascade between `/ledger` reversals and sub-ledger records (`Bill`, `Invoice`, `PaymentOut`, `PaymentIn`, `CreditNote`, `VendorCredit`, `ExpenseClaim`, `DirectTransaction`, `BankTransfer`), in-place `Edit & Re-Post` (`syncOrReplaceJournalEntry`), `Revert to Draft`, `Void`, `Payment Reversal`, and `ADMIN` `Force Delete` across all modules.
-12. **Module 12 — Centralized Admin Bulk CSV Import Engine, Context-Aware Bank Statement Upload & Multi-Mode Contact-Linked Reconciliation:** Centralized `ADMIN` Bulk CSV Import Hub in `/settings` supporting all 13 ERP record types with downloadable templates and two-step `Validate & Preview` $\rightarrow$ `Commit`; context-aware Bank Statement CSV upload (`suggestedContactId`, `suggestedAccountId`, `suggestedTrackingOptionId`, `suggestedTaxTreatment`); and 6-mode contact-linked reconciliation (`DIRECT_EXPENSE`, `ALLOCATE_BILL`, `CREATE_AND_PAY_BILL`, `DIRECT_INCOME`, `ALLOCATE_INVOICE`, `CREATE_AND_PAY_INVOICE`) with full Contact 360° `DirectTransaction` visibility.
-13. **Module 13 — Prisma-Native Schema Self-Healing & Interactive Developer Database Management Workbench:** Automatic Prisma-native schema synchronization (`prisma db push --skip-generate --accept-data-loss`) and protected 10-account seeder verification on startup (`backend/src/lib/schema-sync.ts`), complete retirement of `AUTO_SCHEMA_PUSH`, `DB_FORCE_RESET`, and `rebuild_all_schema.sql`, and an interactive **Database & Table Manager** tab in `/developer` (`GET /api/v1/developer/database/tables`, `POST /api/v1/developer/database/sync-schema`, `POST /api/v1/developer/database/purge-tables`) supporting dependency-aware selective table purges (`ORGANIZATION` or `GLOBAL` scope) while permanently protecting identity/tenant tables and the 10 system GL accounts.
-
----
-
-## 7. Authentication, Onboarding & Access Control
-
-### Google OAuth 2.0 Flow
-1. User clicks "Sign in with Google" in the React frontend (`@react-oauth/google`).
-2. Google returns an OpenID Connect (OIDC) ID token (JWT) to the browser.
-3. Frontend sends token to Fastify: `POST /api/v1/auth/google { "idToken": "..." }`.
-4. Fastify verifies token using official `google-auth-library` (`OAuth2Client.verifyIdToken`).
-5. User is upserted into the `users` table based on immutable `google_sub`.
-
-### First-Time Onboarding (Option B)
-1. Backend checks `organization_members` for existing memberships.
-2. Backend checks `organization_invites` for pending invitations matching the user's verified email.
-3. **If invited:** The user is linked to the inviting organization with the specified role and proceeds to the dashboard.
-4. **If not invited and has no organizations:**
-   - User is placed in an `ONBOARDING` status.
-   - Frontend displays the **Create Organization Modal**.
-   - Required fields:
-     - **Organization Legal Name** (String, 2-100 characters)
-     - **Australian Business Number (ABN)** (11 digits, validated against standard ATO ABN checksum algorithm)
-   - On submission (`POST /api/v1/organizations`):
-     - An `organizations` record is created.
-     - The user is assigned the `ADMIN` role in `organization_members`.
-     - Default Chart of Accounts is seeded for that organization.
-
-### Session Delivery
-- Fastify issues a signed, encrypted session cookie (`HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`).
-- The cookie payload contains:
-  ```json
-  {
-    "userId": "uuid",
-    "organizationId": "uuid",
-    "role": "ADMIN"
-  }
-  ```
-- Fastify middleware decorates `request.user` and `request.organizationId` on every authenticated call.
-
-### Multi-Tenant 7-Role RBAC Matrix
-Roles defined in `organization_members.role` (strictly compartmentalized by domain):
-- `ADMIN`: Full access to company settings, lock dates, enabled modules, user invites, GL, AR, AP, Expenses, Banking, and Audit Logs.
-- `ACCOUNTANT`: Full access to CoA, Tracking Dimensions, GL, manual journals, 1-click approvals, AR, AP, Expenses, Banking, and BAS/financial reporting; cannot alter org module flags or delete the organization.
-- `MANAGER`: Operational approver; can approve Purchase Orders and Team Employee Expense Claims, read contacts/items/AR/AP, and submit own expenses; no access to GL journals or bank settings.
-- `AR_SPECIALIST`: Domain-scoped to Customers, Items, Quotes, Customer Invoices, AR Credit Notes, and Payments In; cannot view AP bills, payroll/reimbursements, or full GL.
-- `AP_SPECIALIST`: Domain-scoped to Vendors, Items, Purchase Orders, Vendor Bills, AP Credit Notes, Direct Spend Money, and preparing Batch Payment runs; cannot view AR invoices or full GL.
-- `EMPLOYEE`: Strictly isolated to submitting and viewing their own Employee Expense Claims (and assigned operational modules like Fleet/Inventory when enabled); zero access to company financials, GL, AR, AP, or Contacts.
-- `AUDITOR`: Read-only access across all financial records, reports, and the Immutable System Audit Log.
-
----
-
-## 8. Machine-to-Machine Security & Webhooks (Core API $\rightarrow$ n8n)
-
-- Outbound communication from Fastify to n8n is protected by a pre-shared 64-character secret.
-- Header: `X-Webhook-Secret: <WEBHOOK_SECRET_ENV>`
-- Standardized Event Schema:
-  ```json
-  {
-    "event": "invoice.issued",
-    "event_id": "evt_uuid",
-    "timestamp": "2026-11-01T04:30:00Z",
-    "organization_id": "org_uuid",
-    "triggered_by_user_id": "usr_uuid",
-    "data": {
-      "invoice_id": "inv_uuid",
-      "invoice_number": "INV-1001",
-      "customer_email": "client@example.com",
-      "total_cents": 132000
-    }
-  }
-  ```
-
----
-
-## 9. Corporate Precision Design System & UI/UX Specifications
-
-The frontend implements an institutional, high-density financial interface codified in `docs/DESIGN_SYSTEM.md`.
-
-### Core Aesthetic Principles
-- **Architectural & Crisp Geometry:** Max corner radius of `4px` (`rounded`) on buttons/inputs/status tags and `6px` (`rounded-md`) on structural containers. Zero drop-shadows on cards/tables; rely on `1px solid` hairline borders (`border-slate-200`). Never use `rounded-xl`, `rounded-2xl`, `rounded-full` pill badges, or pastel icon boxes.
-- **Process Pipeline Ribbons:** Every workflow module features a connected horizontal lifecycle pipeline (`Draft ➔ Pending Approval ➔ Open ➔ Overdue ➔ Paid`) displaying live record counts and AUD totals in `JetBrains Mono` that acts as both a process map and a 1-click filter.
-- **Right-Hand Slide-Over Inspector Drawers (`Drawer`):** Clicking a table row opens a full-height right-hand drawer showing metadata, approval controls, the exact Double-Entry General Ledger impact (`DEBIT`/`CREDIT`), and the record's audit log while preserving table context on the left.
-
-### Typography Hierarchy (`Inter` + `JetBrains Mono`)
-1. **Interface & Prose (`font-sans`):** **Inter** (`300`, `400`, `500`, `600`). Headings use `font-medium` (500) with `tracking-tight`.
-2. **Financial Figures, GL Codes & Identifiers (`font-numbers` / `font-mono`):** **JetBrains Mono** (`400`, `500`, `600`) with `tabular-nums`. Mandatory on all monetary amounts, GL account codes (`1000`), document numbers (`INV-1001`), ABNs, BSBs, and transaction dates.
-
-### Brand Palette (Obsidian Carbon & Institutional Forest)
-- **Obsidian Carbon Navigation Frame:** `#0B1311` (`bg-obsidian-950`) sidebar with `#111E1A` (`bg-obsidian-900`) active surfaces and `border-white/[0.08]` hairline dividers.
-- **Work Surface:** `#F8FAFC` (`bg-slate-50`) canvas with `#FFFFFF` (`bg-white`) bordered workbenches and `36px–40px` compact table rows.
-- **Primary Accents:** Institutional Forest `#14382C` (`bg-forest-900`), Hover `#1B4D3E` (`hover:bg-forest-700`), Emerald Signal `#10B981` (`text-emerald-500`), and Warm Brass/Amber (`#B45309`) for approval states.
-- **Squared Status Tags:** `rounded` (`4px`) bordered tags with a `6px` semantic dot (`border-emerald-200`, `border-amber-200`, `border-rose-200`, `border-slate-300`).
-
----
-
-## 10. Product Modules & Delivery Roadmap
-
-The platform separates **Product Modules** (canonical commercial/functional domains documented in `docs/modules/*.md`: `CORE_PLATFORM`, `CORE_ACCOUNTING`, `RECEIVABLES`, `PAYABLES`, `EXPENSES`, `CONNECTORS`, `DOCUMENTS`, `PROJECTS`, `INVENTORY`, `FLEET`, `PAYROLL`, and internal `DEVELOPER_PORTAL`) from **Delivery Stages** tracked in `docs/STAGES_ROADMAP.md`:
-
-- **Completed Stages (1–13):** Workspace/RBAC, Financial Spine (CoA/GL), Master Data (Contacts/Items), AR, AP & `.ABA`, Expenses, Banking & Reconciliation, Financial Reports & BAS, Developer Console, Corporate Precision UI/UX & A4 Print Engine, Transactional Integrity & Bidirectional GL Sync, Admin Bulk CSV Import & Multi-Mode Reconciliation, and Prisma-Native Schema Self-Healing & DB Manager.
-- **Active Upcoming Stages (14–16):**
-  - **Stage 14:** Commercial Product Module Architecture, `requireModule` Entitlement Gating, Automated Recurring Runner & Agent Module Contexts
-  - **Stage 15:** Connectors Hub Phase 1 — Inbound Scoped API Keys, Outbound Webhooks (n8n) & `AES-256-GCM` Secret Vault
-  - **Stage 16:** Connectors Hub Phase 2 — Google Workspace OAuth Connectors (Drive, Sheets & Calendar)
-- **Deferred Stages (D1–D5):** `D1 DOCUMENTS` (GCS Vault), `D2 PROJECTS`, `D3 INVENTORY`, `D4 FLEET`, and `D5 PAYROLL` (Australian Payroll & STP Phase 2).
+- **Canonical Product Modules (`docs/modules/README.md`):** `CORE_PLATFORM`, `CORE_ACCOUNTING`, `RECEIVABLES`, `PAYABLES`, `EXPENSES`, `CONNECTORS`, `DOCUMENTS`, `PROJECTS`, `INVENTORY`, `FLEET`, `PAYROLL`, and internal `DEVELOPER_PORTAL`.
+- **Delivery Stages (`docs/STAGES_ROADMAP.md`):** Stages 1–13 completed; Stages 14–16 active (`Module Gating & Recurring Runner`, `Connectors Hub Phase 1`, `Connectors Hub Phase 2 — Google Workspace`); Deferred Stages D1–D5 (`DOCUMENTS`, `PROJECTS`, `INVENTORY`, `FLEET`, `PAYROLL`).

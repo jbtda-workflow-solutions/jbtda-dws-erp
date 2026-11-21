@@ -46,7 +46,35 @@
 
 ---
 
-## 4. RBAC & Module Gate
+## 4. Standard Outbound Webhook Envelope & Event Catalogue
+
+All outbound webhooks (n8n, Zapier, custom endpoints) are non-blocking, fire-and-forget post-commit dispatches signed with `X-Webhook-Signature` (HMAC-SHA256) and/or `X-Webhook-Secret`, conforming to:
+
+```json
+{
+  "event": "invoice.issued",
+  "event_id": "evt_uuid",
+  "timestamp": "2026-11-01T05:30:00Z",
+  "organization_id": "org_uuid",
+  "triggered_by_user_id": "usr_uuid",
+  "data": {}
+}
+```
+
+| Event | Trigger | Core `data` Fields |
+| :--- | :--- | :--- |
+| `invoice.issued` | Invoice transitions `DRAFT` → `ISSUED` | `invoice_id`, `invoice_number`, `customer_name`, `customer_email`, `due_date`, `subtotal_cents`, `gst_cents`, `total_cents` |
+| `invoice.payment_received` | Payment recorded against Invoice | `invoice_id`, `invoice_number`, `payment_id`, `amount_cents`, `new_status`, `customer_email` |
+| `bill.approved` | Bill transitions `DRAFT`/`PENDING_APPROVAL` → `AWAITING_PAYMENT` | `bill_id`, `vendor_name`, `reference`, `due_date`, `total_cents`, `gl_posted` |
+| `expense.reimbursed` | Expense Claim marked `PAID` | `claim_id`, `member_id`, `total_cents`, `paid_at`, `bank_account_id` |
+| `bas.locked` | Accounting period locked in BAS Engine | `lock_date`, `start_date`, `end_date`, `net_gst_cents`, `net_gst_type` |
+| `bank.reconciled` | Bank statement lines matched against GL | `account_id`, `statement_line_count`, `reconciled_balance_cents` |
+
+- Consumers MUST treat `event_id` as an idempotency key.
+
+---
+
+## 5. RBAC & Module Gate
 
 - **Module Gate:** `requireModule('CONNECTORS')`
 - **RBAC:** `ADMIN` (manage API keys, webhooks, OAuth connections, revoke tokens); `ACCOUNTANT` (trigger Sheets/Drive/Calendar syncs, inspect delivery logs); all other roles denied.

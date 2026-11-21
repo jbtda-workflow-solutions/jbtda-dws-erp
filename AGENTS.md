@@ -4,18 +4,25 @@ This file is the root agent operating manual for the JBTDA-DWS-ERP repository.
 All AI agents working in this codebase MUST read and follow these rules before
 writing any code.
 
-## Zero-Memory Protocol
+## Zero-Memory Protocol (Tiered Context Loading)
 
 **Never assume context from a previous chat session.** The sole source of truth
-is the code and documentation committed to this repository. Begin every session
-by reading:
+is the code and documentation committed to this repository. To keep token usage
+lean while maintaining 100% accuracy, load context in two tiers:
 
-1. `AGENT_SPECIFICATION.md` — master spec and architecture
-2. `docs/ARCHITECTURE.md` — topology and service boundaries
-3. `docs/DATABASE_SCHEMA.md` — current Prisma schema and migration log
-4. `docs/SECURITY.md` — auth mechanics and RBAC rules
-5. `docs/CHANGELOG.md` — latest changes
-6. `docs/modules/README.md` (and the relevant `docs/modules/<module>.md` domain context when working on a specific Product Module)
+### Tier 1 — Always Read at Session Start
+1. `AGENTS.md` — root operating rules & directory layout (auto-loaded)
+2. `docs/modules/README.md` — canonical Product Module registry & invariants
+3. `docs/CHANGELOG.md` — **top ~60 lines only** (latest 1–2 releases)
+
+### Tier 2 — Load On Demand (Task-Scoped)
+- **Working on a specific Product Module:** Read *only* `docs/modules/<module>.md`
+- **Core financial rules / GST / integer-cent invariants:** `AGENT_SPECIFICATION.md`
+- **API routes, topology, Cloud Run env vars & secrets:** `docs/ARCHITECTURE.md`
+- **Auth, session cookies, crypto, or 7-Role RBAC matrix:** `docs/SECURITY.md`
+- **Database models & fields:** Read `backend/prisma/schema.prisma` directly (`docs/DATABASE_SCHEMA.md` holds invariants & migration log)
+- **UI/UX styling & component geometry:** `docs/DESIGN_SYSTEM.md`
+- **Building or updating a delivery stage:** Read the target stage in `docs/STAGES_ROADMAP.md`
 
 ## Mandatory Rules
 
@@ -80,8 +87,8 @@ by reading:
     standard" (e.g. `/healthz`, OAuth callbacks, SPA catch-alls, static assets,
     configuration endpoints).
     Furthermore, every environment variable, runtime configuration parameter, and
-    Secret Manager secret read by the application MUST be documented in `AGENTS.md`
-    and `docs/ARCHITECTURE.md` with:
+    Secret Manager secret read by the application MUST be documented in
+    `docs/ARCHITECTURE.md` (single source of truth) with:
     - Exact variable name and source (Cloud Run env var or Secret Manager)
     - Concrete purpose
     - Explicit permitted values or types (e.g. `"true"` | `"false"`, non-empty string)
@@ -118,31 +125,7 @@ by reading:
 ## Cloud Run Runtime Configuration (Variables & Secrets)
 
 The application relies strictly on Google Cloud Run container configuration (zero `.env` files in production).
-Every variable and secret must be explicitly defined. **No configuration values may be left empty or omitted.**
-
-### 1. Cloud SQL Connections (Cloud Run UI)
-- Attached Instance: `PROJECT_ID:REGION:INSTANCE_NAME` (e.g. `digitalworkflowsolutions-erp:us-central1:erp`).
-- Cloud Run automatically mounts the Unix socket into `/cloudsql/<INSTANCE_CONNECTION_NAME>`. The Prisma plugin auto-discovers this path.
-
-### 2. Environment Variables (Cloud Run UI)
-| Variable | Source | Required / Default | Permitted Values | Failure Behavior | Purpose |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `INSTANCE_CONNECTION_NAME` | Cloud Run Env | Required in Cloud Run | Format: `PROJECT:REGION:INSTANCE` (non-empty string) | If missing or invalid, Unix socket `/cloudsql/<INSTANCE>` is not found; database connection fails with error log | Cloud SQL instance connection name. Explicitly defines the Cloud SQL Unix socket target (`/cloudsql/<INSTANCE_CONNECTION_NAME>`). Required for multi-tenant isolation and portable tenant/client forks. |
-| `GOOGLE_CLIENT_ID` | Cloud Run Env | Required | Non-empty Google OAuth Client ID string ending in `.apps.googleusercontent.com` | Google token verification rejects all tokens with `401 Unauthorized`; `/api/v1/auth/config` returns empty ID | Google OAuth 2.0 Web Client ID (used for backend token verification & served to frontend via `/api/v1/auth/config`). |
-| `DB_USER` | Cloud Run Env | Required | Non-empty string (e.g. `erp_admin`) | Prisma connection throws PostgreSQL authentication error; `/healthz` returns `503 Service Unavailable` | PostgreSQL database user. |
-| `DB_NAME` | Cloud Run Env | Required | Non-empty string (e.g. `erp`) | Prisma connection fails (database does not exist); `/healthz` returns `503 Service Unavailable` | PostgreSQL database name on the Cloud SQL instance. |
-| `FRONTEND_ORIGIN` | Cloud Run Env | Required if cross-origin | Valid URL string or comma-separated list of URLs (e.g. `https://erp.domain1.com,https://erp.domain2.com`) | CORS preflight checks reject cross-origin requests from unlisted origins | Allowed origin(s) for CORS in development/preview or multi-domain environments. In unified production, frontend and API share the same origin. |
-| `NODE_ENV` | Cloud Run Env | Required | `"production"` \| `"development"` | Defaults to development logging; cookie `Secure` flag may not be strictly enforced | Runtime environment mode. Must be set to `"production"` on Cloud Run. |
-| `PORT` | Cloud Run Env | Optional (Default: `8080`) | Numeric integer string (e.g. `"8080"`) | Container fails Cloud Run health check if not listening on the port Cloud Run expects | Port Fastify binds to. Automatically injected by Cloud Run. |
-| `HOST` | Cloud Run Env | Optional (Default: `"0.0.0.0"`) | IP string (e.g. `"0.0.0.0"`) | Binding to `127.0.0.1` causes container to be unreachable from outside | Host interface Fastify binds to. |
-| `FRONTEND_DIST_PATH` | Cloud Run Env | Optional (Default: auto-discovery) | Valid directory path containing `index.html` (e.g. `"/app/frontend/dist"`) | Fastify logs warning and serves API-only fallback HTML page on root; SPA routes return 404 | Custom filesystem path for compiled frontend SPA assets. |
-
-### 3. Secrets Exposed as Environment Variables (Secret Manager)
-| Secret in Secret Manager | Mounted Variable | Required | Permitted Values | Failure Behavior | Purpose |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| Database user password (e.g. `user_erp_admin_pass...`) | `DB_PASSWORD` | Required | Non-empty string | Prisma connection throws PostgreSQL authentication error; `/healthz` returns `503` | PostgreSQL user password. |
-| Session secret (e.g. `erp_session_secret`) | `SESSION_SECRET` | Required | Cryptographically random string $\ge 32$ characters | Unsigned session cookies cannot be parsed or verified; auth fails | Secret key used for signing and encrypting `erp_session` HttpOnly cookies. |
-| Webhook secret (Stage 2) (e.g. `erp_webhook_secret`) | `WEBHOOK_SECRET` | Required for automations | Cryptographically random hex string of 64 characters | Outbound n8n webhook dispatches fail signature verification | Shared pre-shared secret transmitted in `X-Webhook-Secret` header to authenticate async n8n jobs. |
+**Single Source of Truth:** See `docs/ARCHITECTURE.md` (*Configuration via Cloud Run Container Interface*) for the complete, authoritative specification of Cloud SQL Unix socket mounting (`/cloudsql/<INSTANCE_CONNECTION_NAME>`), all Environment Variables, and all Secret Manager secrets with permitted values and failure behaviors.
 
 ## Directory Layout (Living Source of Truth)
 
