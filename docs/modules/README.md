@@ -19,7 +19,7 @@ Unlike **Delivery Stages** in `docs/STAGES_ROADMAP.md` (which track sequential e
 | `RECEIVABLES` | **Standard Commercial** | ✅ Live | Sales / AR (`/invoices`) | [receivables.md](./receivables.md) |
 | `PAYABLES` | **Standard Commercial** | ✅ Live | Purchases / AP (`/bills`) | [payables.md](./payables.md) |
 | `EXPENSES` | **Standard Commercial** | ✅ Live | Spend & Claims (`/expenses`) | [expenses.md](./expenses.md) |
-| `CONNECTORS` | **Pro / Integrations Add-On** | 🛠️ Planned (Stages 15–16) | Integrations (`/connectors`) | [connectors.md](./connectors.md) |
+| `CONNECTORS` | **Pro / Integrations Add-On** | ✅ Live (Stages 15–16; Webhooks D6) | Integrations (`/connectors`) | [connectors.md](./connectors.md) |
 | `DOCUMENTS` | **Pro Add-On** | ⏸️ Deferred (Stage D1) | Cross-cutting Attachment Vault | [documents.md](./documents.md) |
 | `PROJECTS` | **Enterprise Add-On** | ⏸️ Deferred (Stage D2) | Operations / Projects (`/projects`) | [projects.md](./projects.md) |
 | `INVENTORY` | **Enterprise Add-On** | ⏸️ Deferred (Stage D3) | Operations / Inventory (`/inventory`) | [inventory.md](./inventory.md) |

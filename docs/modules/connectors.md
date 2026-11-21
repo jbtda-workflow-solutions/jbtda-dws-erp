@@ -2,7 +2,7 @@
 
 - **Module Key:** `CONNECTORS`
 - **Commercial Tier:** Pro / Integrations Add-On
-- **Status:** 🛠️ Planned — Active Stages 15–16 (`/connectors` UI, Inbound API Keys & Google Workspace); Outbound Webhooks / n8n Deferred (Stage D6)
+- **Status:** ✅ Live (Stages 15–16: `/connectors` UI, Inbound API Keys & Google Workspace Drive/Sheets/Calendar); Outbound Webhooks / n8n Deferred (Stage D6)
 
 ---
 

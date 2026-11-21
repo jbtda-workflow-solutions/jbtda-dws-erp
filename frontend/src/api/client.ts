@@ -2942,6 +2942,75 @@ export const connectorsApi = {
       'DELETE',
       `/connectors/api-keys/${id}`,
     ),
+
+  getGoogleAuthorizeUrl: () =>
+    request<{ authorizeUrl: string; redirectUri: string }>(
+      'GET',
+      '/connectors/oauth/google/authorize',
+    ),
+
+  disconnectGoogle: () =>
+    request<{ ok: boolean; alreadyDisconnected?: boolean }>(
+      'DELETE',
+      '/connectors/oauth/google',
+    ),
+
+  updateGoogleConfig: (data: {
+    spreadsheetId?: string | null;
+    driveFolderId?: string | null;
+    calendarId?: string | null;
+  }) =>
+    request<{
+      ok: boolean;
+      config: {
+        spreadsheetId?: string | null;
+        driveFolderId?: string | null;
+        calendarId?: string | null;
+      };
+    }>('PATCH', '/connectors/google/config', data),
+
+  exportGoogleSheets: (data: {
+    reportType:
+      | 'TRIAL_BALANCE'
+      | 'PROFIT_AND_LOSS'
+      | 'BALANCE_SHEET'
+      | 'AGED_AR'
+      | 'AGED_AP'
+      | 'GENERAL_LEDGER';
+    spreadsheetId?: string;
+    startDate?: string;
+    endDate?: string;
+    asOfDate?: string;
+  }) =>
+    request<{
+      ok: boolean;
+      spreadsheetId: string;
+      sheetTitle: string;
+      rowCount: number;
+      spreadsheetUrl: string;
+    }>('POST', '/connectors/google/sheets/export', data),
+
+  syncGoogleDrive: (data?: { driveFolderId?: string }) =>
+    request<{
+      ok: boolean;
+      rootFolderId: string;
+      monthFolderId: string;
+      filesUploaded: number;
+      fileNames: string[];
+    }>('POST', '/connectors/google/drive/sync', data ?? {}),
+
+  syncGoogleCalendar: (data?: { calendarId?: string }) =>
+    request<{
+      ok: boolean;
+      calendarId: string;
+      syncedCount: number;
+      breakdown: {
+        invoices: number;
+        bills: number;
+        recurring: number;
+        bas: number;
+      };
+    }>('POST', '/connectors/google/calendar/sync', data ?? {}),
 };
 
 

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Key,
   Plug,
@@ -13,6 +14,8 @@ import {
   Table2,
   Calendar,
   Lock,
+  ExternalLink,
+  Unlink,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -45,6 +48,7 @@ function formatDateTime(iso: string | null | undefined): string {
 
 export function ConnectorsPage() {
   const { role } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isAdmin = role === 'ADMIN';
   const canAccess = role === 'ADMIN' || role === 'ACCOUNTANT';
 
@@ -57,6 +61,25 @@ export function ConnectorsPage() {
   const [loading, setLoading] = useState(true);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
+
+  // Google Workspace config & sync state (Module 16)
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
+  const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
+  const [spreadsheetIdInput, setSpreadsheetIdInput] = useState('');
+  const [driveFolderIdInput, setDriveFolderIdInput] = useState('');
+  const [calendarIdInput, setCalendarIdInput] = useState('primary');
+  const [savingGoogleConfig, setSavingGoogleConfig] = useState(false);
+  const [selectedReportType, setSelectedReportType] = useState<
+    | 'TRIAL_BALANCE'
+    | 'PROFIT_AND_LOSS'
+    | 'BALANCE_SHEET'
+    | 'AGED_AR'
+    | 'AGED_AP'
+    | 'GENERAL_LEDGER'
+  >('TRIAL_BALANCE');
+  const [syncingSheets, setSyncingSheets] = useState(false);
+  const [syncingDrive, setSyncingDrive] = useState(false);
+  const [syncingCalendar, setSyncingCalendar] = useState(false);
 
   // Create API Key modal
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -86,6 +109,15 @@ export function ConnectorsPage() {
       setOverview(ov);
       setScopes(ov.availableScopes);
 
+      const gAcc = ov.connectedApps.find(
+        (a) => a.provider === 'GOOGLE_WORKSPACE',
+      );
+      if (gAcc?.config) {
+        setSpreadsheetIdInput(String(gAcc.config['spreadsheetId'] ?? ''));
+        setDriveFolderIdInput(String(gAcc.config['driveFolderId'] ?? ''));
+        setCalendarIdInput(String(gAcc.config['calendarId'] ?? 'primary'));
+      }
+
       if (isAdmin) {
         const keyResp = await connectorsApi.listApiKeys();
         setApiKeys(keyResp.apiKeys);
@@ -105,8 +137,152 @@ export function ConnectorsPage() {
   }, [canAccess, isAdmin]);
 
   useEffect(() => {
+    const googleStatus = searchParams.get('google');
+    const googleError = searchParams.get('google_error');
+    if (googleStatus === 'connected') {
+      setSuccessBanner('Google Workspace connected and OAuth refresh token encrypted in vault.');
+      searchParams.delete('google');
+      setSearchParams(searchParams, { replace: true });
+    } else if (googleError) {
+      setErrorBanner(googleError);
+      searchParams.delete('google_error');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const handleConnectGoogle = async () => {
+    setConnectingGoogle(true);
+    setErrorBanner(null);
+    try {
+      const { authorizeUrl } = await connectorsApi.getGoogleAuthorizeUrl();
+      window.location.href = authorizeUrl;
+    } catch (err) {
+      setErrorBanner(
+        err instanceof ApiError
+          ? err.message
+          : 'Failed to initialize Google Workspace OAuth flow.',
+      );
+      setConnectingGoogle(false);
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    setDisconnectingGoogle(true);
+    setErrorBanner(null);
+    setSuccessBanner(null);
+    try {
+      await connectorsApi.disconnectGoogle();
+      setSuccessBanner('Google Workspace disconnected and encrypted tokens purged.');
+      await loadData();
+    } catch (err) {
+      setErrorBanner(
+        err instanceof ApiError
+          ? err.message
+          : 'Failed to disconnect Google Workspace.',
+      );
+    } finally {
+      setDisconnectingGoogle(false);
+    }
+  };
+
+  const handleSaveGoogleConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingGoogleConfig(true);
+    setErrorBanner(null);
+    setSuccessBanner(null);
+    try {
+      await connectorsApi.updateGoogleConfig({
+        spreadsheetId: spreadsheetIdInput.trim() || null,
+        driveFolderId: driveFolderIdInput.trim() || null,
+        calendarId: calendarIdInput.trim() || 'primary',
+      });
+      setSuccessBanner('Google Workspace target IDs saved.');
+      await loadData();
+    } catch (err) {
+      setErrorBanner(
+        err instanceof ApiError
+          ? err.message
+          : 'Failed to save Google Workspace configuration.',
+      );
+    } finally {
+      setSavingGoogleConfig(false);
+    }
+  };
+
+  const handleExportSheets = async () => {
+    setSyncingSheets(true);
+    setErrorBanner(null);
+    setSuccessBanner(null);
+    try {
+      const res = await connectorsApi.exportGoogleSheets({
+        reportType: selectedReportType,
+        ...(spreadsheetIdInput.trim()
+          ? { spreadsheetId: spreadsheetIdInput.trim() }
+          : {}),
+      });
+      setSuccessBanner(
+        `Exported ${res.rowCount} row(s) to Google Sheets tab "${res.sheetTitle}".`,
+      );
+      await loadData();
+    } catch (err) {
+      setErrorBanner(
+        err instanceof ApiError
+          ? err.message
+          : 'Google Sheets export failed.',
+      );
+    } finally {
+      setSyncingSheets(false);
+    }
+  };
+
+  const handleSyncDrive = async () => {
+    setSyncingDrive(true);
+    setErrorBanner(null);
+    setSuccessBanner(null);
+    try {
+      const res = await connectorsApi.syncGoogleDrive(
+        driveFolderIdInput.trim()
+          ? { driveFolderId: driveFolderIdInput.trim() }
+          : undefined,
+      );
+      setDriveFolderIdInput(res.rootFolderId);
+      setSuccessBanner(
+        `Archived ${res.filesUploaded} CSV file(s) to Google Drive (${res.fileNames.join(', ')}).`,
+      );
+      await loadData();
+    } catch (err) {
+      setErrorBanner(
+        err instanceof ApiError ? err.message : 'Google Drive sync failed.',
+      );
+    } finally {
+      setSyncingDrive(false);
+    }
+  };
+
+  const handleSyncCalendar = async () => {
+    setSyncingCalendar(true);
+    setErrorBanner(null);
+    setSuccessBanner(null);
+    try {
+      const res = await connectorsApi.syncGoogleCalendar({
+        calendarId: calendarIdInput.trim() || 'primary',
+      });
+      setSuccessBanner(
+        `Synced ${res.syncedCount} finance deadline(s) to Google Calendar "${res.calendarId}" (${res.breakdown.invoices} AR, ${res.breakdown.bills} AP, ${res.breakdown.recurring} recurring, ${res.breakdown.bas} BAS).`,
+      );
+      await loadData();
+    } catch (err) {
+      setErrorBanner(
+        err instanceof ApiError ? err.message : 'Google Calendar sync failed.',
+      );
+    } finally {
+      setSyncingCalendar(false);
+    }
+  };
 
   const scopesByDomain = useMemo(() => {
     const map = new Map<string, ApiKeyScopeDefinition[]>();
@@ -378,7 +554,7 @@ export function ConnectorsPage() {
           <div className="rounded-md border border-slate-200 bg-white">
             <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-sm font-semibold text-slate-900">
                     Google Workspace Connector
                   </h2>
@@ -386,56 +562,226 @@ export function ConnectorsPage() {
                     label={
                       googleAccount?.status === 'CONNECTED'
                         ? 'Connected'
-                        : 'Stage 16 OAuth Ready'
+                        : overview?.googleOAuthConfigured &&
+                            overview?.encryptionConfigured
+                          ? 'Ready to Connect'
+                          : 'Config Required'
                     }
                     tone={
                       googleAccount?.status === 'CONNECTED'
                         ? 'emerald'
-                        : 'amber'
+                        : overview?.googleOAuthConfigured &&
+                            overview?.encryptionConfigured
+                          ? 'info'
+                          : 'amber'
                     }
                   />
+                  {googleAccount?.externalAccountEmail &&
+                    googleAccount.status === 'CONNECTED' && (
+                      <span className="font-mono text-xs text-slate-600">
+                        {googleAccount.externalAccountEmail}
+                      </span>
+                    )}
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  Dedicated OAuth 2.0 offline-access integration (separate from user sign-in) with encrypted refresh token storage in{' '}
+                  Dedicated OAuth 2.0 offline-access integration (separate from user sign-in) with AES-256-GCM encrypted refresh tokens in{' '}
                   <span className="font-mono text-slate-700">connector_accounts</span>.
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" disabled>
-                  Connect Google Workspace (Stage 16)
-                </Button>
+                {isAdmin && googleAccount?.status === 'CONNECTED' ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    loading={disconnectingGoogle}
+                    onClick={() => void handleDisconnectGoogle()}
+                    className="border-red-200 text-red-700 hover:bg-red-50"
+                  >
+                    <Unlink className="mr-1.5 h-3.5 w-3.5" />
+                    Disconnect
+                  </Button>
+                ) : isAdmin ? (
+                  <Button
+                    size="sm"
+                    loading={connectingGoogle}
+                    disabled={
+                      !overview?.encryptionConfigured ||
+                      !overview?.googleOAuthConfigured
+                    }
+                    onClick={() => void handleConnectGoogle()}
+                  >
+                    <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                    Connect Google Workspace
+                  </Button>
+                ) : null}
               </div>
             </div>
 
+            {(!overview?.encryptionConfigured ||
+              !overview?.googleOAuthConfigured) &&
+              googleAccount?.status !== 'CONNECTED' && (
+                <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
+                  <strong>Cloud Run Configuration Required:</strong> Mount{' '}
+                  <span className="font-mono">ENCRYPTION_KEY</span> (64-char hex)
+                  and{' '}
+                  <span className="font-mono">GOOGLE_OAUTH_CLIENT_SECRET</span>{' '}
+                  in Secret Manager (plus optional{' '}
+                  <span className="font-mono">PUBLIC_BASE_URL</span>) and add{' '}
+                  <span className="font-mono">
+                    {window.location.origin}/api/v1/connectors/oauth/google/callback
+                  </span>{' '}
+                  as an Authorized Redirect URI in Google Cloud Console.
+                </div>
+              )}
+
+            {/* Target Configuration Form when Connected */}
+            {googleAccount?.status === 'CONNECTED' && (
+              <form
+                onSubmit={(e) => void handleSaveGoogleConfig(e)}
+                className="border-b border-slate-200 bg-slate-50/60 p-4"
+              >
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                      Google Spreadsheet ID (Sheets Export)
+                    </label>
+                    <Input
+                      placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+                      value={spreadsheetIdInput}
+                      onChange={(e) => setSpreadsheetIdInput(e.target.value)}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                      Drive Archive Folder ID (blank = auto-create)
+                    </label>
+                    <Input
+                      placeholder="Auto-creates 'JBTDA-DWS ERP Archive'"
+                      value={driveFolderIdInput}
+                      onChange={(e) => setDriveFolderIdInput(e.target.value)}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                      Google Calendar ID
+                    </label>
+                    <Input
+                      placeholder="primary"
+                      value={calendarIdInput}
+                      onChange={(e) => setCalendarIdInput(e.target.value)}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-end">
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant="outline"
+                    loading={savingGoogleConfig}
+                  >
+                    Save Target IDs
+                  </Button>
+                </div>
+              </form>
+            )}
+
             <div className="grid grid-cols-1 divide-y divide-slate-200 md:grid-cols-3 md:divide-x md:divide-y-0">
-              <div className="p-4">
-                <div className="flex items-center gap-2 text-slate-900">
-                  <FolderSync className="h-4 w-4 text-forest-800" />
-                  <span className="text-xs font-semibold">Google Drive</span>
+              {/* Google Drive Card */}
+              <div className="flex flex-col justify-between p-4 gap-3">
+                <div>
+                  <div className="flex items-center gap-2 text-slate-900">
+                    <FolderSync className="h-4 w-4 text-forest-800" />
+                    <span className="text-xs font-semibold">Google Drive</span>
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                    Archive Trial Balance, Customer Invoices, and Vendor Bills CSV packs into organized <span className="font-mono">YYYY/YYYY-MM</span> Drive folders.
+                  </p>
                 </div>
-                <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
-                  Archive structured financial snapshots, tax invoice records, and quarterly BAS summaries into organized year/month Drive folders.
-                </p>
+                <div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    loading={syncingDrive}
+                    disabled={googleAccount?.status !== 'CONNECTED'}
+                    onClick={() => void handleSyncDrive()}
+                  >
+                    Archive Financial Pack Now
+                  </Button>
+                </div>
               </div>
 
-              <div className="p-4">
-                <div className="flex items-center gap-2 text-slate-900">
-                  <Table2 className="h-4 w-4 text-forest-800" />
-                  <span className="text-xs font-semibold">Google Sheets</span>
+              {/* Google Sheets Card */}
+              <div className="flex flex-col justify-between p-4 gap-3">
+                <div>
+                  <div className="flex items-center gap-2 text-slate-900">
+                    <Table2 className="h-4 w-4 text-forest-800" />
+                    <span className="text-xs font-semibold">Google Sheets</span>
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                    Push live financial reports directly into named tabs in your linked Google Spreadsheet.
+                  </p>
+                  <select
+                    value={selectedReportType}
+                    onChange={(e) =>
+                      setSelectedReportType(
+                        e.target.value as typeof selectedReportType,
+                      )
+                    }
+                    disabled={googleAccount?.status !== 'CONNECTED'}
+                    className="mt-2.5 w-full rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-forest-700 focus:outline-none"
+                  >
+                    <option value="TRIAL_BALANCE">Trial Balance</option>
+                    <option value="PROFIT_AND_LOSS">Profit &amp; Loss</option>
+                    <option value="BALANCE_SHEET">Balance Sheet</option>
+                    <option value="AGED_AR">Aged Receivables (AR)</option>
+                    <option value="AGED_AP">Aged Payables (AP)</option>
+                    <option value="GENERAL_LEDGER">General Ledger (Latest 250)</option>
+                  </select>
                 </div>
-                <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
-                  Push live Profit &amp; Loss, Trial Balance, Balance Sheet, Aged AR/AP, and General Ledger extracts directly to a linked spreadsheet.
-                </p>
+                <div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    loading={syncingSheets}
+                    disabled={
+                      googleAccount?.status !== 'CONNECTED' ||
+                      !spreadsheetIdInput.trim()
+                    }
+                    onClick={() => void handleExportSheets()}
+                  >
+                    Export Report to Sheets
+                  </Button>
+                </div>
               </div>
 
-              <div className="p-4">
-                <div className="flex items-center gap-2 text-slate-900">
-                  <Calendar className="h-4 w-4 text-forest-800" />
-                  <span className="text-xs font-semibold">Google Calendar</span>
+              {/* Google Calendar Card */}
+              <div className="flex flex-col justify-between p-4 gap-3">
+                <div>
+                  <div className="flex items-center gap-2 text-slate-900">
+                    <Calendar className="h-4 w-4 text-forest-800" />
+                    <span className="text-xs font-semibold">Google Calendar</span>
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                    Idempotently sync open AR/AP due dates, ATO quarterly BAS lodgement deadlines, and recurring run dates.
+                  </p>
                 </div>
-                <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
-                  Synchronize open Customer Invoice due dates, Vendor Bill due dates, ATO BAS lodgement deadlines, and recurring run dates.
-                </p>
+                <div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    loading={syncingCalendar}
+                    disabled={googleAccount?.status !== 'CONNECTED'}
+                    onClick={() => void handleSyncCalendar()}
+                  >
+                    Sync Finance Deadlines
+                  </Button>
+                </div>
               </div>
             </div>
           </div>

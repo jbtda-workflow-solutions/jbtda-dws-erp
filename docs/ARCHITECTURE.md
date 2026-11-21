@@ -97,6 +97,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 | `PORT` | Cloud Run Env | Optional (Default: `8080`) | Numeric integer string (e.g. `"8080"`) | Container fails Cloud Run health check if not listening on the port Cloud Run expects | Port Fastify binds to. Automatically injected by Cloud Run. |
 | `HOST` | Cloud Run Env | Optional (Default: `"0.0.0.0"`) | IP string (e.g. `"0.0.0.0"`) | Binding to `127.0.0.1` causes container to be unreachable from outside | Host interface Fastify binds to. |
 | `FRONTEND_DIST_PATH` | Cloud Run Env | Optional (Default: auto-discovery) | Valid directory path containing `index.html` (e.g. `"/app/frontend/dist"`) | Fastify logs warning and serves API-only fallback HTML page on root; SPA routes return 404 | Custom filesystem path for compiled frontend SPA assets. |
+| `PUBLIC_BASE_URL` | Cloud Run Env | Optional (Default: request `x-forwarded-proto` + `host`) | Valid HTTPS origin without trailing slash (e.g. `https://erp.example.com`) | Falls back to request headers when constructing OAuth callback URI | Canonical public HTTPS origin used to construct exact Google Workspace OAuth callback URI (`/api/v1/connectors/oauth/google/callback`). |
 
 ### 3. Secrets Section (Cloud Run UI $\leftarrow$ Secret Manager)
 | Secret in Secret Manager | Mounted Variable | Required | Permitted Values | Failure Behavior | Purpose |
@@ -105,6 +106,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 | Cookie session secret (e.g. `erp_session_secret`) | `SESSION_SECRET` | Required | Cryptographically random string $\ge 32$ characters | Unsigned session cookies cannot be parsed or verified; auth fails | Secret key used for signing and encrypting `erp_session` HttpOnly cookies. |
 | Webhook secret (Stage 2) (e.g. `erp_webhook_secret`) | `WEBHOOK_SECRET` | Required for automations | Cryptographically random hex string of 64 characters | Outbound n8n webhook dispatches fail signature verification | 64-character webhook secret transmitted in `X-Webhook-Secret` header for n8n automations and Cloud Scheduler recurring runner. |
 | Connector secret vault key (e.g. `erp_encryption_key`) | `ENCRYPTION_KEY` | Required for OAuth connectors (Stage 16) | 64-character hex string (32 bytes) or 32-byte base64 | `encryptSecret()`/`decryptSecret()` throw; `/connectors` displays `ENCRYPTION_KEY Pending` | AES-256-GCM symmetric key used to encrypt external OAuth refresh tokens (`connector_accounts`) at rest. |
+| Google OAuth Client Secret (e.g. `erp_google_oauth_client_secret`) | `GOOGLE_OAUTH_CLIENT_SECRET` | Required for Google Workspace Connector (Stage 16) | Non-empty Google OAuth 2.0 Web Client secret string | `/api/v1/connectors/oauth/google/authorize` returns `400`; `/connectors` disables Connect button | OAuth 2.0 Web Client secret used to exchange authorization codes for offline Google Workspace refresh tokens (Drive, Sheets, Calendar). |
 
 ---
 
@@ -364,6 +366,13 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `GET` | `/api/v1/connectors/api-keys` | Cookie Session (`CONNECTORS` module) | `ADMIN` | Lists tenant API keys (`keyPrefix`, `scopes`, `lastUsedAt`, `expiresAt`, `revokedAt`, creator); never returns `keyHash`. |
 | `POST` | `/api/v1/connectors/api-keys` | Cookie Session (`CONNECTORS` module) | `ADMIN` | Generates a cryptographically random `dws_live_...` Bearer API key, stores SHA-256 `keyHash`, logs `API_KEY_CREATED` in `audit_logs`, and returns `plaintextKey` once. |
 | `DELETE` | `/api/v1/connectors/api-keys/:id` | Cookie Session (`CONNECTORS` module) | `ADMIN` | Soft-revokes an API key (`revokedAt = now()`) and logs `API_KEY_REVOKED` in `audit_logs`. |
+| `GET` | `/api/v1/connectors/oauth/google/authorize` | Cookie Session (`CONNECTORS` module) | `ADMIN` | Generates HMAC-signed CSRF `state` and returns the Google OAuth 2.0 offline-access authorization URL for Drive, Sheets, and Calendar. |
+| `GET` | `/api/v1/connectors/oauth/google/callback` | Signed HMAC `state` (OAuth Redirect) | Verified `ADMIN` + `CONNECTORS` | Exchanges Google OAuth `code` for access/refresh tokens, encrypts with `AES-256-GCM`, upserts `connector_accounts`, logs `GOOGLE_CONNECTOR_CONNECTED`, and redirects to `/connectors?google=connected`. |
+| `DELETE` | `/api/v1/connectors/oauth/google` | Cookie Session (`CONNECTORS` module) | `ADMIN` | Disconnects Google Workspace, purges encrypted access/refresh tokens, and logs `GOOGLE_CONNECTOR_DISCONNECTED`. |
+| `PATCH` | `/api/v1/connectors/google/config` | Cookie Session (`CONNECTORS` module) | `ADMIN`, `ACCOUNTANT` | Saves target Google `spreadsheetId`, `driveFolderId`, and `calendarId` in `connector_accounts.config_json`. |
+| `POST` | `/api/v1/connectors/google/sheets/export` | Cookie Session (`CONNECTORS` module) | `ADMIN`, `ACCOUNTANT` | Exports live Trial Balance, P&L, Balance Sheet, Aged AR, Aged AP, or General Ledger snapshot to a named tab in the linked Google Spreadsheet and logs to `connector_sync_logs`. |
+| `POST` | `/api/v1/connectors/google/drive/sync` | Cookie Session (`CONNECTORS` module) | `ADMIN`, `ACCOUNTANT` | Archives Trial Balance, Customer Invoices, and Vendor Bills CSV snapshots into `YYYY/YYYY-MM` subfolders inside Google Drive (auto-creating `JBTDA-DWS ERP Archive` if blank) and logs to `connector_sync_logs`. |
+| `POST` | `/api/v1/connectors/google/calendar/sync` | Cookie Session (`CONNECTORS` module) | `ADMIN`, `ACCOUNTANT` | Idempotently syncs open AR/AP due dates, ATO quarterly BAS lodgement deadlines, and active Recurring Schedules to Google Calendar using deterministic event IDs and logs to `connector_sync_logs`. |
 
 ### 24. Frontend Client Routes (`frontend/src/App.tsx`)
 | Client Route | Guard Status | Rendered Component | Purpose / Description |

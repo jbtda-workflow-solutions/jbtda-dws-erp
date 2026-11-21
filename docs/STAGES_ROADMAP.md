@@ -575,19 +575,19 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 
 ---
 
-### Module 16: Connectors Hub Phase 2 — Google Workspace OAuth Connectors (Drive, Sheets & Calendar)
+### Module 16: Connectors Hub Phase 2 — Google Workspace OAuth Connectors (Drive, Sheets & Calendar) (✅ COMPLETED)
 **Objective:** Enable organizations to connect their Google Workspace account via a dedicated OAuth 2.0 offline-access flow inside `/connectors`, unlocking deterministic integrations with **Google Drive**, **Google Sheets**, and **Google Calendar**.
 
-- [ ] **16.1 Dedicated Google Workspace OAuth 2.0 Offline-Access Flow (`backend/src/routes/connectors-google.ts`)**:
+- [x] **16.1 Dedicated Google Workspace OAuth 2.0 Offline-Access Flow (`backend/src/routes/connectors-google.ts`)**:
   - Implement `GET /api/v1/connectors/oauth/google/authorize` (CSRF `state` signed with `SESSION_SECRET`, `access_type=offline`, `prompt=consent`, granular Drive/Sheets/Calendar scopes) and `GET /api/v1/connectors/oauth/google/callback` exchanging the authorization code using `GOOGLE_OAUTH_CLIENT_SECRET` and storing encrypted access/refresh tokens in `connector_accounts`.
   - Implement automatic access-token refresh helper and `DELETE /api/v1/connectors/oauth/google` (revoke & disconnect).
-- [ ] **16.2 Google Sheets Live Financial Report Sync (`backend/src/lib/google-sheets.ts`, `backend/src/routes/connectors-google.ts`)**:
+- [x] **16.2 Google Sheets Live Financial Report Sync (`backend/src/lib/google-sheets.ts`, `backend/src/routes/connectors-google.ts`)**:
   - Allow `ADMIN` / `ACCOUNTANT` users to link a Google Sheet ID and push live snapshots of **Profit & Loss**, **Trial Balance**, **Balance Sheet**, **Aged AR/AP**, or **General Ledger** extracts (`POST /api/v1/connectors/google/sheets/export`), logging each run in `connector_sync_logs`.
-- [ ] **16.3 Google Drive Document Archiving & Folder Sync (`backend/src/lib/google-drive.ts`, `backend/src/routes/connectors-google.ts`)**:
+- [x] **16.3 Google Drive Document Archiving & Folder Sync (`backend/src/lib/google-drive.ts`, `backend/src/routes/connectors-google.ts`)**:
   - Configure a target Google Drive root folder per organization (`PATCH /api/v1/connectors/google/config`) and export structured financial summaries / invoice & bill records into organized year/month Drive folders (`POST /api/v1/connectors/google/drive/sync`).
-- [ ] **16.4 Google Calendar Finance Deadlines Sync (`backend/src/lib/google-calendar.ts`, `backend/src/routes/connectors-google.ts`)**:
+- [x] **16.4 Google Calendar Finance Deadlines Sync (`backend/src/lib/google-calendar.ts`, `backend/src/routes/connectors-google.ts`)**:
   - Sync open Customer Invoice due dates, Vendor Bill due dates, ATO BAS quarterly deadlines, and Recurring Schedule run dates to a selected Google Calendar (`POST /api/v1/connectors/google/calendar/sync`) with idempotent event IDs to prevent duplicates.
-- [ ] **16.5 Google Workspace Connector UI (`frontend/src/pages/ConnectorsPage.tsx`)**:
+- [x] **16.5 Google Workspace Connector UI (`frontend/src/pages/ConnectorsPage.tsx`)**:
   - Complete the **External Apps (Google Workspace)** tab in `/connectors` showing connection status, connected Google account email, granted scopes, Sheet/Drive/Calendar target pickers, 1-click **Sync Now** triggers, and the `connector_sync_logs` activity table.
 
 ---

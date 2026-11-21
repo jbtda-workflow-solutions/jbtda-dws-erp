@@ -46,6 +46,7 @@ import { developerRoutes } from './routes/developer.js';
 import { bulkImportRoutes } from './routes/bulk-import.js';
 import { systemRoutes } from './routes/system.js';
 import { connectorRoutes } from './routes/connectors.js';
+import { googleConnectorRoutes } from './routes/connectors-google.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -177,6 +178,7 @@ async function buildServer() {
   await fastify.register(bulkImportRoutes);
   await fastify.register(systemRoutes);
   await fastify.register(connectorRoutes);
+  await fastify.register(googleConnectorRoutes);
 
   // -------------------------------------------------------------------------
   // Health check (unauthenticated — used by Cloud Run)

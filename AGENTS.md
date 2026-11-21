@@ -153,6 +153,10 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   ├── abn.ts             # ATO ABN checksum validation algorithm
 │       │   ├── audit.ts           # Append-only immutable system audit log helper
 │       │   ├── crypto.ts          # AES-256-GCM secret vault (ENCRYPTION_KEY) & SHA-256 API key generator
+│       │   ├── google-calendar.ts # Google Calendar v3 idempotent AR/AP/BAS/Recurring deadline sync
+│       │   ├── google-drive.ts    # Google Drive v3 CSV financial archive pack uploader (YYYY/YYYY-MM folders)
+│       │   ├── google-oauth.ts    # Google Workspace OAuth 2.0 offline-access flow & encrypted token refresh
+│       │   ├── google-sheets.ts   # Google Sheets v4 live financial statement exporter (TB, P&L, BS, Aging, GL)
 │       │   ├── gst.ts             # Integer-cent Australian GST calculation utilities
 │       │   ├── ledger-posting.ts  # Double-entry GL posting, anti-double-reversal, bidirectional sub-ledger sync & lock date validation
 │       │   ├── modules.ts         # Canonical 12-module Product Registry, tier metadata & legacy enabledModules normalizer
@@ -169,6 +173,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   ├── bills.ts           # GET/POST/PATCH/DELETE /api/v1/bills, edit & re-post, revert-to-draft, void, payment reversal & recurring
 │       │   ├── bulk-import.ts     # GET /api/v1/bulk-import/templates, POST /validate, POST /commit (Centralized 13-type Admin CSV Import Engine)
 │       │   ├── connectors.ts      # GET /api/v1/connectors/overview, GET/POST/DELETE /api-keys (Scoped Bearer API Keys & Vault)
+│       │   ├── connectors-google.ts # Google Workspace OAuth 2.0 & Drive/Sheets/Calendar sync endpoints (/api/v1/connectors/oauth/google/*, /google/*)
 │       │   ├── contacts.ts        # GET/POST/PATCH/DELETE /api/v1/contacts, GET /:id/360 (includes Direct Spend/Receive Money)
 │       │   ├── credit-notes.ts    # GET/POST/DELETE /api/v1/credit-notes, /:id/issue (contra-AR GL), /:id/allocate, /:id/void
 │       │   ├── dashboard.ts       # GET /api/v1/dashboard/summary (100% live PostgreSQL KPI aggregations)

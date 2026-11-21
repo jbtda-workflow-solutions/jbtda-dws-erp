@@ -4,6 +4,22 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.28.0] — 2026-11-21 — Module 16: Connectors Hub Phase 2 — Google Workspace OAuth Connectors (Drive, Sheets & Calendar)
+
+### Added
+- **Dedicated Google Workspace OAuth 2.0 Offline-Access Flow (`16.1` — `backend/src/lib/google-oauth.ts`, `backend/src/routes/connectors-google.ts`, `backend/src/server.ts`)**:
+  - Implemented `GET /api/v1/connectors/oauth/google/authorize` (`ADMIN`), `GET /api/v1/connectors/oauth/google/callback` (HMAC-signed CSRF `state`, `AES-256-GCM` encrypted access & refresh token storage in `connector_accounts`), `DELETE /api/v1/connectors/oauth/google` (disconnect & purge tokens), `PATCH /api/v1/connectors/google/config`, and automatic access-token refresh (`getValidGoogleAccessToken`).
+- **Google Sheets Live Financial Report Sync (`16.2` — `backend/src/lib/google-sheets.ts`)**:
+  - Added `POST /api/v1/connectors/google/sheets/export` (`ADMIN`, `ACCOUNTANT`) exporting live Trial Balance, Profit & Loss, Balance Sheet, Aged AR, Aged AP, and General Ledger snapshots into named tabs via Google Sheets REST API v4 with `connector_sync_logs` tracking.
+- **Google Drive Financial Archive Sync (`16.3` — `backend/src/lib/google-drive.ts`)**:
+  - Added `POST /api/v1/connectors/google/drive/sync` (`ADMIN`, `ACCOUNTANT`) archiving Trial Balance, Customer Invoices, and Vendor Bills CSV snapshots into `YYYY/YYYY-MM` subfolders via Google Drive REST API v3 (auto-creating `JBTDA-DWS ERP Archive` when no root folder ID is configured).
+- **Google Calendar Finance Deadlines Sync (`16.4` — `backend/src/lib/google-calendar.ts`)**:
+  - Added `POST /api/v1/connectors/google/calendar/sync` (`ADMIN`, `ACCOUNTANT`) idempotently syncing open AR/AP due dates, ATO quarterly BAS lodgement dates, and active Recurring Schedules to Google Calendar using deterministic event IDs (zero duplicates).
+- **Google Workspace Connector UI (`16.5` — `frontend/src/pages/ConnectorsPage.tsx`, `frontend/src/api/client.ts`)**:
+  - Completed the **External Apps (Google Workspace)** tab in `/connectors` with Connect/Disconnect OAuth actions, Cloud Run config checklist banner when secrets are missing, Sheet/Drive/Calendar target configuration form, 1-click sync triggers, and live sync log table.
+
+---
+
 ## [0.27.0] — 2026-11-21 — Module 15: Connectors Hub Phase 1 (`/connectors` UI, Inbound Scoped API Keys & AES-256-GCM Secret Vault)
 
 ### Added
