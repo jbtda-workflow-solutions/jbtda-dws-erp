@@ -4,6 +4,25 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.25.2] — 2026-11-21 — Product Module Architecture, Agent Module Contexts (`docs/modules/`) & Restructured Roadmap (Stages 14–16 + Deferred D1–D5)
+
+### Added
+- **Domain-Scoped Agent Module Contexts (`docs/modules/*.md`)**:
+  - Created canonical Product Module registry ([docs/modules/README.md](docs/modules/README.md)) and 11 domain context specifications (`core-platform.md`, `core-accounting.md`, `receivables.md`, `payables.md`, `expenses.md`, `connectors.md`, `documents.md`, `projects.md`, `inventory.md`, `fleet.md`, `payroll.md`) defining domain ownership, GL posting invariants, RBAC/module entitlement gates, and cross-module hooks.
+- **Active Roadmap Stages 14–16 (`docs/STAGES_ROADMAP.md`)**:
+  - **Module 14:** Commercial Product Module Architecture, `requireModule()` Entitlement Gating, Automated Recurring Schedule Runner & Developer Console Module Context Indexing.
+  - **Module 15:** Connectors Hub Phase 1 (`/connectors`) — Inbound Scoped Bearer API Keys, Outbound Webhooks (n8n) with delivery logs/retries, and `AES-256-GCM` Secret Vault.
+  - **Module 16:** Connectors Hub Phase 2 — Google Workspace OAuth 2.0 Connectors (Drive, Sheets & Calendar).
+- **Deferred Stages Section (`docs/STAGES_ROADMAP.md` §6)**:
+  - Dedicated architectural placeholders for **D1 `DOCUMENTS`** (GCS V4 Presigned Vault), **D2 `PROJECTS`** (Project Accounting, Time & Billing), **D3 `INVENTORY`** (Perpetual Inventory & COGS), **D4 `FLEET`** (Fleet Vehicles & Per-Vehicle P&L), and **D5 `PAYROLL`** (Australian Payroll, PAYG, Superannuation & STP Phase 2).
+
+### Changed
+- **Roadmap Cleanup (`docs/STAGES_ROADMAP.md`, `AGENTS.md`, `AGENT_SPECIFICATION.md`)**:
+  - Removed the draft-first bulk upload & triage specification from Module 14 to keep `docs/STAGES_ROADMAP.md` focused purely as a clean, reproducible development blueprint.
+  - Separated **Product Modules** (commercial/RBAC/navigation boundaries) from **Delivery Stages** (engineering milestones) across `AGENTS.md`, `AGENT_SPECIFICATION.md`, and `docs/STAGES_ROADMAP.md`.
+
+---
+
 ## [0.25.1] — 2026-11-15 — Bulk Import Interactive Transaction Timeout, Per-Row Query Optimization & Module 14 Roadmap Specification
 
 ### Added

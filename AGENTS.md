@@ -15,6 +15,7 @@ by reading:
 3. `docs/DATABASE_SCHEMA.md` — current Prisma schema and migration log
 4. `docs/SECURITY.md` — auth mechanics and RBAC rules
 5. `docs/CHANGELOG.md` — latest changes
+6. `docs/modules/README.md` (and the relevant `docs/modules/<module>.md` domain context when working on a specific Product Module)
 
 ## Mandatory Rules
 
@@ -203,9 +204,22 @@ Every variable and secret must be explicitly defined. **No configuration values 
 │   ├── DATABASE_SCHEMA.md     # PostgreSQL tables, relations, and migration log
 │   ├── DESIGN_SYSTEM.md       # Corporate Precision Design System specification
 │   ├── INTEGRATIONS.md        # Async webhook payloads and n8n contracts
-│   ├── PLUGINS.md             # Enterprise Plug-In Module Contract (FLEET, INVENTORY, ATTACHMENTS, N8N)
+│   ├── PLUGINS.md             # Enterprise Plug-In Module Contract (FLEET, INVENTORY, DOCUMENTS, N8N)
 │   ├── SECURITY.md            # Auth mechanics, 7-role RBAC matrix, and crypto standards
-│   └── STAGES_ROADMAP.md      # 14-Module Deep-Build Execution Plan & completion checklist
+│   ├── STAGES_ROADMAP.md      # Canonical Product Modules, Active Stages (1–16) & Deferred Stages (D1–D5)
+│   └── modules/               # Domain-scoped AI Agent Product Module Contexts
+│       ├── README.md          # Canonical Product Module Registry, tiering matrix & universal invariants
+│       ├── core-platform.md   # CORE_PLATFORM (Workspace, Auth, RBAC, Contacts, Items, Bulk Import, Dev Console)
+│       ├── core-accounting.md # CORE_ACCOUNTING (CoA, Dimensions, GL Engine, Banking, Reports & BAS)
+│       ├── receivables.md     # RECEIVABLES (Quotes, Invoices, Recurring, AR Credits, Payments In)
+│       ├── payables.md        # PAYABLES (POs, Bills, Recurring, Vendor Credits, .ABA Batch Payments)
+│       ├── expenses.md        # EXPENSES (Direct Spend/Receive Money & Employee Expense Claims)
+│       ├── connectors.md      # CONNECTORS (Inbound API Keys, Outbound Webhooks/n8n, Google Workspace OAuth)
+│       ├── documents.md       # DOCUMENTS (Deferred D1: GCS V4 Presigned Document Vault)
+│       ├── projects.md        # PROJECTS (Deferred D2: Project Accounting, Budgets, Time & Billing)
+│       ├── inventory.md       # INVENTORY (Deferred D3: Perpetual Inventory, Warehouses & Auto-COGS)
+│       ├── fleet.md           # FLEET (Deferred D4: Fleet Vehicles & Per-Vehicle P&L)
+│       └── payroll.md         # PAYROLL (Deferred D5: Australian Payroll, PAYG, Super & STP Phase 2)
 └── frontend/                  # React SPA (Vite + TypeScript + Tailwind)
     ├── index.html             # HTML entry point with Inter & JetBrains Mono font links
     ├── package.json           # Frontend dependencies and scripts

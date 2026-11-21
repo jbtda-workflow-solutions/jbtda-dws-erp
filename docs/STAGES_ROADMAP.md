@@ -1,6 +1,6 @@
-# Master Architecture & 14-Module Deep-Build Roadmap
+# Master Architecture, Product Modules & Deep-Build Roadmap
 
-This document is the authoritative architectural blueprint and execution plan for the **JBTDA-DWS Enterprise Ledger & Business Services Platform**.
+This document is the authoritative architectural blueprint and reproducible execution plan for the **JBTDA-DWS Enterprise Ledger & Business Services Platform**. Together with `AGENTS.md`, `AGENT_SPECIFICATION.md`, `docs/*.md`, and `docs/modules/*.md`, it serves as a complete zero-memory build specification capable of rebuilding the application deterministically from scratch.
 
 ---
 
@@ -9,18 +9,23 @@ This document is the authoritative architectural blueprint and execution plan fo
 Unlike basic small-business CRUD tools, this platform is architected as a **Ledger-First Financial & Business Services System** capable of scaling from a single-owner SME to a multi-entity, multi-role enterprise deployment:
 
 1. **The General Ledger is the Single Source of Truth:**
-   - Every financial event—whether an Invoice, Vendor Bill, Direct Card Expense, Employee Reimbursement, Customer Prepayment, Credit Note, or Bank Transfer—compiles down to an atomic, balanced Double-Entry Journal Entry ($\sum \text{Debits} == \sum \text{Credits}$ in integer AUD cents).
+   - Every financial event—whether an Invoice, Vendor Bill, Direct Card Expense, Employee Reimbursement, Customer Prepayment, Credit Note, Payroll Run, or Bank Transfer—compiles down to an atomic, balanced Double-Entry Journal Entry ($\sum \text{Debits} == \sum \text{Credits}$ in integer AUD cents).
 2. **Dimensional Accounting (Tracking Categories / Cost Centers):**
-   - Instead of polluting the Chart of Accounts with hundreds of duplicate accounts, every journal line and sub-ledger line item supports **Tracking Dimensions** (e.g., *Department*, *Project*, *Location*, *Fleet Vehicle*). This enables instant P&L reporting by business unit or asset and provides the native financial hook for future modules like **Fleet Management** and **Inventory Management**.
+   - Instead of polluting the Chart of Accounts with hundreds of duplicate accounts, every journal line and sub-ledger line item supports **Tracking Dimensions** (e.g., *Department*, *Project*, *Location*, *Fleet Vehicle*). This enables instant P&L reporting by business unit or asset and provides the native financial hook for operational modules like **Projects**, **Fleet Management**, and **Inventory Management**.
 3. **Adaptive Governance (Zero Friction for SMEs, Strict Controls for Enterprises):**
    - **Smart Approval Workflows:** `ADMIN` and `ACCOUNTANT` users can "Approve & Post Immediately" in a single click (ideal for small businesses), while `EMPLOYEE`, `AR_SPECIALIST`, and `AP_SPECIALIST` users submit entries into a maker-checker approval queue (`DRAFT` $\rightarrow$ `PENDING_APPROVAL` $\rightarrow$ `APPROVED/POSTED`). Organizations can optionally enforce strict two-person approval (`enforceTwoPersonApproval`).
    - **Immutable System Audit Log:** Every state mutation across the platform records the actor, timestamp, entity, action, and change payload in an append-only `audit_logs` table.
    - **Accounting Period Lock Dates:** Admins can lock completed months or lodged BAS quarters (`lockDate`), strictly preventing backdated mutations in closed periods.
-4. **Single Unified Codebase with Per-Organization Module Feature Flags:**
-   - The platform runs as a unified container on Google Cloud Run (deployable either as a shared multi-tenant cloud service or a dedicated single-client enterprise instance).
-   - Optional capabilities (`EXPENSES`, `FLEET`, `INVENTORY`, `ATTACHMENTS`) are controlled per organization via `enabledModules` flags, communicating with the core exclusively through the internal `LedgerPostingService` contract.
-5. **Module-by-Module Deep Execution (Zero Mock Data):**
-   - Rather than rushing through shallow horizontal phases, development proceeds **one complete module at a time to 100% enterprise depth**. Every screen, rollup, and balance queries live PostgreSQL data with zero hardcoded mock numbers.
+4. **Canonical Product Modules vs. Delivery Stages (`docs/modules/README.md`):**
+   - **Product Modules** are the industry-standard commercial and functional domains that govern permissions, RBAC scopes, UI navigation/content groups, subscription tiering (`organization.enabledModules`), and AI agent contexts (`docs/modules/*.md`):
+     - **Base (Always Enabled):** `CORE_PLATFORM`, `CORE_ACCOUNTING`
+     - **Standard Commercial Finance:** `RECEIVABLES`, `PAYABLES`, `EXPENSES`
+     - **Pro / Integrations Add-Ons:** `CONNECTORS`, `DOCUMENTS`
+     - **Enterprise Add-Ons:** `PROJECTS`, `INVENTORY`, `FLEET`, `PAYROLL`
+     - **Internal Platform Ops (`ADMIN` only):** `DEVELOPER_PORTAL`
+   - **Delivery Stages** (Section 5 & Section 6 below) are the sequential engineering milestones used to build and verify the platform one self-contained stage at a time.
+5. **Stage-by-Stage Deep Execution (Zero Mock Data):**
+   - Development proceeds **one complete stage at a time to 100% enterprise depth**. Every screen, rollup, and balance queries live PostgreSQL data with zero hardcoded mock numbers.
 
 ---
 
@@ -108,7 +113,7 @@ Access is strictly compartmentalized by domain so regular staff and specialists 
 
 ---
 
-## 5. The 14-Module Deep-Build Execution Plan
+## 5. Active Deep-Build Execution Plan (Stages 1–16)
 
 Development proceeds strictly **one module at a time**. We complete the backend routes, validations, ledger integrations, audit logging, and frontend interfaces for a module before moving to the next.
 
@@ -564,23 +569,81 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 
 ---
 
-### Module 14: Draft-First Bulk Upload, Zero-Guessing Validation & Interactive Transaction Triage / Invoice-Bill Allocation
-**Objective:** Eliminate all silent fallback "guessing" of missing GL accounts (`6000`/`4000`), bank accounts (`1000`), and tax treatments (`TAX_INCLUSIVE` / `TAX_EXCLUSIVE`) during bulk CSV imports; introduce a true `DRAFT` lifecycle for Direct Transactions (`Spend Money` / `Receive Money`) so incomplete bank/transaction uploads land safely as unposted drafts with zero General Ledger distortion; and provide an interactive triage workflow where users can review each draft transaction to either assign GL coding & post, allocate a payment against an open Customer Invoice (`ALLOCATE_INVOICE`), allocate a payment against an open Vendor Bill (`ALLOCATE_BILL`), or convert to an Inter-Account Bank Transfer (`BANK_TRANSFER`).
+### Module 14: Commercial Product Module Architecture, Entitlement Gating, Recurring Runner & Agent Module Contexts
+**Objective:** Formalize the canonical industry-standard Product Module taxonomy (`CORE_PLATFORM`, `CORE_ACCOUNTING`, `RECEIVABLES`, `PAYABLES`, `EXPENSES`, `CONNECTORS`, `DOCUMENTS`, `PROJECTS`, `INVENTORY`, `FLEET`, `PAYROLL`, `DEVELOPER_PORTAL`) across backend route guards, frontend navigation/content groups, workspace module settings, and the `/developer` docs viewer; add an automated Recurring Schedule execution engine; and synchronize `docs/DATABASE_SCHEMA.md` with `schema.prisma`.
 
-- [ ] **14.1 Eliminate Silent "Guessing" Across Bulk CSV Imports (`backend/src/routes/bulk-import.ts` & `backend/src/routes/banking.ts`)**:
-  - Remove silent fallback assignment of `defaultExpAccount` (`6000`), `defaultRevAccount` (`4000`), default `1000` bank account, and assumed `TAX_INCLUSIVE` / `TAX_EXCLUSIVE` GST treatments when columns are left blank in `bulk-import.ts`.
-  - Enforce a strict two-tier import rule across all transactional record types (`DIRECT_TRANSACTIONS`, `INVOICES`, `BILLS`, `CREDIT_NOTES`, `VENDOR_CREDITS`, `EXPENSE_CLAIMS`, `JOURNAL_ENTRIES`):
-    - **Direct GL Posting (`POSTED` / `ISSUED` / `AWAITING_PAYMENT` / `APPROVED`):** Permitted ONLY when every required accounting field (`account_code`, `tax_treatment`, `bank_account_code`, and `contact_name` where required) is explicitly provided and valid in the CSV.
-    - **Missing Coding Fields $\rightarrow$ Automatic `DRAFT` Staging:** Whenever `account_code`, `contact_name`, or `tax_treatment` is omitted (or when `status=DRAFT` is specified), the record MUST be staged as an unposted **`DRAFT`** with explicit `"Needs Coding"` badges in the Step 1 preview table—never posted to the General Ledger with guessed accounts or guessed GST.
-- [ ] **14.2 `DirectTransaction` Draft Status & Nullable Pre-Coding Schema (`backend/prisma/schema.prisma`, `backend/src/routes/direct-transactions.ts`)**:
-  - Extend `DirectTransaction` (`direct_transactions`) with `status` (`DirectTransactionStatus`: `DRAFT` | `POSTED` | `VOID`, defaulting to `DRAFT` when coding is incomplete) and make `accountId` / `taxTreatment` on `DirectTransactionLine` (`direct_transaction_lines`) nullable while `status === 'DRAFT'`.
-  - Ensure `DRAFT` Direct Transactions have **zero General Ledger impact** (no `JournalEntry` created until coded and posted or allocated) and are excluded from posted cash/expense KPIs while remaining visible in a dedicated **"Drafts / Needs Coding & Allocation"** queue.
-- [ ] **14.3 Interactive Draft Transaction Triage: Code & Post, Allocate to Invoice, or Allocate to Bill (`backend/src/routes/direct-transactions.ts`, `frontend/src/pages/ExpensesPage.tsx`, `frontend/src/pages/BankingPage.tsx`)**:
-  - Add `POST /api/v1/direct-transactions/:id/process` (and matching UI triage drawer/modal in `/expenses` and `/banking`) allowing a user inspecting any `DRAFT` Direct Transaction (or Unreconciled Bank Line) to resolve it via 4 explicit modes:
-    1. **Assign Coding & Post (`CODE_DIRECT`):** Select Contact, GL Account (`EXPENSE` / `REVENUE` / `ASSET`), Cost Centre (`TrackingOption`), and Tax Treatment (`TAX_INCLUSIVE` / `TAX_EXCLUSIVE` / `GST_FREE`), transitioning the transaction from `DRAFT` $\rightarrow$ `POSTED` and posting the balanced `DIRECT_TRANSACTION` GL journal.
-    2. **Allocate Deposit to Open Customer Invoice (`ALLOCATE_INVOICE`):** Match a `RECEIVE_MONEY` draft transaction to an open `Invoice` (`ISSUED` / `PARTIALLY_PAID`), atomically creating a `PaymentIn` receipt (`DR Bank Account`, `CR 1200 Accounts Receivable`), updating `Invoice.amountPaidCents` and status (`PARTIALLY_PAID` / `PAID`), and linking/resolving the draft transaction.
-    3. **Allocate Withdrawal to Open Vendor Bill (`ALLOCATE_BILL`):** Match a `SPEND_MONEY` draft transaction to an open `Bill` (`AWAITING_PAYMENT` / `PARTIALLY_PAID`), atomically creating a `PaymentOut` remittance (`DR 2000 Accounts Payable`, `CR Bank Account`), updating `Bill.amountPaidCents` and status (`PARTIALLY_PAID` / `PAID`), and linking/resolving the draft transaction.
-    4. **Convert to Inter-Account Transfer (`BANK_TRANSFER`):** Match a transfer between two Bank/Card accounts into a clean 2-line `BankTransfer` (`DR Destination Bank`, `CR Source Bank`) with zero GST or P&L distortion.
-- [ ] **14.4 Unified Bank Statement Upload & Draft Triage Experience in `/settings` & `/banking` (`SettingsPage.tsx`, `BankingPage.tsx`, `ExpensesPage.tsx`)**:
-  - Update the `DIRECT_TRANSACTIONS` bulk import template and preview in `SettingsPage.tsx` so users can upload raw bank/transaction CSVs with blank `account_code` / `contact_name` / `tax_treatment` columns and clearly see that incomplete rows will be created as **`DRAFT (Needs Coding / Allocation)`** rather than guessing `6000` or `4000`.
-  - Add a direct **`BANK_STATEMENT` (Bank Statement Feed for Reconciliation)** option in the `/settings` Bulk CSV Import Hub (routing to a selected Bank Account's reconciliation queue in `/banking`) alongside `DIRECT_TRANSACTIONS` so users have a clear, guided choice between importing into the `/banking` statement reconciliation queue or staging `DRAFT` transactions in `/expenses`.
+- [ ] **14.1 Canonical Product Module Registry & `requireModule()` Backend Enforcement (`backend/src/lib/modules.ts`, `backend/src/plugins/auth.ts`, route files)**:
+  - Define the canonical Product Module registry (`MODULE_REGISTRY`) containing `key`, `label`, `tier` (`BASE` | `STANDARD` | `PRO` | `ENTERPRISE` | `INTERNAL`), `alwaysEnabled`, `status` (`LIVE` | `DEFERRED`), `navGroup`, and `description`.
+  - Normalize legacy `enabledModules` flags (e.g. `CORE_FINANCE` $\rightarrow$ `CORE_PLATFORM` + `CORE_ACCOUNTING` + `RECEIVABLES` + `PAYABLES`; `ATTACHMENTS` $\rightarrow$ `DOCUMENTS`) transparently on read/migration so existing tenants suffer zero disruption.
+  - Implement Fastify `requireModule(moduleKey)` preHandler hook verifying `organization.enabledModules.includes(moduleKey)` (returning `403 Forbidden` with `{ code: 'MODULE_NOT_ENABLED', module }`), and attach it across `RECEIVABLES`, `PAYABLES`, `EXPENSES`, `CONNECTORS`, and `DEVELOPER_PORTAL` routes.
+- [ ] **14.2 Module-Gated Navigation, Content Groups & Workspace Module Controls (`frontend/src/components/AppShell.tsx`, `frontend/src/pages/SettingsPage.tsx`)**:
+  - Align `AppShell.tsx` navigation groups cleanly to Product Modules (`General Ledger`, `Sales (AR)`, `Purchases (AP)`, `Spend & Claims`, `Integrations`, `Operations`, `Governance`) and filter visible links/routes strictly by both `Role` and `organization.enabledModules`.
+  - Upgrade the **Enabled Modules** panel in `SettingsPage.tsx` (`ADMIN` only) to display commercial tiers, live vs. deferred module badges, and safe toggles (preventing disabling `CORE_PLATFORM` / `CORE_ACCOUNTING`).
+- [ ] **14.3 Automated Recurring Schedule Execution Engine (`backend/src/routes/system.ts` or `ledger.ts`, `invoices.ts`, `bills.ts`)**:
+  - Implement a deterministic scheduled runner endpoint (`POST /api/v1/system/run-recurring`) authenticated via `X-Webhook-Secret` (for Cloud Scheduler / n8n cron triggers) and an `ADMIN`-callable manual trigger.
+  - Scans active `RecurringSchedule` rows where `nextRunDate <= today`, atomically generates the due `JournalEntry`, `Invoice`, or `Bill` (auto-posting/issuing only when `autoPost: true` and effective date > `organization.lockDate`), advances `nextRunDate` by `frequency`, and writes an immutable `AuditLog` entry.
+- [ ] **14.4 Developer Console Module Context Indexing & Schema Documentation Sync (`backend/src/routes/developer.ts`, `docs/DATABASE_SCHEMA.md`)**:
+  - Extend `backend/src/routes/developer.ts` allowlist to index `docs/modules/*.md` under a dedicated `MODULE_CONTEXT` category in `/developer` and parse **Section 6: Deferred Stages** separately in `/api/v1/developer/roadmap-summary`.
+  - Synchronize `docs/DATABASE_SCHEMA.md` so its top-level tables and enums match the live `backend/prisma/schema.prisma` 1-for-1.
+
+---
+
+### Module 15: Connectors Hub Phase 1 — Inbound Scoped API Keys, Outbound Webhooks (n8n) & AES-256-GCM Secret Vault
+**Objective:** Launch the **`CONNECTORS` (`/connectors`)** module with a deterministic Inbound API Handler (tenant-scoped Bearer API keys with module permissions), a tenant-managed Outbound Webhook & n8n Event Dispatcher with delivery logs and retries, and a unified `AES-256-GCM` cryptographic vault (`ENCRYPTION_KEY`) for secrets and OAuth tokens.
+
+- [ ] **15.1 AES-256-GCM Cryptographic Vault & Connectors Prisma Schema (`backend/src/lib/crypto.ts`, `backend/prisma/schema.prisma`)**:
+  - Implement deterministic `encryptSecret()` / `decryptSecret()` helpers using `AES-256-GCM` backed by `ENCRYPTION_KEY` (32-byte hex from Secret Manager), documented in `AGENTS.md`, `docs/ARCHITECTURE.md`, and `docs/SECURITY.md`.
+  - Add Prisma models for `ApiKey` (`api_keys`), `WebhookEndpoint` (`webhook_endpoints`), `WebhookDelivery` (`webhook_deliveries`), `ConnectorAccount` (`connector_accounts`), and `ConnectorSyncLog` (`connector_sync_logs`).
+- [ ] **15.2 Inbound API Handler & Scoped Bearer API Keys (`backend/src/plugins/auth.ts`, `backend/src/routes/connectors.ts`)**:
+  - Extend Fastify auth middleware to accept either `erp_session` HttpOnly cookie (human sessions) OR `Authorization: Bearer dws_live_...` (machine clients), validating SHA-256 key hash, revocation/expiry, `organizationId`, `requireModule(...)`, and explicit module scopes (e.g., `receivables:read`, `receivables:write`, `payables:read`, `reports:read`, `contacts:write`).
+  - Endpoints (`ADMIN` only, gated by `requireModule('CONNECTORS')`): `GET /api/v1/connectors/api-keys`, `POST /api/v1/connectors/api-keys` (returns plaintext key once), `DELETE /api/v1/connectors/api-keys/:id` (revoke).
+- [ ] **15.3 Outbound Webhook Dispatcher & n8n Event Engine (`backend/src/lib/webhooks.ts`, `backend/src/routes/connectors.ts`)**:
+  - Build non-blocking, post-commit `emitWebhookEvent(organizationId, eventName, actorUserId, data)` dispatching standardized envelopes (`docs/INTEGRATIONS.md`) signed with HMAC-SHA256 (`X-Webhook-Signature`) and `X-Webhook-Secret`, recording every attempt in `webhook_deliveries`.
+  - Wire core domain events: `invoice.issued`, `invoice.payment_received`, `bill.approved`, `expense.reimbursed`, `bas.locked`, and `bank.reconciled`.
+  - Endpoints: `GET/POST/PATCH/DELETE /api/v1/connectors/webhooks`, `POST /api/v1/connectors/webhooks/:id/test`, `GET /api/v1/connectors/webhooks/:id/deliveries`, `POST /api/v1/connectors/webhooks/deliveries/:deliveryId/retry`.
+- [ ] **15.4 Connectors Hub Frontend UI — Phase 1 (`frontend/src/pages/ConnectorsPage.tsx`, `frontend/src/App.tsx`, `frontend/src/components/AppShell.tsx`)**:
+  - Build `/connectors` following Corporate Precision (`docs/DESIGN_SYSTEM.md`) with tabs for **API Keys**, **Outbound Webhooks & Delivery Logs**, and **External Apps (Google Workspace)**.
+  - Provide 1-click key creation with one-time copy modal, scope matrix checkboxes, webhook subscription editor, test ping button, and delivery status inspector drawer.
+
+---
+
+### Module 16: Connectors Hub Phase 2 — Google Workspace OAuth Connectors (Drive, Sheets & Calendar)
+**Objective:** Enable organizations to connect their Google Workspace account via a dedicated OAuth 2.0 offline-access flow inside `/connectors`, unlocking deterministic integrations with **Google Drive**, **Google Sheets**, and **Google Calendar**.
+
+- [ ] **16.1 Dedicated Google Workspace OAuth 2.0 Offline-Access Flow (`backend/src/routes/connectors-google.ts`)**:
+  - Implement `GET /api/v1/connectors/oauth/google/authorize` (CSRF `state` signed with `SESSION_SECRET`, `access_type=offline`, `prompt=consent`, granular Drive/Sheets/Calendar scopes) and `GET /api/v1/connectors/oauth/google/callback` exchanging the authorization code using `GOOGLE_OAUTH_CLIENT_SECRET` and storing encrypted access/refresh tokens in `connector_accounts`.
+  - Implement automatic access-token refresh helper and `DELETE /api/v1/connectors/oauth/google` (revoke & disconnect).
+- [ ] **16.2 Google Sheets Live Financial Report Sync (`backend/src/lib/google-sheets.ts`, `backend/src/routes/connectors-google.ts`)**:
+  - Allow `ADMIN` / `ACCOUNTANT` users to link a Google Sheet ID and push live snapshots of **Profit & Loss**, **Trial Balance**, **Balance Sheet**, **Aged AR/AP**, or **General Ledger** extracts (`POST /api/v1/connectors/google/sheets/export`), logging each run in `connector_sync_logs`.
+- [ ] **16.3 Google Drive Document Archiving & Folder Sync (`backend/src/lib/google-drive.ts`, `backend/src/routes/connectors-google.ts`)**:
+  - Configure a target Google Drive root folder per organization (`PATCH /api/v1/connectors/google/config`) and export structured financial summaries / invoice & bill records into organized year/month Drive folders (`POST /api/v1/connectors/google/drive/sync`).
+- [ ] **16.4 Google Calendar Finance Deadlines Sync (`backend/src/lib/google-calendar.ts`, `backend/src/routes/connectors-google.ts`)**:
+  - Sync open Customer Invoice due dates, Vendor Bill due dates, ATO BAS quarterly deadlines, and Recurring Schedule run dates to a selected Google Calendar (`POST /api/v1/connectors/google/calendar/sync`) with idempotent event IDs to prevent duplicates.
+- [ ] **16.5 Google Workspace Connector UI (`frontend/src/pages/ConnectorsPage.tsx`)**:
+  - Complete the **External Apps (Google Workspace)** tab in `/connectors` showing connection status, connected Google account email, granted scopes, Sheet/Drive/Calendar target pickers, 1-click **Sync Now** triggers, and the `connector_sync_logs` activity table.
+
+---
+
+## 6. Deferred Stages (Architectural Placeholders)
+
+The stages below are architecturally specified in `docs/modules/*.md` and `docs/PLUGINS.md` so the platform's data model, RBAC, and module boundaries remain forward-compatible, but they are **explicitly deferred** and not part of the active build queue until promoted.
+
+### Deferred Stage D1: Cloud Storage Document Vault & Attachments (`DOCUMENTS`)
+- **Context Spec:** `docs/modules/documents.md` & `docs/PLUGINS.md` §4
+- **Scope:** Provision GCS bucket configuration (`GCS_ATTACHMENTS_BUCKET`), `document_attachments` Prisma model, V4 presigned upload/download API (`/api/v1/documents/presign-upload`, `/confirm`, `/:id/download-url`, `DELETE /:id`), $\le 25\text{MB}$ MIME validation, and unified attachment dropzone/viewer across Bills, Invoices, Expense Claims, Direct Transactions, Journals, and Contacts.
+
+### Deferred Stage D2: Project Accounting, Budgets, Time & Billing (`PROJECTS`)
+- **Context Spec:** `docs/modules/projects.md`
+- **Scope:** `projects`, `project_tasks`, and `project_time_entries` models bound automatically to `"Projects"` `TrackingOption` dimensions; budget vs. actual margin tracking via the native Module 8 dimensional P&L engine; employee time logging; and 1-click billing of unbilled time & expenses into Draft Customer Invoices (`RECEIVABLES`).
+
+### Deferred Stage D3: Perpetual Inventory & Warehousing (`INVENTORY`)
+- **Context Spec:** `docs/modules/inventory.md` & `docs/PLUGINS.md` §3
+- **Scope:** `warehouses`, `stock_levels` (Weighted Average Cost in integer cents), and `stock_movements` models; module system GL accounts (`1300 Inventory Asset`, `2020 Accrued Purchases`, `5000 Cost of Goods Sold`); Purchase Order goods receipts; stocktake adjustments; and automated COGS journal posting on Invoice issuance for `Item.isTrackedInventory: true` SKUs.
+
+### Deferred Stage D4: Fleet Management & Vehicle P&L (`FLEET`)
+- **Context Spec:** `docs/modules/fleet.md` & `docs/PLUGINS.md` §2
+- **Scope:** `fleet_vehicles` and `fleet_service_logs` models bound automatically to `"Fleet Vehicles"` `TrackingOption` dimensions; odometer and maintenance tracking; and native per-vehicle Profit & Loss & cost-per-kilometer reporting.
+
+### Deferred Stage D5: Australian Payroll & Single Touch Payroll — STP Phase 2 (`PAYROLL`)
+- **Context Spec:** `docs/modules/payroll.md`
+- **Scope:** Significant enterprise standalone module covering `payroll_employees` (encrypted TFN via `AES-256-GCM`, super fund USI, banking), `pay_calendars`, `pay_runs`, `payslips`, and `leave_balances`/`leave_requests`; deterministic Australian PAYG withholding and Superannuation Guarantee (SG) calculation tables; module system GL accounts (`6100 Wages Expense`, `6110 Super Expense`, `2150 PAYG Withholding Payable`, `2160 Super Payable`, `2170 Wages Clearing`); `.ABA` net wage batch disbursement via `backend/src/lib/aba.ts`; ATO BAS **W1** / **W2** integration; employee self-service payslip/leave portal; and ATO STP Phase 2 reporting hooks.

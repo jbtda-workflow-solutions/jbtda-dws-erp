@@ -321,17 +321,13 @@ The frontend implements an institutional, high-density financial interface codif
 
 ---
 
-## 10. Module-by-Module Deep-Build Roadmap
+## 10. Product Modules & Delivery Roadmap
 
-Development executes sequentially across **10 complete enterprise modules** (all completed and detailed in `docs/STAGES_ROADMAP.md`):
+The platform separates **Product Modules** (canonical commercial/functional domains documented in `docs/modules/*.md`: `CORE_PLATFORM`, `CORE_ACCOUNTING`, `RECEIVABLES`, `PAYABLES`, `EXPENSES`, `CONNECTORS`, `DOCUMENTS`, `PROJECTS`, `INVENTORY`, `FLEET`, `PAYROLL`, and internal `DEVELOPER_PORTAL`) from **Delivery Stages** tracked in `docs/STAGES_ROADMAP.md`:
 
-- **Module 1:** Enterprise Workspace, 7-Role RBAC, Governance, Immutable Audit Log & Unified Enterprise Prisma Schema
-- **Module 2:** The Financial Spine — Chart of Accounts (`/accounts`), Tracking Dimensions & General Ledger Engine (`/ledger`)
-- **Module 3:** Master Data — Contacts Directory (`/contacts`) & Products/Services Catalog (`/items`)
-- **Module 4:** Accounts Receivable (AR) — Quotes, Invoices, Recurring Billing, Credit Notes, Direct Income & Prepayments
-- **Module 5:** Accounts Payable (AP) — Purchase Orders, Vendor Bills, Recurring Bills, Vendor Credits & `.ABA` Batch Payments
-- **Module 6:** Enterprise Expenses (`/expenses`) — Direct "Spend Money" (Bank/Card) & Employee Expense Claims (`2050` Reimbursements)
-- **Module 7:** Multi-Account Banking, Inter-Account Transfers & CSV/OFX Statement Reconciliation (`/banking`)
-- **Module 8:** Financial Statements, Australian BAS Engine, 100% Live Executive Dashboard & Plug-In Module Contract (`/reports` & `/`)
-- **Module 9:** Developer & Agent Context Interface (`/developer`) — In-App Governance Docs Reader, API Reference Catalog, Roadmap Tracker & Runtime Diagnostics
-- **Module 10:** Corporate Precision UI/UX Alignment, Portal Overlay Architecture, Expenses Remediation & A4 Financial Report Print Engine
+- **Completed Stages (1–13):** Workspace/RBAC, Financial Spine (CoA/GL), Master Data (Contacts/Items), AR, AP & `.ABA`, Expenses, Banking & Reconciliation, Financial Reports & BAS, Developer Console, Corporate Precision UI/UX & A4 Print Engine, Transactional Integrity & Bidirectional GL Sync, Admin Bulk CSV Import & Multi-Mode Reconciliation, and Prisma-Native Schema Self-Healing & DB Manager.
+- **Active Upcoming Stages (14–16):**
+  - **Stage 14:** Commercial Product Module Architecture, `requireModule` Entitlement Gating, Automated Recurring Runner & Agent Module Contexts
+  - **Stage 15:** Connectors Hub Phase 1 — Inbound Scoped API Keys, Outbound Webhooks (n8n) & `AES-256-GCM` Secret Vault
+  - **Stage 16:** Connectors Hub Phase 2 — Google Workspace OAuth Connectors (Drive, Sheets & Calendar)
+- **Deferred Stages (D1–D5):** `D1 DOCUMENTS` (GCS Vault), `D2 PROJECTS`, `D3 INVENTORY`, `D4 FLEET`, and `D5 PAYROLL` (Australian Payroll & STP Phase 2).
