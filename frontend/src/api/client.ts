@@ -2856,4 +2856,92 @@ export const bulkImportApi = {
     request<BulkImportCommitResponse>('POST', '/bulk-import/commit', data),
 };
 
+// ---------------------------------------------------------------------------
+// Module 15: Connectors Hub (/api/v1/connectors/*)
+// ---------------------------------------------------------------------------
+
+export interface ApiKeyScopeDefinition {
+  scope: string;
+  domain: string;
+  moduleKey: string;
+  access: 'READ' | 'WRITE';
+  label: string;
+  description: string;
+}
+
+export interface ApiKeySummary {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  scopes: string[];
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+  createdBy?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+}
+
+export interface ConnectorAccountSummary {
+  id: string;
+  provider: string;
+  externalAccountEmail: string | null;
+  scopes: string[];
+  status: string;
+  config: Record<string, unknown> | null;
+  tokenExpiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConnectorSyncLogSummary {
+  id: string;
+  connectorAccountId: string;
+  service: string;
+  action: string;
+  status: string;
+  summary: string;
+  createdAt: string;
+}
+
+export interface ConnectorsOverviewResponse {
+  encryptionConfigured: boolean;
+  googleOAuthConfigured: boolean;
+  activeApiKeyCount: number;
+  connectedApps: ConnectorAccountSummary[];
+  recentSyncLogs: ConnectorSyncLogSummary[];
+  availableScopes: ApiKeyScopeDefinition[];
+}
+
+export const connectorsApi = {
+  getOverview: () =>
+    request<ConnectorsOverviewResponse>('GET', '/connectors/overview'),
+
+  listApiKeys: () =>
+    request<{
+      apiKeys: ApiKeySummary[];
+      availableScopes: ApiKeyScopeDefinition[];
+    }>('GET', '/connectors/api-keys'),
+
+  createApiKey: (data: {
+    name: string;
+    scopes: string[];
+    expiresInDays?: number | null;
+  }) =>
+    request<{ apiKey: ApiKeySummary; plaintextKey: string }>(
+      'POST',
+      '/connectors/api-keys',
+      data,
+    ),
+
+  revokeApiKey: (id: string) =>
+    request<{ ok: boolean; alreadyRevoked?: boolean }>(
+      'DELETE',
+      `/connectors/api-keys/${id}`,
+    ),
+};
+
 

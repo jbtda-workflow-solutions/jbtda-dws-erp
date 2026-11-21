@@ -4,6 +4,21 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.27.0] — 2026-11-21 — Module 15: Connectors Hub Phase 1 (`/connectors` UI, Inbound Scoped API Keys & AES-256-GCM Secret Vault)
+
+### Added
+- **AES-256-GCM Cryptographic Vault & Connectors Prisma Models (`15.1` — `backend/src/lib/crypto.ts`, `backend/prisma/schema.prisma`)**:
+  - Added deterministic `encryptSecret()` / `decryptSecret()` (`AES-256-GCM` backed by `ENCRYPTION_KEY`), `isEncryptionKeyConfigured()`, `generateApiKey()` (`dws_live_<48-hex>`), and `hashApiKey()` (`SHA-256`).
+  - Added `ApiKey` (`api_keys`), `ConnectorAccount` (`connector_accounts`), and `ConnectorSyncLog` (`connector_sync_logs`) models to `schema.prisma` (strictly excluding deferred Stage D6 outbound webhook tables).
+- **Inbound API Handler & Scoped Bearer API Keys (`15.2` — `backend/src/plugins/auth.ts`, `backend/src/routes/connectors.ts`, `backend/src/lib/modules.ts`, `backend/src/server.ts`)**:
+  - Extended Fastify auth middleware (`resolveRequestAuth`) to support dual authentication: `Authorization: Bearer dws_live_...` (SHA-256 hash lookup, expiry/revocation check, `CONNECTORS` entitlement check, domain/method scope enforcement, `ACCOUNTANT` role ceiling, barred from admin/governance routes, async `lastUsedAt` update) OR `erp_session` cookie.
+  - Added `GET /api/v1/connectors/overview` (`ADMIN`, `ACCOUNTANT`) and `GET/POST/DELETE /api/v1/connectors/api-keys` (`ADMIN` only, gated by `requireModule('CONNECTORS')`) with immutable `API_KEY_CREATED` / `API_KEY_REVOKED` audit logs.
+- **Connectors Hub Frontend UI — Phase 1 (`15.3` — `frontend/src/pages/ConnectorsPage.tsx`, `frontend/src/App.tsx`, `frontend/src/components/AppShell.tsx`, `frontend/src/pages/SettingsPage.tsx`, `frontend/src/api/client.ts`)**:
+  - Mounted `/connectors` under a new `Integrations` navigation group (`ADMIN`, `ACCOUNTANT`, gated by `CONNECTORS` module flag) and promoted `CONNECTORS` to `LIVE` in Settings and `MODULE_REGISTRY`.
+  - Built Corporate Precision UI with KPI strip, **External Apps (Google Workspace)** readiness card & sync log table (ready for Stage 16 OAuth), and **Inbound API Keys** management workbench with module scope matrix, revocation, and one-time plaintext key reveal modal.
+
+---
+
 ## [0.26.0] — 2026-11-21 — Module 14: Commercial Product Module Architecture, Entitlement Gating, Recurring Runner & Developer Context Indexing
 
 ### Added

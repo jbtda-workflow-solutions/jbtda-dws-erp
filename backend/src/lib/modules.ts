@@ -108,8 +108,8 @@ export const MODULE_REGISTRY: readonly ProductModuleDefinition[] = [
     label: 'Connectors Hub, API Keys & Google Workspace',
     tier: 'PRO',
     alwaysEnabled: false,
-    defaultEnabled: false,
-    status: 'PLANNED',
+    defaultEnabled: true,
+    status: 'LIVE',
     stageRef: 'Stages 15–16',
     navGroup: 'Integrations',
     description:
@@ -221,6 +221,7 @@ export function normalizeEnabledModules(
       resolved.add('CORE_ACCOUNTING');
       resolved.add('RECEIVABLES');
       resolved.add('PAYABLES');
+      resolved.add('CONNECTORS');
       resolved.add('DEVELOPER_PORTAL');
       continue;
     }
@@ -249,3 +250,155 @@ export function isModuleEnabled(
   const normalized = normalizeEnabledModules(rawEnabledModules);
   return normalized.includes(moduleKey);
 }
+
+export interface ApiKeyScopeDefinition {
+  scope: string;
+  domain: string;
+  moduleKey: ProductModuleKey;
+  access: 'READ' | 'WRITE';
+  label: string;
+  description: string;
+}
+
+export const API_KEY_SCOPES: readonly ApiKeyScopeDefinition[] = [
+  {
+    scope: 'contacts:read',
+    domain: 'Contacts',
+    moduleKey: 'CORE_PLATFORM',
+    access: 'READ',
+    label: 'Read Contacts',
+    description: 'List and inspect customers, vendors, and Contact 360° profiles.',
+  },
+  {
+    scope: 'contacts:write',
+    domain: 'Contacts',
+    moduleKey: 'CORE_PLATFORM',
+    access: 'WRITE',
+    label: 'Write Contacts',
+    description: 'Create and update customer and vendor contact records.',
+  },
+  {
+    scope: 'items:read',
+    domain: 'Items Catalog',
+    moduleKey: 'CORE_PLATFORM',
+    access: 'READ',
+    label: 'Read Items',
+    description: 'List and inspect products and services catalog SKUs.',
+  },
+  {
+    scope: 'items:write',
+    domain: 'Items Catalog',
+    moduleKey: 'CORE_PLATFORM',
+    access: 'WRITE',
+    label: 'Write Items',
+    description: 'Create, update, and archive catalog items.',
+  },
+  {
+    scope: 'accounts:read',
+    domain: 'Chart of Accounts',
+    moduleKey: 'CORE_ACCOUNTING',
+    access: 'READ',
+    label: 'Read CoA & Dimensions',
+    description: 'Read GL accounts and tracking categories/options.',
+  },
+  {
+    scope: 'accounts:write',
+    domain: 'Chart of Accounts',
+    moduleKey: 'CORE_ACCOUNTING',
+    access: 'WRITE',
+    label: 'Write CoA & Dimensions',
+    description: 'Create and update custom GL accounts and tracking dimensions.',
+  },
+  {
+    scope: 'ledger:read',
+    domain: 'General Ledger',
+    moduleKey: 'CORE_ACCOUNTING',
+    access: 'READ',
+    label: 'Read General Ledger',
+    description: 'Query journal entries, account balances, and GL audit trails.',
+  },
+  {
+    scope: 'ledger:write',
+    domain: 'General Ledger',
+    moduleKey: 'CORE_ACCOUNTING',
+    access: 'WRITE',
+    label: 'Write General Ledger',
+    description: 'Post manual journals and execute journal reversals.',
+  },
+  {
+    scope: 'banking:read',
+    domain: 'Banking',
+    moduleKey: 'CORE_ACCOUNTING',
+    access: 'READ',
+    label: 'Read Banking & Statements',
+    description: 'Read bank accounts, transfers, and imported statement lines.',
+  },
+  {
+    scope: 'banking:write',
+    domain: 'Banking',
+    moduleKey: 'CORE_ACCOUNTING',
+    access: 'WRITE',
+    label: 'Write Banking & Reconciliation',
+    description: 'Import statements, create transfers, and reconcile transactions.',
+  },
+  {
+    scope: 'reports:read',
+    domain: 'Reports & BAS',
+    moduleKey: 'CORE_ACCOUNTING',
+    access: 'READ',
+    label: 'Read Financial Reports & Dashboard',
+    description: 'Read Trial Balance, P&L, Balance Sheet, Aged AR/AP, BAS, and Dashboard KPIs.',
+  },
+  {
+    scope: 'receivables:read',
+    domain: 'Receivables (AR)',
+    moduleKey: 'RECEIVABLES',
+    access: 'READ',
+    label: 'Read Receivables',
+    description: 'Read quotes, customer invoices, AR credit notes, and receipts.',
+  },
+  {
+    scope: 'receivables:write',
+    domain: 'Receivables (AR)',
+    moduleKey: 'RECEIVABLES',
+    access: 'WRITE',
+    label: 'Write Receivables',
+    description: 'Create, issue, update, and record payments on customer invoices and quotes.',
+  },
+  {
+    scope: 'payables:read',
+    domain: 'Payables (AP)',
+    moduleKey: 'PAYABLES',
+    access: 'READ',
+    label: 'Read Payables',
+    description: 'Read purchase orders, vendor bills, vendor credits, and batch payments.',
+  },
+  {
+    scope: 'payables:write',
+    domain: 'Payables (AP)',
+    moduleKey: 'PAYABLES',
+    access: 'WRITE',
+    label: 'Write Payables',
+    description: 'Create, approve, and record payments on vendor bills and purchase orders.',
+  },
+  {
+    scope: 'expenses:read',
+    domain: 'Expenses',
+    moduleKey: 'EXPENSES',
+    access: 'READ',
+    label: 'Read Expenses',
+    description: 'Read direct spend/receive transactions and employee expense claims.',
+  },
+  {
+    scope: 'expenses:write',
+    domain: 'Expenses',
+    moduleKey: 'EXPENSES',
+    access: 'WRITE',
+    label: 'Write Expenses',
+    description: 'Create and manage direct transactions and employee expense claims.',
+  },
+] as const;
+
+export const VALID_API_KEY_SCOPES = new Set<string>(
+  API_KEY_SCOPES.map((s) => s.scope),
+);

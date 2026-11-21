@@ -157,8 +157,8 @@ const AVAILABLE_MODULES: Array<{
     key: 'CONNECTORS',
     label: 'Connectors Hub, API Keys & Google Workspace',
     tier: 'PRO',
-    status: 'PLANNED',
-    stageRef: 'Stages 15–16',
+    status: 'LIVE',
+    stageRef: 'Live',
     description:
       'Tenant-scoped inbound Bearer API keys, AES-256-GCM token vault, and Google Workspace OAuth (Drive, Sheets, Calendar).',
     locked: false,

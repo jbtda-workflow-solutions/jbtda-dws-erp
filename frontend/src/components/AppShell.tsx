@@ -23,6 +23,7 @@ import {
   Wallet,
   BarChart3,
   Terminal,
+  Plug,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { orgApi, ApiError, type Role } from '@/api/client';
@@ -155,6 +156,19 @@ const NAV_GROUPS: NavGroup[] = [
           'EMPLOYEE',
           'AUDITOR',
         ],
+      },
+    ],
+  },
+  {
+    groupKey: 'integrations',
+    groupLabel: 'Integrations',
+    items: [
+      {
+        label: 'Connectors Hub',
+        href: '/connectors',
+        icon: Plug,
+        requiredModule: 'CONNECTORS',
+        allowedRoles: ['ADMIN', 'ACCOUNTANT'],
       },
     ],
   },

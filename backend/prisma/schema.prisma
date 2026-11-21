@@ -225,6 +225,9 @@ model Organization {
   recurringSchedules     RecurringSchedule[]
   journalEntries         JournalEntry[]
   journalLines           JournalLine[]
+  apiKeys                ApiKey[]
+  connectorAccounts      ConnectorAccount[]
+  connectorSyncLogs      ConnectorSyncLog[]
 
   @@map("organizations")
 }
@@ -1031,4 +1034,79 @@ model JournalLine {
   trackingOption TrackingOption? @relation(fields: [trackingOptionId], references: [id], onDelete: SetNull)
 
   @@map("journal_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Connectors Hub — Scoped API Keys & External OAuth Accounts (Module 15 & 16)
+// ---------------------------------------------------------------------------
+
+/// Tenant-scoped Bearer API key for deterministic machine-to-machine API access.
+/// Plaintext key is displayed once on creation; only SHA-256 `keyHash` is stored.
+model ApiKey {
+  id              String    @id @default(uuid())
+  organizationId  String    @map("organization_id")
+  name            String
+  /// Non-secret display prefix, e.g. "dws_live_a1b2c3d4"
+  keyPrefix       String    @map("key_prefix")
+  /// SHA-256 hex digest of the full Bearer token
+  keyHash         String    @unique @map("key_hash")
+  /// Module-scoped permissions, e.g. ["receivables:read", "reports:read"]
+  scopes          String[]
+  createdByUserId String?   @map("created_by_user_id")
+  lastUsedAt      DateTime? @map("last_used_at")
+  expiresAt       DateTime? @map("expires_at")
+  revokedAt       DateTime? @map("revoked_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, revokedAt])
+  @@map("api_keys")
+}
+
+/// External OAuth 2.0 connector credentials (e.g. GOOGLE_WORKSPACE) encrypted at rest via AES-256-GCM.
+model ConnectorAccount {
+  id                    String    @id @default(uuid())
+  organizationId        String    @map("organization_id")
+  /// e.g. "GOOGLE_WORKSPACE"
+  provider              String
+  externalAccountEmail  String?   @map("external_account_email")
+  scopes                String[]
+  accessTokenEncrypted  String?   @map("access_token_encrypted")
+  refreshTokenEncrypted String?   @map("refresh_token_encrypted")
+  tokenExpiresAt        DateTime? @map("token_expires_at")
+  /// JSON config for target Drive folder ID, Sheets spreadsheet ID, Calendar ID
+  configJson            String?   @map("config_json")
+  /// "CONNECTED" | "DISCONNECTED" | "ERROR"
+  status                String    @default("DISCONNECTED")
+  connectedByUserId     String?   @map("connected_by_user_id")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  syncLogs     ConnectorSyncLog[]
+
+  @@unique([organizationId, provider])
+  @@map("connector_accounts")
+}
+
+/// Audit log of external connector sync executions (Google Drive, Sheets, Calendar).
+model ConnectorSyncLog {
+  id                 String   @id @default(uuid())
+  organizationId     String   @map("organization_id")
+  connectorAccountId String   @map("connector_account_id")
+  /// "GOOGLE_DRIVE" | "GOOGLE_SHEETS" | "GOOGLE_CALENDAR"
+  service            String
+  action             String
+  /// "SUCCESS" | "FAILED"
+  status             String
+  summary            String
+  metadataJson       String?  @map("metadata_json")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  connectorAccount ConnectorAccount @relation(fields: [connectorAccountId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@map("connector_sync_logs")
 }

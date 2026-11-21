@@ -175,7 +175,8 @@ Access is compartmentalized by functional domain so regular employees (`EMPLOYEE
 | Concern | Standard |
 |---------|---------|
 | Cookie signing | HMAC-SHA256 with `SESSION_SECRET` |
-| Cookie encryption | AES-256-GCM with `SESSION_ENCRYPTION_KEY` |
+| Secret / OAuth token encryption | AES-256-GCM (`v1:<iv>:<tag>:<ciphertext>`) with 32-byte `ENCRYPTION_KEY` (`backend/src/lib/crypto.ts`) |
+| Inbound Bearer API Keys | `dws_live_<48-hex>` hashed at rest via SHA-256 (`api_keys.key_hash`); strictly tenant-isolated, module-scoped (`:read`/`:write`), `ACCOUNTANT` role ceiling, barred from `/auth`, `/organizations`, `/connectors`, `/developer`, `/bulk-import`, and `/system` |
 | Webhook secret | 64-char cryptographically random hex (`crypto.randomBytes(32).toString('hex')`) |
 | Password hashing | N/A — Google OAuth only, no passwords stored |
 | Database connection | TLS enforced (Cloud SQL Auth Proxy handles mTLS) |

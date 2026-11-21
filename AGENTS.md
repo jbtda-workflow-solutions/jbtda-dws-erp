@@ -152,6 +152,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   ├── aba.ts             # APCA Cemtex 120-character .ABA batch payment generator
 │       │   ├── abn.ts             # ATO ABN checksum validation algorithm
 │       │   ├── audit.ts           # Append-only immutable system audit log helper
+│       │   ├── crypto.ts          # AES-256-GCM secret vault (ENCRYPTION_KEY) & SHA-256 API key generator
 │       │   ├── gst.ts             # Integer-cent Australian GST calculation utilities
 │       │   ├── ledger-posting.ts  # Double-entry GL posting, anti-double-reversal, bidirectional sub-ledger sync & lock date validation
 │       │   ├── modules.ts         # Canonical 12-module Product Registry, tier metadata & legacy enabledModules normalizer
@@ -167,6 +168,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   ├── batch-payments.ts  # GET/POST /api/v1/batch-payments, GET /:id/aba (APCA CEMTEX file download)
 │       │   ├── bills.ts           # GET/POST/PATCH/DELETE /api/v1/bills, edit & re-post, revert-to-draft, void, payment reversal & recurring
 │       │   ├── bulk-import.ts     # GET /api/v1/bulk-import/templates, POST /validate, POST /commit (Centralized 13-type Admin CSV Import Engine)
+│       │   ├── connectors.ts      # GET /api/v1/connectors/overview, GET/POST/DELETE /api-keys (Scoped Bearer API Keys & Vault)
 │       │   ├── contacts.ts        # GET/POST/PATCH/DELETE /api/v1/contacts, GET /:id/360 (includes Direct Spend/Receive Money)
 │       │   ├── credit-notes.ts    # GET/POST/DELETE /api/v1/credit-notes, /:id/issue (contra-AR GL), /:id/allocate, /:id/void
 │       │   ├── dashboard.ts       # GET /api/v1/dashboard/summary (100% live PostgreSQL KPI aggregations)
@@ -241,6 +243,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
             ├── AccountsPage.tsx      # Module 2 Chart of Accounts workbench (list, create, seed system accounts)
             ├── BankingPage.tsx       # Module 7 Multi-Account Banking, Inter-Account Transfers & Split-Pane Reconciliation
             ├── BillsPage.tsx         # Accounts Payable bills (list, line items, payments out, GL modal)
+            ├── ConnectorsPage.tsx    # Module 15 Connectors Hub (/connectors — External Apps & Scoped Inbound API Keys)
             ├── ContactsPage.tsx      # Contacts directory (list, filter, create, edit modal)
             ├── DashboardPage.tsx     # Executive dashboard with live working capital KPIs & actionable approvals queue
             ├── DeveloperPage.tsx     # Module 9 & 13 Developer Console (docs viewer, API catalog, roadmap, diagnostics & Database/Table Manager)

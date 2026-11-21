@@ -560,16 +560,16 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 
 ---
 
-### Module 15: Connectors Hub Phase 1 — `/connectors` UI, Inbound Scoped API Keys & AES-256-GCM Secret Vault
+### Module 15: Connectors Hub Phase 1 — `/connectors` UI, Inbound Scoped API Keys & AES-256-GCM Secret Vault (✅ COMPLETED)
 **Objective:** Launch the **`CONNECTORS` (`/connectors`)** module UI, establish the `AES-256-GCM` cryptographic vault (`ENCRYPTION_KEY`) for connector tokens and secrets, and build the deterministic Inbound API Handler (tenant-scoped Bearer API keys with module permissions).
 
-- [ ] **15.1 AES-256-GCM Cryptographic Vault & Connectors Prisma Schema (`backend/src/lib/crypto.ts`, `backend/prisma/schema.prisma`)**:
+- [x] **15.1 AES-256-GCM Cryptographic Vault & Connectors Prisma Schema (`backend/src/lib/crypto.ts`, `backend/prisma/schema.prisma`)**:
   - Implement deterministic `encryptSecret()` / `decryptSecret()` helpers using `AES-256-GCM` backed by `ENCRYPTION_KEY` (32-byte hex from Secret Manager), documented in `docs/ARCHITECTURE.md` and `docs/SECURITY.md`.
   - Add Prisma models for `ApiKey` (`api_keys`), `ConnectorAccount` (`connector_accounts`), and `ConnectorSyncLog` (`connector_sync_logs`).
-- [ ] **15.2 Inbound API Handler & Scoped Bearer API Keys (`backend/src/plugins/auth.ts`, `backend/src/routes/connectors.ts`)**:
+- [x] **15.2 Inbound API Handler & Scoped Bearer API Keys (`backend/src/plugins/auth.ts`, `backend/src/routes/connectors.ts`)**:
   - Extend Fastify auth middleware to accept either `erp_session` HttpOnly cookie (human sessions) OR `Authorization: Bearer dws_live_...` (machine clients), validating SHA-256 key hash, revocation/expiry, `organizationId`, `requireModule(...)`, and explicit module scopes (e.g., `receivables:read`, `receivables:write`, `payables:read`, `reports:read`, `contacts:write`).
   - Endpoints (`ADMIN` only, gated by `requireModule('CONNECTORS')`): `GET /api/v1/connectors/api-keys`, `POST /api/v1/connectors/api-keys` (returns plaintext key once), `DELETE /api/v1/connectors/api-keys/:id` (revoke).
-- [ ] **15.3 Connectors Hub Frontend UI — Phase 1 (`frontend/src/pages/ConnectorsPage.tsx`, `frontend/src/App.tsx`, `frontend/src/components/AppShell.tsx`)**:
+- [x] **15.3 Connectors Hub Frontend UI — Phase 1 (`frontend/src/pages/ConnectorsPage.tsx`, `frontend/src/App.tsx`, `frontend/src/components/AppShell.tsx`)**:
   - Build `/connectors` following Corporate Precision (`docs/DESIGN_SYSTEM.md`) under the `Integrations` navigation group (`ADMIN` / `ACCOUNTANT`, gated by `CONNECTORS` module flag) with tabs for **External Apps (Google Workspace)** and **Inbound API Keys**.
   - Provide 1-click API key creation with one-time copy modal, module scope matrix checkboxes, key revocation, and last-used audit display.
 

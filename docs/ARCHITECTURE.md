@@ -103,7 +103,8 @@ Every variable and secret must be explicitly defined. **No configuration values 
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | Database user password (e.g. `user_erp_admin_pass...`) | `DB_PASSWORD` | Required | Non-empty string | Prisma connection throws PostgreSQL authentication error; `/healthz` returns `503` | PostgreSQL database user password. |
 | Cookie session secret (e.g. `erp_session_secret`) | `SESSION_SECRET` | Required | Cryptographically random string $\ge 32$ characters | Unsigned session cookies cannot be parsed or verified; auth fails | Secret key used for signing and encrypting `erp_session` HttpOnly cookies. |
-| Webhook secret (Stage 2) (e.g. `erp_webhook_secret`) | `WEBHOOK_SECRET` | Required for automations | Cryptographically random hex string of 64 characters | Outbound n8n webhook dispatches fail signature verification | 64-character webhook secret transmitted in `X-Webhook-Secret` header for n8n automations. |
+| Webhook secret (Stage 2) (e.g. `erp_webhook_secret`) | `WEBHOOK_SECRET` | Required for automations | Cryptographically random hex string of 64 characters | Outbound n8n webhook dispatches fail signature verification | 64-character webhook secret transmitted in `X-Webhook-Secret` header for n8n automations and Cloud Scheduler recurring runner. |
+| Connector secret vault key (e.g. `erp_encryption_key`) | `ENCRYPTION_KEY` | Required for OAuth connectors (Stage 16) | 64-character hex string (32 bytes) or 32-byte base64 | `encryptSecret()`/`decryptSecret()` throw; `/connectors` displays `ENCRYPTION_KEY Pending` | AES-256-GCM symmetric key used to encrypt external OAuth refresh tokens (`connector_accounts`) at rest. |
 
 ---
 
@@ -356,7 +357,15 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | :--- | :--- | :--- | :--- | :--- |
 | `POST` | `/api/v1/system/run-recurring` | `X-Webhook-Secret` OR Cookie Session | Cron Secret OR `ADMIN` | Deterministically executes all due active `RecurringSchedule` records (`nextRunDate <= asOfDate`) across `MANUAL_JOURNAL`, `INVOICE`, and `BILL` types, respecting `enabledModules` and `organization.lockDate`, auto-posting GL journals when `autoPost: true`, advancing `nextRunDate`, and writing an immutable `AuditLog` entry. Supports `{ asOfDate?, dryRun?, organizationId? }`. |
 
-### 23. Frontend Client Routes (`frontend/src/App.tsx`)
+### 23. Connectors Hub API (`/api/v1/connectors/*`)
+| Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/connectors/overview` | Cookie Session (`CONNECTORS` module) | `ADMIN`, `ACCOUNTANT` | Returns AES-256-GCM vault status (`encryptionConfigured`), active API key count, sanitized connected external apps (`connector_accounts`, zero encrypted tokens), recent sync logs, and canonical `availableScopes`. |
+| `GET` | `/api/v1/connectors/api-keys` | Cookie Session (`CONNECTORS` module) | `ADMIN` | Lists tenant API keys (`keyPrefix`, `scopes`, `lastUsedAt`, `expiresAt`, `revokedAt`, creator); never returns `keyHash`. |
+| `POST` | `/api/v1/connectors/api-keys` | Cookie Session (`CONNECTORS` module) | `ADMIN` | Generates a cryptographically random `dws_live_...` Bearer API key, stores SHA-256 `keyHash`, logs `API_KEY_CREATED` in `audit_logs`, and returns `plaintextKey` once. |
+| `DELETE` | `/api/v1/connectors/api-keys/:id` | Cookie Session (`CONNECTORS` module) | `ADMIN` | Soft-revokes an API key (`revokedAt = now()`) and logs `API_KEY_REVOKED` in `audit_logs`. |
+
+### 24. Frontend Client Routes (`frontend/src/App.tsx`)
 | Client Route | Guard Status | Rendered Component | Purpose / Description |
 | :--- | :--- | :--- | :--- |
 | `/` | Authenticated | `<DashboardPage />` | Executive dashboard overview, live working capital metrics, actionable approvals banner, and financial KPIs. |
@@ -372,5 +381,6 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `/ledger` | Authenticated | `<LedgerPage />` | General Ledger audit trail and manual journal entry management. |
 | `/reports` | Authenticated | `<ReportsPage />` | Financial Statements (Trial Balance, Dimensional P&L, Balance Sheet, Aged AR/AP) and Australian ATO BAS Engine workbench. |
 | `/settings` | Authenticated | `<SettingsPage />` | Organization profile, lock dates, EFT banking, team members, invites, system audit logs, and Centralized Admin Bulk CSV Import Hub (`ADMIN`). |
+| `/connectors` | Authenticated (`ADMIN`, `ACCOUNTANT`, `CONNECTORS` module) | `<ConnectorsPage />` | Connectors Hub — External Apps (Google Workspace) status & sync logs, and tenant-scoped Inbound Bearer API Key management (`ADMIN`). |
 | `/developer` | Authenticated (`ADMIN`) | `<DeveloperPage />` | Developer & Agent Context Console (allowlisted Markdown docs viewer, API catalog, roadmap tracker, changelog & audit feed, runtime diagnostics, and Interactive Database & Table Manager). |
 | `/*` | Authenticated | Navigate to `/` | Client-side catch-all redirect to `/`. |
