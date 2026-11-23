@@ -2480,6 +2480,29 @@ export interface DashboardSummary {
     ytdExpenseCents: number;
     ytdNetProfitCents: number;
   };
+  workbench?: {
+    unreconciledBankLinesCount: number;
+    draftInvoicesCount: number;
+    draftBillsCount: number;
+    draftJournalsCount: number;
+  };
+  myClaims?: {
+    draftCount: number;
+    submittedCount: number;
+    approvedCount: number;
+    paidCount: number;
+    pendingReimbursementCents: number;
+    totalPaidCents: number;
+    hasBankDetails: boolean;
+    recentClaims: Array<{
+      id: string;
+      claimNumber: string;
+      title: string;
+      status: string;
+      totalCents: number;
+      createdAt: string;
+    }>;
+  };
   activeContactsCount: number;
   recentActivity: Array<{
     id: string;
@@ -2556,6 +2579,46 @@ export const reportsApi = {
 
 export const dashboardApi = {
   getSummary: () => request<DashboardSummary>('GET', '/dashboard/summary'),
+};
+
+// ---------------------------------------------------------------------------
+// Stage 17 (Wave 0): Global Cross-Module Search (/api/v1/search)
+// ---------------------------------------------------------------------------
+
+export type SearchResultCategory =
+  | 'CONTACT'
+  | 'INVOICE'
+  | 'QUOTE'
+  | 'BILL'
+  | 'PURCHASE_ORDER'
+  | 'EXPENSE_CLAIM'
+  | 'DIRECT_TRANSACTION'
+  | 'ACCOUNT'
+  | 'JOURNAL'
+  | 'ITEM';
+
+export interface GlobalSearchResult {
+  id: string;
+  category: SearchResultCategory;
+  title: string;
+  subtitle: string;
+  href: string;
+  status?: string;
+  amountCents?: number;
+  date?: string;
+}
+
+export interface GlobalSearchResponse {
+  query: string;
+  results: GlobalSearchResult[];
+}
+
+export const searchApi = {
+  query: (q: string, limit = 20) =>
+    request<GlobalSearchResponse>(
+      'GET',
+      `/search?q=${encodeURIComponent(q)}&limit=${encodeURIComponent(String(limit))}`,
+    ),
 };
 
 // ---------------------------------------------------------------------------

@@ -290,6 +290,36 @@ async function resolveRequestAuth(
     return false;
   }
 
+  // Stage 17.3: Live membership revocation & role synchronization check.
+  // Ensures removed users lose access immediately and role changes apply
+  // without waiting for 7-day cookie expiry.
+  if (session.organizationId) {
+    const membership = await request.server.prisma.organizationMember.findUnique({
+      where: {
+        organizationId_userId: {
+          organizationId: session.organizationId,
+          userId: session.userId,
+        },
+      },
+      select: {
+        role: true,
+        organization: { select: { enabledModules: true } },
+      },
+    });
+
+    if (!membership) {
+      void reply.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
+      void reply.code(401).send({
+        error: 'Your membership in this organization has been revoked.',
+        code: 'SESSION_REVOKED',
+      });
+      return false;
+    }
+
+    session.role = membership.role;
+    request.organizationEnabledModules = membership.organization.enabledModules;
+  }
+
   request.user = session;
   return true;
 }

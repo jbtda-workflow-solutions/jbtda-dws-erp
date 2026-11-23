@@ -46,7 +46,9 @@ Browser                     Fastify Backend             Google Auth
   }
   ```
 - **Signing secret:** `SESSION_SECRET` env var (≥ 32 bytes, random).
-- Sessions are stateless (no server-side store). The cookie IS the session.
+- **Live Membership Revocation & Role Sync (Stage 17.3):** On every authenticated request carrying an `organizationId`, `resolveRequestAuth` verifies active `OrganizationMember` existence and synchronizes the member's live `role` and `organization.enabledModules` against PostgreSQL. Removed members immediately receive `401 SESSION_REVOKED` (with cookie cleared), and role updates take effect immediately without waiting for 7-day cookie expiry.
+- **Sliding-Window API Rate Limiting (Stage 17.3):** All `/api/v1/*` routes enforce a deterministic sliding-window rate limiter (`20 req/min` per IP on `/api/v1/auth/google`, `180 req/min` per IP or Bearer API key on all other API endpoints), returning `429 Too Many Requests` with `Retry-After`.
+- **Production Global Purge Guard (Stage 17.3):** `POST /api/v1/developer/database/purge-tables` rejects `scope: 'GLOBAL'` with `403 GLOBAL_PURGE_DISABLED` in `NODE_ENV=production` unless `ALLOW_GLOBAL_DB_PURGE=true` is explicitly configured.
 
 ### Session Verification & Restoration Endpoint (`GET /api/v1/auth/me`)
 

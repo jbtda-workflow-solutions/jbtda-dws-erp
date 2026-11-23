@@ -14,6 +14,7 @@ import {
   AccountType,
   EntryType,
   JournalStatus,
+  Role,
 } from '@prisma/client';
 
 function serialize<T extends Record<string, any>>(data: T): any {
@@ -44,6 +45,131 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       if (!org) return reply.code(404).send({ error: 'Organization not found.' });
+
+      const userRole = request.user.role;
+      const userId = request.user.userId;
+
+      // For EMPLOYEE role, return strictly self-service claims & banking summary
+      // without exposing company-wide financial balances or audit trails.
+      if (userRole === Role.EMPLOYEE) {
+        const [myClaims, member] = await Promise.all([
+          fastify.prisma.expenseClaim.findMany({
+            where: { organizationId, employeeUserId: userId },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+            select: {
+              id: true,
+              claimNumber: true,
+              title: true,
+              status: true,
+              totalCents: true,
+              createdAt: true,
+            },
+          }),
+          fastify.prisma.organizationMember.findUnique({
+            where: {
+              organizationId_userId: { organizationId, userId },
+            },
+            select: {
+              bankBsb: true,
+              bankAccountNumber: true,
+              bankAccountName: true,
+            },
+          }),
+        ]);
+
+        let draftCount = 0;
+        let submittedCount = 0;
+        let approvedCount = 0;
+        let paidCount = 0;
+        let pendingReimbursementCents = 0n;
+        let totalPaidCents = 0n;
+
+        for (const c of myClaims) {
+          if (c.status === 'DRAFT') draftCount++;
+          else if (c.status === 'SUBMITTED') {
+            submittedCount++;
+            pendingReimbursementCents += c.totalCents;
+          } else if (c.status === 'APPROVED') {
+            approvedCount++;
+            pendingReimbursementCents += c.totalCents;
+          } else if (c.status === 'PAID') {
+            paidCount++;
+            totalPaidCents += c.totalCents;
+          }
+        }
+
+        return reply.send(
+          serialize({
+            organization: {
+              id: org.id,
+              name: org.name,
+              lockDate: org.lockDate ? org.lockDate.toISOString().slice(0, 10) : null,
+            },
+            cashPosition: { totalCashCents: 0n, accounts: [] },
+            receivables: {
+              totalOutstandingCents: 0n,
+              overdueCents: 0n,
+              openInvoicesCount: 0,
+              overdueInvoicesCount: 0,
+              aging: {
+                currentCents: 0n,
+                days1to30Cents: 0n,
+                days31to60Cents: 0n,
+                days61to90Cents: 0n,
+                days90PlusCents: 0n,
+              },
+            },
+            payables: {
+              totalOutstandingCents: 0n,
+              overdueCents: 0n,
+              openBillsCount: 0,
+              overdueBillsCount: 0,
+              pendingReimbursementsCents: 0n,
+              aging: {
+                currentCents: 0n,
+                days1to30Cents: 0n,
+                days31to60Cents: 0n,
+                days61to90Cents: 0n,
+                days90PlusCents: 0n,
+              },
+            },
+            approvalsQueue: {
+              totalPending: 0,
+              pendingBillsCount: 0,
+              pendingPosCount: 0,
+              pendingClaimsCount: 0,
+              pendingJournalsCount: 0,
+            },
+            performance: {
+              mtdRevenueCents: 0n,
+              mtdExpenseCents: 0n,
+              mtdNetProfitCents: 0n,
+              ytdRevenueCents: 0n,
+              ytdExpenseCents: 0n,
+              ytdNetProfitCents: 0n,
+            },
+            workbench: {
+              unreconciledBankLinesCount: 0,
+              draftInvoicesCount: 0,
+              draftBillsCount: 0,
+              draftJournalsCount: 0,
+            },
+            myClaims: {
+              draftCount,
+              submittedCount,
+              approvedCount,
+              paidCount,
+              pendingReimbursementCents,
+              totalPaidCents,
+              hasBankDetails: Boolean(member?.bankBsb && member?.bankAccountNumber),
+              recentClaims: myClaims,
+            },
+            activeContactsCount: 0,
+            recentActivity: [],
+          }),
+        );
+      }
 
       // Calculate MTD & YTD date ranges
       const currentYear = now.getFullYear();
@@ -312,10 +438,30 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
-      // Active contacts count
-      const activeContactsCount = await fastify.prisma.contact.count({
-        where: { organizationId, isActive: true },
-      });
+      // Active contacts count & Bookkeeping Workbench counts (Stage 17.2)
+      const [
+        activeContactsCount,
+        unreconciledBankLinesCount,
+        draftInvoicesCount,
+        draftBillsCount,
+        draftJournalsCount,
+      ] = await Promise.all([
+        fastify.prisma.contact.count({
+          where: { organizationId, isActive: true },
+        }),
+        fastify.prisma.bankStatementLine.count({
+          where: { organizationId, isReconciled: false },
+        }),
+        fastify.prisma.invoice.count({
+          where: { organizationId, status: 'DRAFT' },
+        }),
+        fastify.prisma.bill.count({
+          where: { organizationId, status: 'DRAFT' },
+        }),
+        fastify.prisma.journalEntry.count({
+          where: { organizationId, status: JournalStatus.DRAFT },
+        }),
+      ]);
 
       return reply.send(
         serialize({
@@ -369,6 +515,12 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
             ytdRevenueCents,
             ytdExpenseCents,
             ytdNetProfitCents,
+          },
+          workbench: {
+            unreconciledBankLinesCount,
+            draftInvoicesCount,
+            draftBillsCount,
+            draftJournalsCount,
           },
           activeContactsCount,
           recentActivity,

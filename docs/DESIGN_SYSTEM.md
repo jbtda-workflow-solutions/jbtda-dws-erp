@@ -186,3 +186,22 @@ export default {
   plugins: [],
 } satisfies Config;
 ```
+
+---
+
+## 7. Mobile & Tablet Responsive Workbench Standard
+
+All product modules and role workbenches MUST provide a first-class mobile (`< 768px`) and tablet (`768px–1023px`) experience without sacrificing desktop ledger density:
+
+1. **Mobile Bottom Navigation Bar (`MobileBottomNav.tsx`):**
+   - Fixed Obsidian Carbon bottom bar (`md:hidden fixed bottom-0 inset-x-0 h-14 bg-obsidian-950 border-t border-white/[0.08] z-40`) displaying up to 4 role-aware primary destinations plus a `More` drawer trigger.
+   - `<main>` MUST reserve bottom clearance (`pb-16 md:pb-0`) so mobile content and sticky action bars are never obscured by the bottom bar.
+   - The `h-7` desktop status footer is hidden on mobile (`hidden md:flex`) to preserve vertical screen real estate.
+2. **Touch Targets & Header Ergonomics:**
+   - Interactive mobile menu links, bottom bar tabs, and primary form actions use a minimum `44px` (`min-h-[44px]`) tap target on `< md` viewports.
+   - The mobile top bar surfaces compact **Search** (`Cmd+K`) and **Quick Create** (`+`) icon buttons alongside the entity switcher.
+3. **Responsive Data Tables & Grids:**
+   - Every data table MUST be wrapped in `overflow-x-auto` so wide financial registers scroll horizontally inside their bordered card without causing page-level horizontal overflow.
+   - Multi-column KPI strips and dashboards stack cleanly (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`), and page headers flex-wrap (`flex-col sm:flex-row`) so action buttons never collide with titles.
+4. **Mobile-Friendly Modals & Drawers:**
+   - Modals and slide-over Drawers constrain to `max-w-[calc(100vw-1rem)]` and `max-h-[92vh] overflow-y-auto` on mobile screens so forms remain usable on 375px viewports.

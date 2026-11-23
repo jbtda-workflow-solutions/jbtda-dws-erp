@@ -592,9 +592,61 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 
 ---
 
+### Module 17 (Wave 0): Role-Aware Workbench Shell, Mobile-Responsive Interface, Global Search (`Cmd+K`), Quick Create (`+`) & Security Hygiene (✅ COMPLETED)
+**Objective:** Reorganize navigation and landing dashboards around persona-specific workbenches (`ADMIN`, `ACCOUNTANT` [Bookkeeper & Tax/BAS Agent], `MANAGER`, `AR_SPECIALIST`, `AP_SPECIALIST`, `EMPLOYEE`, `AUDITOR`), deliver a first-class mobile-friendly interface (bottom nav bar, touch targets, responsive grids), add cross-module Global Search (`Cmd+K`) and Quick Create (`+`), decompose the dashboard into modular `features/dashboard/` components, and harden session revocation, rate limiting, and production `GLOBAL` database purge protection.
+
+- [x] **17.1 Global Cross-Module Search API (`backend/src/routes/search.ts`, `backend/src/server.ts`)**:
+  - Add `GET /api/v1/search?q=<query>&limit=<n>` (`requireOrgAuth`), strictly tenant-isolated and filtered by both user `Role` and `organization.enabledModules`.
+  - Supports text search (names, invoice/bill/PO/quote/journal numbers, references, account codes, ABNs) and exact AUD dollar amount search (e.g., `$450.00` or `450`).
+- [x] **17.2 Role-Aware Dashboard Summary API (`backend/src/routes/dashboard.ts`)**:
+  - Extend `GET /api/v1/dashboard/summary` with live workbench counts (`unreconciledBankLinesCount`, `draftInvoicesCount`, `draftBillsCount`, `draftJournalsCount`) and safe `EMPLOYEE` self-service claims metrics (returning only the employee's own claims without exposing company financials).
+- [x] **17.3 Security Hygiene — Live Session Revocation, Rate Limiting & Global Purge Guard (`backend/src/plugins/auth.ts`, `backend/src/routes/developer.ts`, `backend/src/server.ts`)**:
+  - Validate active `OrganizationMember` existence and live `role` on every `erp_session` cookie request so removed users lose access immediately and role changes apply instantly.
+  - Guard `scope: 'GLOBAL'` on `POST /api/v1/developer/database/purge-tables` (return `403` in production unless `ALLOW_GLOBAL_DB_PURGE=true` is explicitly set) and mask `globalRowCount` on `GET /api/v1/developer/database/tables` when global purge is disabled.
+  - Register a deterministic sliding-window rate limiter on `/api/v1/*` (`429 Too Many Requests` with `Retry-After`) covering IP-scoped sessions/auth and key-scoped Bearer API keys.
+- [x] **17.4 Workbench Navigation Overhaul, Global Search (`Cmd+K`), Quick Create (`+`) & Mobile Bottom Navigation (`AppShell.tsx`, `GlobalSearchModal.tsx`, `QuickCreateMenu.tsx`, `MobileBottomNav.tsx`)**:
+  - Re-group desktop navigation into clean role workbenches (`Accounting`, `Sales`, `Purchases`, `Integrations`, `Admin`).
+  - Add `Cmd+K` / `Ctrl+K` Global Search modal with keyboard navigation and instant deep links.
+  - Add role- and module-filtered `+` Quick Create menu in the header.
+  - Implement a fixed Obsidian Carbon **Mobile Bottom Navigation Bar** (`< md`), mobile header Search/Quick-Create buttons, `44px` minimum mobile touch targets, and responsive viewport padding.
+- [x] **17.5 Modular Role-Aware Landing Homes (`DashboardPage.tsx`, `frontend/src/features/dashboard/*`)**:
+  - Split `DashboardPage.tsx` into persona-tailored landing homes inside `frontend/src/features/dashboard/`: `BookkeeperHome.tsx` (`ACCOUNTANT`), `EmployeeHome.tsx` (`EMPLOYEE`), `SpecialistHome.tsx` (`AR_SPECIALIST`/`AP_SPECIALIST`), and `ExecutiveHome.tsx` (`ADMIN`/`MANAGER`/`AUDITOR`).
+
+---
+
+### Module 18 (Wave 1): Bookkeeping & Core Accounting Workbench Deepening (`CORE_ACCOUNTING`)
+**Objective:** Deliver daily-driver bookkeeping workflows rivaling Xero/QuickBooks across mobile and desktop, while decomposing monolithic accounting pages into modular `frontend/src/features/bookkeeping/` components.
+
+- [ ] **18.1 Interactive Account Transactions Register & Report Drill-Down**:
+  - Clickable account balances across Trial Balance, P&L, Balance Sheet, and Chart of Accounts opening a filterable Account Transactions register with direct click-through to inspect/edit source records.
+- [ ] **18.2 Deterministic Bank Rules & Bulk Cash Coding**:
+  - Manage rule-based auto-coding (`BankRule` model) applied automatically to imported bank statement lines, plus a high-speed bulk Cash Coding reconciliation view.
+- [ ] **18.3 Split Transactions & Fee Adjustments in Bank Reconciliation**:
+  - Match a single bank statement line to multiple open invoices or bills simultaneously, with inline bank/merchant fee or rounding adjustment lines.
+- [ ] **18.4 Formal Bank Reconciliation Summary Report**:
+  - Point-in-time printable proof reconciling Bank Statement Balance vs. GL Balance with explicit unreconciled deposits/payments lists and duplicate line detection.
+- [ ] **18.5 Find & Recode (Bulk Reclassification) & Opening/Conversion Balances**:
+  - Filter posted transactions by Contact, Account, Tax Treatment, or Cost Centre and batch-recode with automatic GL adjustment and audit trail; plus guided Conversion Balances setup for migrating businesses.
+
+---
+
+### Module 19 (Wave 2): Tax Agent, Statutory & Period-Close Workbench (`CORE_ACCOUNTING` — `ACCOUNTANT` / `AUDITOR`)
+**Objective:** Equip Australian Tax Agents, BAS Agents, and Senior Accountants (operating under `ACCOUNTANT` / `AUDITOR` roles) with end-to-end compliance, period-close, and statutory reporting tools.
+
+- [ ] **19.1 Cash vs. Accrual Basis Toggle on Reports & ATO BAS Engine**:
+  - Support both Cash and Accrual accounting basis across BAS worksheets, P&L, and GST Audit reports.
+- [ ] **19.2 Month-End & BAS Health Check (Close Checklist) & GST Exception Diagnostics**:
+  - Guided close checklist surfacing unreconciled bank lines, unposted drafts, GST anomalies (e.g., GST claimed on contacts missing an ABN, tax overrides), suspense balances, and 1-click Period Lock.
+- [ ] **19.3 Statement of Cash Flows & Comparative Financial Statements**:
+  - Add Statement of Cash Flows, side-by-side period comparisons (MoM/QoQ/YoY `$` and `%` variance), and Budget vs. Actual P&L.
+- [ ] **19.4 Fixed Asset Register, Auto-Depreciation & Tax Agent Workpaper Pack Export**:
+  - ATO straight-line / diminishing-value asset register with automated monthly depreciation journals and 1-click EOFY workpaper export.
+
+---
+
 ## 6. Deferred Stages (Architectural Placeholders)
 
-The stages below are architecturally specified in `docs/modules/*.md` and `docs/PLUGINS.md` so the platform's data model, RBAC, and module boundaries remain forward-compatible, but they are **explicitly deferred** and not part of the active build queue until promoted.
+The stages below—along with **Operational Expansion for Managers & General Staff** (Employee Purchase Requisitions `REQ → PO`, Tiered Approval Matrices, Pre-Spend Cost Centre Budgets, 3-Way PO/GRN Matching, and Direct Invoice/Statement Emailing)—are explicitly **deferred** and excluded from the active build queue until promoted.
 
 ### Deferred Stage D1: Cloud Storage Document Vault & Attachments (`DOCUMENTS`)
 - **Context Spec:** `docs/modules/documents.md` & `docs/PLUGINS.md`

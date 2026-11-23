@@ -98,6 +98,7 @@ Every variable and secret must be explicitly defined. **No configuration values 
 | `HOST` | Cloud Run Env | Optional (Default: `"0.0.0.0"`) | IP string (e.g. `"0.0.0.0"`) | Binding to `127.0.0.1` causes container to be unreachable from outside | Host interface Fastify binds to. |
 | `FRONTEND_DIST_PATH` | Cloud Run Env | Optional (Default: auto-discovery) | Valid directory path containing `index.html` (e.g. `"/app/frontend/dist"`) | Fastify logs warning and serves API-only fallback HTML page on root; SPA routes return 404 | Custom filesystem path for compiled frontend SPA assets. |
 | `PUBLIC_BASE_URL` | Cloud Run Env | Optional (Default: request `x-forwarded-proto` + `host`) | Valid HTTPS origin without trailing slash (e.g. `https://erp.example.com`) | Falls back to request headers when constructing OAuth callback URI | Canonical public HTTPS origin used to construct exact Google Workspace OAuth callback URI (`/api/v1/connectors/oauth/google/callback`). |
+| `ALLOW_GLOBAL_DB_PURGE` | Cloud Run Env | Optional (Default: `"false"` in production) | `"true"` \| `"false"` | When `"false"` or omitted in `NODE_ENV=production`, `POST /api/v1/developer/database/purge-tables` rejects `scope: 'GLOBAL'` with `403 Forbidden` | Explicit maintenance safeguard protecting multi-tenant isolation from cross-organization database purges in production. |
 
 ### 3. Secrets Section (Cloud Run UI $\leftarrow$ Secret Manager)
 | Secret in Secret Manager | Mounted Variable | Required | Permitted Values | Failure Behavior | Purpose |
@@ -330,10 +331,11 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `GET` | `/api/v1/reports/bas` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR` | Computes official Australian Taxation Office (ATO) Business Activity Statement GST worksheet boxes: G1 Total Sales, G2/G3 Export/GST-Free Sales, G10 Capital Purchases, G11 Non-Capital Purchases, 1A GST on Sales, 1B GST on Purchases, and Net GST Settlement (Payable/Refundable). |
 | `POST` | `/api/v1/reports/bas/lock` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Locks accounting period up to specified BAS end date (`lockDate`), freezing the General Ledger and preventing any retrospective transactions, modifications, or approvals. |
 
-### 19. Executive Live Dashboard API (`/api/v1/dashboard/*`)
+### 19. Role-Aware Live Dashboard & Global Search API (`/api/v1/dashboard/*`, `/api/v1/search`)
 | Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
 | :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/dashboard/summary` | Cookie Session | All Authenticated Roles | Computes 100% real-time financial intelligence: liquid cash position across bank accounts, AR & AP totals and aging brackets, actionable pending approvals queue (bills, POs, claims, journals), MTD and YTD P&L performance, and recent audit activity feed. |
+| `GET` | `/api/v1/dashboard/summary` | Cookie Session | All Authenticated Roles | Computes 100% real-time role-aware workspace intelligence: cash position, AR/AP aging, pending approvals, MTD/YTD P&L, bookkeeping workbench counts (`unreconciledBankLinesCount`, draft counts), and scoped self-service `myClaims` for `EMPLOYEE` users (zero org-wide financial leakage). |
+| `GET` | `/api/v1/search` | Cookie Session | All Authenticated Roles | Cross-module global search (`?q=<query>&limit=<n>`) supporting text and exact AUD dollar amount matching across Contacts, Items, Accounts, Invoices, Quotes, Bills, POs, Expense Claims, Direct Transactions, and Journals, strictly filtered by `organizationId`, user `Role`, and `enabledModules`. |
 
 ### 20. Developer & Agent Context Console API (`/api/v1/developer/*`)
 | Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |

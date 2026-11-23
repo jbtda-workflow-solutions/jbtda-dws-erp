@@ -4,6 +4,30 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.29.0] — 2026-11-24 — Module 17 (Wave 0): Role-Aware Workbench Shell, Mobile-Responsive Interface, Global Search (`Cmd+K`), Quick Create (`+`) & Security Hygiene
+
+### Added
+- **Global Cross-Module Search API (`17.1` — `backend/src/routes/search.ts`, `backend/src/server.ts`, `frontend/src/api/client.ts`)**:
+  - Added `GET /api/v1/search?q=<query>&limit=<n>` strictly scoped to `organizationId`, user `Role`, and `organization.enabledModules`, supporting text and exact AUD dollar-amount matching across Contacts, Items, Accounts, Invoices, Quotes, Bills, POs, Expense Claims, Direct Transactions, and Journals.
+- **Role-Aware Workbench Shell, `Cmd+K` Search, `+` Quick Create & Mobile Bottom Navigation (`17.4` — `frontend/src/components/AppShell.tsx`, `GlobalSearchModal.tsx`, `QuickCreateMenu.tsx`, `MobileBottomNav.tsx`)**:
+  - Re-organized desktop navigation into persona-aligned workbench groups (`Accounting`, `Sales`, `Purchases`, `Integrations`, `Admin`).
+  - Added portal-mounted `Cmd+K` / `Ctrl+K` Global Search modal with keyboard navigation and `+` Quick Create header menu.
+  - Added a fixed Obsidian Carbon **Mobile Bottom Navigation Bar** (`< md`), mobile header search & quick-create triggers, `44px` minimum mobile touch targets, and bottom viewport clearance (`pb-16 md:pb-0`).
+- **Modular Role-Aware Landing Homes (`17.5` — `frontend/src/pages/DashboardPage.tsx`, `frontend/src/features/dashboard/*`)**:
+  - Decomposed `DashboardPage.tsx` into `BookkeeperHome.tsx` (`ACCOUNTANT` — with unreconciled bank line counts, unposted drafts, and tax/accounting shortcuts), `EmployeeHome.tsx` (`EMPLOYEE` — mobile-first self-service claims & banking portal), `SpecialistHome.tsx` (`AR_SPECIALIST` / `AP_SPECIALIST`), and `ExecutiveHome.tsx` (`ADMIN` / `MANAGER` / `AUDITOR`, with an Executive/Bookkeeping toggle for `ADMIN`).
+
+### Changed
+- **Role-Aware Dashboard API (`17.2` — `backend/src/routes/dashboard.ts`)**:
+  - Extended `GET /api/v1/dashboard/summary` with `workbench` counts (`unreconciledBankLinesCount`, `draftInvoicesCount`, `draftBillsCount`, `draftJournalsCount`) and isolated `myClaims` self-service payload for `EMPLOYEE` users (preventing org-wide financial leakage).
+- **Security Hygiene (`17.3` — `backend/src/plugins/auth.ts`, `backend/src/routes/developer.ts`, `backend/src/server.ts`)**:
+  - Added live `OrganizationMember` revocation & role synchronization on `erp_session` cookie requests (`401 SESSION_REVOKED` on removed members).
+  - Added `ALLOW_GLOBAL_DB_PURGE` production guard blocking `scope: 'GLOBAL'` on `POST /api/v1/developer/database/purge-tables` with `403 GLOBAL_PURGE_DISABLED` unless explicitly enabled.
+  - Added deterministic sliding-window rate limiting on `/api/v1/*` (`429 Too Many Requests` with `Retry-After`).
+- **Roadmap & Agent Context Updates (`docs/STAGES_ROADMAP.md`, `docs/DESIGN_SYSTEM.md`, `docs/modules/README.md`, `docs/modules/core-platform.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`)**:
+  - Formalized Stages 17–19 (Waves 0–2), added the mandatory **Mobile-Responsive Workbench Standard**, and documented single-role Tax Agent scoping under `ACCOUNTANT` / `AUDITOR`.
+
+---
+
 ## [0.28.1] — 2026-11-21 — Connectors Hub Per-Variable OAuth & Encryption Diagnostics
 
 ### Added

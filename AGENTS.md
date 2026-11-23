@@ -187,6 +187,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   ├── purchase-orders.ts # GET/POST/PATCH/DELETE /api/v1/purchase-orders, approval workflow, 1-click bill convert
 │       │   ├── quotes.ts          # GET/POST/PATCH/DELETE /api/v1/quotes, 1-click convert-to-invoice
 │       │   ├── reports.ts         # GET /api/v1/reports/* (Trial Balance, P&L, Balance Sheet, Aged AR/AP, ATO BAS Engine)
+│       │   ├── search.ts          # GET /api/v1/search (Tenant-isolated, RBAC- & module-scoped cross-module search & AUD amount lookup)
 │       │   ├── system.ts          # POST /api/v1/system/run-recurring (Cloud Scheduler X-Webhook-Secret & ADMIN recurring runner)
 │       │   └── vendor-credits.ts  # GET/POST/DELETE /api/v1/vendor-credits, /:id/issue (contra-AP GL), /:id/allocate, /:id/void
 │       └── server.ts          # Fastify server entry point, static serving, plugins
@@ -230,16 +231,25 @@ The application relies strictly on Google Cloud Run container configuration (zer
         ├── api/
         │   └── client.ts      # Typed API client wrapper with credentials
         ├── components/
-        │   ├── AppShell.tsx   # Obsidian Carbon static header (dropdown nav, company switcher) & lean static footer
+        │   ├── AppShell.tsx            # Obsidian Carbon workbench header, mobile drawer, Cmd+K search, + Quick Create & lean desktop footer
         │   ├── BillPreviewModal.tsx    # Commercial Landscape A4 Vendor Bill Voucher document preview & print dialog
+        │   ├── GlobalSearchModal.tsx   # Portal-mounted Cmd+K cross-module search & quick-jump command palette
         │   ├── InvoicePreviewModal.tsx # Commercial Landscape A4 Tax Invoice document preview & print dialog
+        │   ├── MobileBottomNav.tsx     # Fixed Obsidian Carbon mobile bottom navigation bar (< md) with role-aware tabs
+        │   ├── QuickCreateMenu.tsx     # Role- and module-filtered + Quick Create header dropdown
         │   └── ui/
-        │       ├── Button.tsx         # Crisp 4px Corporate Precision button primitive
-        │       ├── Drawer.tsx         # Right-hand slide-over inspector drawer primitive
-        │       ├── Input.tsx          # Crisp 4px form input with monospace support
-        │       ├── Modal.tsx          # Architectural 6px dialog modal component
-        │       ├── PipelineRibbon.tsx # Connected horizontal lifecycle process bar
-        │       └── StatusTag.tsx      # Squared technical status badge with 6px semantic dot
+        │       ├── Button.tsx          # Crisp 4px Corporate Precision button primitive
+        │       ├── Drawer.tsx          # Right-hand slide-over inspector drawer primitive
+        │       ├── Input.tsx           # Crisp 4px form input with monospace support
+        │       ├── Modal.tsx           # Architectural 6px dialog modal component
+        │       ├── PipelineRibbon.tsx  # Connected horizontal lifecycle process bar
+        │       └── StatusTag.tsx       # Squared technical status badge with 6px semantic dot
+        ├── features/
+        │   └── dashboard/
+        │       ├── BookkeeperHome.tsx  # ACCOUNTANT daily bookkeeping & tax workbench landing home
+        │       ├── EmployeeHome.tsx    # EMPLOYEE mobile-first self-service expense claims & banking portal
+        │       ├── ExecutiveHome.tsx   # ADMIN / MANAGER / AUDITOR executive financial intelligence home
+        │       └── SpecialistHome.tsx  # AR_SPECIALIST / AP_SPECIALIST focused operational queue home
         ├── hooks/
         │   └── useAuth.tsx    # Global auth context, multi-org memberships, and switcher state
         ├── lib/

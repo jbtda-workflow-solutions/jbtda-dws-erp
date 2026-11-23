@@ -47,6 +47,7 @@ import { bulkImportRoutes } from './routes/bulk-import.js';
 import { systemRoutes } from './routes/system.js';
 import { connectorRoutes } from './routes/connectors.js';
 import { googleConnectorRoutes } from './routes/connectors-google.js';
+import { searchRoutes } from './routes/search.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -154,6 +155,55 @@ async function buildServer() {
   await fastify.register(authPlugin);
 
   // -------------------------------------------------------------------------
+  // Deterministic Sliding-Window API Rate Limiter (Stage 17.3)
+  // Scoped to /api/v1/* (20 req/min on /auth/google, 180 req/min per Bearer
+  // API key, 180 req/min per IP for authenticated workspace traffic).
+  // -------------------------------------------------------------------------
+  const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+  const RATE_WINDOW_MS = 60_000;
+
+  fastify.addHook('onRequest', async (request, reply) => {
+    const urlPath = request.url.split('?')[0] ?? request.url;
+    if (!urlPath.startsWith('/api/v1/')) return;
+
+    const now = Date.now();
+    const authHeader = request.headers['authorization'];
+    const isBearer = typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
+    const isAuthExchange = urlPath === '/api/v1/auth/google';
+
+    const limit = isAuthExchange ? 20 : 180;
+    const key = isAuthExchange
+      ? `auth:${request.ip}`
+      : isBearer
+        ? `key:${authHeader.slice(7, 27)}`
+        : `ip:${request.ip}`;
+
+    // Periodic bounded cleanup so memory stays strictly O(active clients)
+    if (rateBuckets.size > 5000) {
+      for (const [k, v] of rateBuckets.entries()) {
+        if (v.resetAt <= now) rateBuckets.delete(k);
+      }
+    }
+
+    const existing = rateBuckets.get(key);
+    if (!existing || existing.resetAt <= now) {
+      rateBuckets.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS });
+      return;
+    }
+
+    existing.count += 1;
+    if (existing.count > limit) {
+      const retryAfterSec = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
+      void reply.header('Retry-After', String(retryAfterSec));
+      return reply.code(429).send({
+        error: 'Rate limit exceeded. Please retry shortly.',
+        code: 'RATE_LIMIT_EXCEEDED',
+        retryAfterSeconds: retryAfterSec,
+      });
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // Routes
   // -------------------------------------------------------------------------
   await fastify.register(authRoutes);
@@ -179,6 +229,7 @@ async function buildServer() {
   await fastify.register(systemRoutes);
   await fastify.register(connectorRoutes);
   await fastify.register(googleConnectorRoutes);
+  await fastify.register(searchRoutes);
 
   // -------------------------------------------------------------------------
   // Health check (unauthenticated — used by Cloud Run)

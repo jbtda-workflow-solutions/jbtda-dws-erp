@@ -1319,6 +1319,17 @@ export const developerRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const organizationId = request.user.organizationId!;
       const scope = request.body?.scope === 'GLOBAL' ? 'GLOBAL' : 'ORGANIZATION';
+      const allowGlobalPurge =
+        process.env['NODE_ENV'] !== 'production' ||
+        process.env['ALLOW_GLOBAL_DB_PURGE'] === 'true';
+
+      if (scope === 'GLOBAL' && !allowGlobalPurge) {
+        return reply.code(403).send({
+          error:
+            'GLOBAL database purge is disabled in production to protect multi-tenant isolation. Set ALLOW_GLOBAL_DB_PURGE=true only for explicit maintenance windows.',
+          code: 'GLOBAL_PURGE_DISABLED',
+        });
+      }
       const requestedTables = Array.isArray(request.body?.tables)
         ? request.body.tables.map((t) => String(t).trim().toLowerCase())
         : [];
