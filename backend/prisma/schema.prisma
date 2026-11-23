@@ -228,6 +228,8 @@ model Organization {
   apiKeys                ApiKey[]
   connectorAccounts      ConnectorAccount[]
   connectorSyncLogs      ConnectorSyncLog[]
+  bankRules              BankRule[]
+  fixedAssets            FixedAsset[]
 
   @@map("organizations")
 }
@@ -1109,4 +1111,72 @@ model ConnectorSyncLog {
 
   @@index([organizationId, createdAt])
   @@map("connector_sync_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Stage 18 & 19 (Waves 1–2): Bookkeeping Bank Rules & ATO Fixed Asset Register
+// ---------------------------------------------------------------------------
+
+/// Deterministic Bank Reconciliation auto-coding rule (Stage 18.2).
+model BankRule {
+  id               String       @id @default(uuid())
+  organizationId   String       @map("organization_id")
+  name             String
+  /// "SPEND" | "RECEIVE"
+  direction        String       @default("SPEND")
+  /// "DESCRIPTION" | "REFERENCE" | "ANY"
+  matchField       String       @default("ANY") @map("match_field")
+  /// "CONTAINS" | "EXACT" | "STARTS_WITH"
+  matchType        String       @default("CONTAINS") @map("match_type")
+  matchValue       String       @map("match_value")
+  contactId        String?      @map("contact_id")
+  accountId        String       @map("account_id")
+  trackingOptionId String?      @map("tracking_option_id")
+  taxTreatment     TaxTreatment @default(TAX_INCLUSIVE) @map("tax_treatment")
+  priority         Int          @default(100)
+  isActive         Boolean      @default(true) @map("is_active")
+  createdByUserId  String?      @map("created_by_user_id")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, isActive, priority])
+  @@map("bank_rules")
+}
+
+/// ATO Fixed Asset Register entry with integer-cent cost & basis-point depreciation rate (Stage 19.4).
+model FixedAsset {
+  id                        String    @id @default(uuid())
+  organizationId            String    @map("organization_id")
+  assetNumber               String    @map("asset_number")
+  name                      String
+  category                  String
+  purchaseDate              DateTime  @map("purchase_date")
+  costCents                 BigInt    @map("cost_cents")
+  residualValueCents        BigInt    @default(0) @map("residual_value_cents")
+  usefulLifeMonths          Int       @default(60) @map("useful_life_months")
+  /// "STRAIGHT_LINE" | "DIMINISHING_VALUE"
+  depreciationMethod        String    @default("STRAIGHT_LINE") @map("depreciation_method")
+  /// Annual depreciation rate in basis points (e.g. 2000 = 20.00%, 0 floats)
+  depreciationRateBps       Int       @default(2000) @map("depreciation_rate_bps")
+  assetAccountId            String    @map("asset_account_id")
+  accumulatedDepAccountId   String    @map("accumulated_dep_account_id")
+  depExpenseAccountId       String    @map("dep_expense_account_id")
+  accumulatedDepCents       BigInt    @default(0) @map("accumulated_dep_cents")
+  lastDepreciatedAt         DateTime? @map("last_depreciated_at")
+  /// "ACTIVE" | "DISPOSED"
+  status                    String    @default("ACTIVE")
+  disposalDate              DateTime? @map("disposal_date")
+  disposalProceedsCents     BigInt?   @map("disposal_proceeds_cents")
+  notes                     String?
+  createdByUserId           String?   @map("created_by_user_id")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, assetNumber])
+  @@index([organizationId, status])
+  @@map("fixed_assets")
 }

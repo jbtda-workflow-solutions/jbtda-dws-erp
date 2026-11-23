@@ -2,7 +2,7 @@
 
 - **Module Key:** `CORE_ACCOUNTING`
 - **Commercial Tier:** Base (Core Ledger — Always Enabled)
-- **Status:** ✅ Live (Stages 2, 7, 8, 10, 11, 12; Recurring Runner added in Stage 14)
+- **Status:** ✅ Live (Stages 2, 7, 8, 10, 11, 12, 14, 18, 19)
 
 ---
 
@@ -11,7 +11,8 @@
 ### Database Tables (`backend/prisma/schema.prisma`)
 - **Chart of Accounts & Dimensions:** `accounts`, `tracking_categories`, `tracking_options`
 - **General Ledger:** `journal_entries`, `journal_lines`, `recurring_schedules`
-- **Banking & Reconciliation:** `bank_transfers`, `bank_statement_lines`
+- **Banking & Reconciliation:** `bank_transfers`, `bank_statement_lines`, `bank_rules`
+- **Tax & Fixed Assets:** `fixed_assets`
 
 ### Core Libraries (`backend/src/lib/`)
 - `ledger-posting.ts`: `postJournalEntry`, `syncOrReplaceJournalEntry`, `reverseJournalEntry` (with anti-double-reversal guard & bidirectional sub-ledger cascade), period lock validation
@@ -23,11 +24,15 @@
 - `accounts.ts`: `/api/v1/accounts/*`, `/api/v1/tracking-categories/*`
 - `ledger.ts`: `/api/v1/ledger/*` (entries, approve, reverse, edit, delete)
 - `banking.ts`: `/api/v1/banking/accounts`, `/transfers`, `/statements/import`, `/statements`, `/reconciliation/*`
+- `bookkeeping.ts`: `/api/v1/bookkeeping/account-transactions`, `/bank-rules/*`, `/cash-coding/reconcile`, `/reconciliation/split-match`, `/reconciliation/summary`, `/find-recode/*`, `/conversion-balances`
+- `tax-close.ts`: `/api/v1/tax/health-check`, `/bas-basis`, `/cash-flow`, `/comparative-pl`, `/fixed-assets/*`, `/workpaper-pack`
 - `reports.ts`: `/api/v1/reports/trial-balance`, `/profit-and-loss`, `/balance-sheet`, `/aged-receivables`, `/aged-payables`, `/bas`, `/bas/lock`
 - `dashboard.ts`: `/api/v1/dashboard/summary`
 
-### Frontend Pages (`frontend/src/pages/`)
+### Frontend Pages (`frontend/src/pages/` & `frontend/src/features/`)
 - `AccountsPage.tsx` (`/accounts`), `LedgerPage.tsx` (`/ledger`), `BankingPage.tsx` (`/banking`), `ReportsPage.tsx` (`/reports`)
+- `BookkeepingPage.tsx` (`/bookkeeping` — `features/bookkeeping/*`)
+- `TaxClosePage.tsx` (`/tax-close` — `features/tax/*`)
 
 ---
 

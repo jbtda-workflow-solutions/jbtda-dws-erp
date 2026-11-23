@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   FileText,
   BarChart3,
@@ -523,10 +524,13 @@ export function ReportsPage() {
               <div className="divide-y divide-slate-100 text-xs">
                 {plReport.revenue.map((r) => (
                   <div key={r.id} className="py-2 flex items-center justify-between hover:bg-slate-50/50">
-                    <span className="text-slate-700">
+                    <Link
+                      to={`/bookkeeping?tab=REGISTER&accountId=${r.id}&startDate=${plStartDate}&endDate=${plEndDate}`}
+                      className="text-slate-700 hover:text-forest-900 hover:underline"
+                    >
                       <span className="font-mono text-slate-400 mr-2">{r.code}</span>
                       {r.name}
-                    </span>
+                    </Link>
                     <span className="font-mono text-slate-900">{formatCents(r.amountCents)}</span>
                   </div>
                 ))}
@@ -843,7 +847,14 @@ export function ReportsPage() {
                   {tbReport.accounts.map((acc) => (
                     <tr key={acc.id} className="hover:bg-slate-50/60">
                       <td className="py-2 px-3 font-mono text-slate-600 font-bold">{acc.code}</td>
-                      <td className="py-2 px-3 font-medium text-slate-900">{acc.name}</td>
+                      <td className="py-2 px-3 font-medium text-slate-900">
+                        <Link
+                          to={`/bookkeeping?tab=REGISTER&accountId=${acc.id}&endDate=${asOfDate}`}
+                          className="hover:text-forest-900 hover:underline"
+                        >
+                          {acc.name}
+                        </Link>
+                      </td>
                       <td className="py-2 px-3 font-mono text-[11px] text-slate-500">{acc.type}</td>
                       <td className="py-2 px-3 text-center font-mono text-[10px] text-slate-400">
                         {acc.normalBalance}

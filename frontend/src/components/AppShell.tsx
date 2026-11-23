@@ -71,6 +71,18 @@ const NAV_GROUPS: NavGroup[] = [
         ],
       },
       {
+        label: 'Bookkeeping Workbench',
+        href: '/bookkeeping',
+        icon: BookOpen,
+        allowedRoles: ['ADMIN', 'ACCOUNTANT', 'MANAGER', 'AUDITOR'],
+      },
+      {
+        label: 'Tax & Period Close',
+        href: '/tax-close',
+        icon: ShieldCheck,
+        allowedRoles: ['ADMIN', 'ACCOUNTANT', 'MANAGER', 'AUDITOR'],
+      },
+      {
         label: 'Journal Ledger',
         href: '/ledger',
         icon: BookOpen,

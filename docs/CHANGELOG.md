@@ -4,6 +4,26 @@ Chronological log of all changes, schema diffs, and new dependencies.
 
 ---
 
+## [0.30.0] — 2026-11-24 — Modules 18 & 19 (Waves 1 & 2): Bookkeeping Workbench & Tax Agent Period-Close Suite
+
+### Added
+- **Prisma Schema Additions (`backend/prisma/schema.prisma`)**:
+  - Added `BankRule` (`bank_rules`) for deterministic Bank Reconciliation auto-coding rules.
+  - Added `FixedAsset` (`fixed_assets`) for the ATO Fixed Asset Register using integer-cent `BIGINT` cost/accumulated depreciation and integer basis-point (`depreciationRateBps`) rates.
+- **Module 18 (Wave 1) Bookkeeping Workbench (`backend/src/routes/bookkeeping.ts`, `frontend/src/pages/BookkeepingPage.tsx`, `frontend/src/features/bookkeeping/*`)**:
+  - **Interactive Account Transactions Register (`18.1`):** Opening & running balances with date/account/cost-centre/search filters and clickable drill-down links from Trial Balance and Profit & Loss (`ReportsPage.tsx`).
+  - **Deterministic Bank Rules & Bulk Cash Coding (`18.2`):** Full CRUD for `bank_rules`, 1-click auto-apply onto unreconciled bank statement lines, and atomic multi-line Cash Coding reconciliation.
+  - **Split & Fee-Adjusted Bank Reconciliation (`18.3`):** Match 1 bank statement line across multiple open Invoices or Bills simultaneously with inline bank/merchant fee or rounding adjustment.
+  - **Formal Bank Reconciliation Proof (`18.4`):** Printable statement-vs-ledger reconciliation proof with unpresented ledger entries and duplicate statement line detection.
+  - **Find & Recode + Conversion Balances (`18.5`):** Batch reclassification of posted non-system GL lines via atomic `FIND_AND_RECODE` journals, plus guided Opening / Conversion Balances migration wizard.
+- **Module 19 (Wave 2) Tax Agent & Period-Close Workbench (`backend/src/routes/tax-close.ts`, `frontend/src/pages/TaxClosePage.tsx`, `frontend/src/features/tax/*`)**:
+  - **Cash vs. Accrual ATO BAS Engine (`19.1`):** Toggle between Cash Basis (payment/receipt dates with integer pro-rata GST) and Accrual Basis across G1, G3, G11, 1A, 1B, and Net GST.
+  - **Month-End & BAS Health Check (`19.2`):** Readiness score, unreconciled bank/draft counts, ATO GST ABN exception diagnostics (bills missing vendor ABN, $1,000+ invoices missing buyer ABN), and 1-click Period Lock.
+  - **Statement of Cash Flows & Comparative P&L (`19.3`):** Operating/Investing/Financing cash flow statement and Current vs. Prior Period / Prior Year YoY P&L with `$` and `%` variances.
+  - **ATO Fixed Asset Register, Auto-Depreciation & EOFY Workpaper Pack (`19.4`):** Straight-Line / Diminishing-Value register, automated monthly `DEPRECIATION` GL posting, asset disposal gain/loss journals, and 1-click `.CSV` EOFY workpaper export.
+
+---
+
 ## [0.29.0] — 2026-11-24 — Module 17 (Wave 0): Role-Aware Workbench Shell, Mobile-Responsive Interface, Global Search (`Cmd+K`), Quick Create (`+`) & Security Hygiene
 
 ### Added

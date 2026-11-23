@@ -16,6 +16,8 @@ import { ReportsPage } from '@/pages/ReportsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { DeveloperPage } from '@/pages/DeveloperPage';
 import { ConnectorsPage } from '@/pages/ConnectorsPage';
+import { BookkeepingPage } from '@/pages/BookkeepingPage';
+import { TaxClosePage } from '@/pages/TaxClosePage';
 
 // ---------------------------------------------------------------------------
 // Root guard — renders the correct view based on auth status
@@ -54,6 +56,8 @@ function AppRoutes() {
         <Route path="/bills" element={<BillsPage />} />
         <Route path="/expenses" element={<ExpensesPage />} />
         <Route path="/banking" element={<BankingPage />} />
+        <Route path="/bookkeeping" element={<BookkeepingPage />} />
+        <Route path="/tax-close" element={<TaxClosePage />} />
         <Route path="/accounts" element={<AccountsPage />} />
         <Route path="/ledger" element={<LedgerPage />} />
         <Route path="/reports" element={<ReportsPage />} />

@@ -234,10 +234,16 @@ export function BookkeeperHome({ data, loading, onRefresh }: BookkeeperHomeProps
           <div className="divide-y divide-slate-100">
             {[
               {
-                label: 'Journal Ledger & Manual Entries',
-                sub: 'Post adjustments, reversals & recurring templates',
-                href: '/ledger',
+                label: 'Bookkeeping Workbench (Register & Rules)',
+                sub: 'Account transactions, cash coding, Find & Recode & rec proof',
+                href: '/bookkeeping',
                 icon: BookOpen,
+              },
+              {
+                label: 'Tax Agent & Period Close',
+                sub: 'BAS health check, Cash/Accrual BAS, Cash Flow & Fixed Assets',
+                href: '/tax-close',
+                icon: ShieldCheck,
               },
               {
                 label: 'Chart of Accounts & Cost Centres',

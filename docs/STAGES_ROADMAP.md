@@ -614,32 +614,32 @@ Development proceeds strictly **one module at a time**. We complete the backend 
 
 ---
 
-### Module 18 (Wave 1): Bookkeeping & Core Accounting Workbench Deepening (`CORE_ACCOUNTING`)
+### Module 18 (Wave 1): Bookkeeping & Core Accounting Workbench Deepening (`CORE_ACCOUNTING`) (✅ COMPLETED)
 **Objective:** Deliver daily-driver bookkeeping workflows rivaling Xero/QuickBooks across mobile and desktop, while decomposing monolithic accounting pages into modular `frontend/src/features/bookkeeping/` components.
 
-- [ ] **18.1 Interactive Account Transactions Register & Report Drill-Down**:
+- [x] **18.1 Interactive Account Transactions Register & Report Drill-Down**:
   - Clickable account balances across Trial Balance, P&L, Balance Sheet, and Chart of Accounts opening a filterable Account Transactions register with direct click-through to inspect/edit source records.
-- [ ] **18.2 Deterministic Bank Rules & Bulk Cash Coding**:
+- [x] **18.2 Deterministic Bank Rules & Bulk Cash Coding**:
   - Manage rule-based auto-coding (`BankRule` model) applied automatically to imported bank statement lines, plus a high-speed bulk Cash Coding reconciliation view.
-- [ ] **18.3 Split Transactions & Fee Adjustments in Bank Reconciliation**:
+- [x] **18.3 Split Transactions & Fee Adjustments in Bank Reconciliation**:
   - Match a single bank statement line to multiple open invoices or bills simultaneously, with inline bank/merchant fee or rounding adjustment lines.
-- [ ] **18.4 Formal Bank Reconciliation Summary Report**:
+- [x] **18.4 Formal Bank Reconciliation Summary Report**:
   - Point-in-time printable proof reconciling Bank Statement Balance vs. GL Balance with explicit unreconciled deposits/payments lists and duplicate line detection.
-- [ ] **18.5 Find & Recode (Bulk Reclassification) & Opening/Conversion Balances**:
+- [x] **18.5 Find & Recode (Bulk Reclassification) & Opening/Conversion Balances**:
   - Filter posted transactions by Contact, Account, Tax Treatment, or Cost Centre and batch-recode with automatic GL adjustment and audit trail; plus guided Conversion Balances setup for migrating businesses.
 
 ---
 
-### Module 19 (Wave 2): Tax Agent, Statutory & Period-Close Workbench (`CORE_ACCOUNTING` — `ACCOUNTANT` / `AUDITOR`)
+### Module 19 (Wave 2): Tax Agent, Statutory & Period-Close Workbench (`CORE_ACCOUNTING` — `ACCOUNTANT` / `AUDITOR`) (✅ COMPLETED)
 **Objective:** Equip Australian Tax Agents, BAS Agents, and Senior Accountants (operating under `ACCOUNTANT` / `AUDITOR` roles) with end-to-end compliance, period-close, and statutory reporting tools.
 
-- [ ] **19.1 Cash vs. Accrual Basis Toggle on Reports & ATO BAS Engine**:
+- [x] **19.1 Cash vs. Accrual Basis Toggle on Reports & ATO BAS Engine**:
   - Support both Cash and Accrual accounting basis across BAS worksheets, P&L, and GST Audit reports.
-- [ ] **19.2 Month-End & BAS Health Check (Close Checklist) & GST Exception Diagnostics**:
+- [x] **19.2 Month-End & BAS Health Check (Close Checklist) & GST Exception Diagnostics**:
   - Guided close checklist surfacing unreconciled bank lines, unposted drafts, GST anomalies (e.g., GST claimed on contacts missing an ABN, tax overrides), suspense balances, and 1-click Period Lock.
-- [ ] **19.3 Statement of Cash Flows & Comparative Financial Statements**:
+- [x] **19.3 Statement of Cash Flows & Comparative Financial Statements**:
   - Add Statement of Cash Flows, side-by-side period comparisons (MoM/QoQ/YoY `$` and `%` variance), and Budget vs. Actual P&L.
-- [ ] **19.4 Fixed Asset Register, Auto-Depreciation & Tax Agent Workpaper Pack Export**:
+- [x] **19.4 Fixed Asset Register, Auto-Depreciation & Tax Agent Workpaper Pack Export**:
   - ATO straight-line / diminishing-value asset register with automated monthly depreciation journals and 1-click EOFY workpaper export.
 
 ---

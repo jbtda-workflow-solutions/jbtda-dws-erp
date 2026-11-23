@@ -52,6 +52,20 @@ const QUICK_DESTINATIONS: QuickDestination[] = [
     allowedRoles: ['ADMIN', 'ACCOUNTANT', 'MANAGER', 'AR_SPECIALIST', 'AP_SPECIALIST', 'AUDITOR'],
   },
   {
+    label: 'Bookkeeping Workbench',
+    subtitle: 'Account register, bank rules, cash coding, Find & Recode & conversion balances',
+    href: '/bookkeeping',
+    icon: BookOpen,
+    allowedRoles: ['ADMIN', 'ACCOUNTANT', 'MANAGER', 'AUDITOR'],
+  },
+  {
+    label: 'Tax & Period Close',
+    subtitle: 'BAS health check, Cash/Accrual BAS, Cash Flow, Comparative P&L & Fixed Assets',
+    href: '/tax-close',
+    icon: BarChart3,
+    allowedRoles: ['ADMIN', 'ACCOUNTANT', 'MANAGER', 'AUDITOR'],
+  },
+  {
     label: 'Journal Ledger',
     subtitle: 'Posted journals, manual entries & recurring schedules',
     href: '/ledger',

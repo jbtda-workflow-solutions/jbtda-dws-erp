@@ -171,6 +171,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   ├── banking.ts         # Multi-account banking, transfers, context-aware statement CSV import & 6-mode contact-linked reconciliation
 │       │   ├── batch-payments.ts  # GET/POST /api/v1/batch-payments, GET /:id/aba (APCA CEMTEX file download)
 │       │   ├── bills.ts           # GET/POST/PATCH/DELETE /api/v1/bills, edit & re-post, revert-to-draft, void, payment reversal & recurring
+│       │   ├── bookkeeping.ts     # Stage 18 Bookkeeping Workbench API (account register, bank rules, cash coding, split match, rec proof, find & recode, conversion balances)
 │       │   ├── bulk-import.ts     # GET /api/v1/bulk-import/templates, POST /validate, POST /commit (Centralized 13-type Admin CSV Import Engine)
 │       │   ├── connectors.ts      # GET /api/v1/connectors/overview, GET/POST/DELETE /api-keys (Scoped Bearer API Keys & Vault)
 │       │   ├── connectors-google.ts # Google Workspace OAuth 2.0 & Drive/Sheets/Calendar sync endpoints (/api/v1/connectors/oauth/google/*, /google/*)
@@ -189,6 +190,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
 │       │   ├── reports.ts         # GET /api/v1/reports/* (Trial Balance, P&L, Balance Sheet, Aged AR/AP, ATO BAS Engine)
 │       │   ├── search.ts          # GET /api/v1/search (Tenant-isolated, RBAC- & module-scoped cross-module search & AUD amount lookup)
 │       │   ├── system.ts          # POST /api/v1/system/run-recurring (Cloud Scheduler X-Webhook-Secret & ADMIN recurring runner)
+│       │   ├── tax-close.ts       # Stage 19 Tax Agent & Period-Close API (health check, Cash/Accrual BAS, Cash Flow, Comparative P&L, Fixed Assets & EOFY workpapers)
 │       │   └── vendor-credits.ts  # GET/POST/DELETE /api/v1/vendor-credits, /:id/issue (contra-AP GL), /:id/allocate, /:id/void
 │       └── server.ts          # Fastify server entry point, static serving, plugins
 ├── docs/                      # Technical Documentation
@@ -245,11 +247,22 @@ The application relies strictly on Google Cloud Run container configuration (zer
         │       ├── PipelineRibbon.tsx  # Connected horizontal lifecycle process bar
         │       └── StatusTag.tsx       # Squared technical status badge with 6px semantic dot
         ├── features/
-        │   └── dashboard/
-        │       ├── BookkeeperHome.tsx  # ACCOUNTANT daily bookkeeping & tax workbench landing home
-        │       ├── EmployeeHome.tsx    # EMPLOYEE mobile-first self-service expense claims & banking portal
-        │       ├── ExecutiveHome.tsx   # ADMIN / MANAGER / AUDITOR executive financial intelligence home
-        │       └── SpecialistHome.tsx  # AR_SPECIALIST / AP_SPECIALIST focused operational queue home
+        │   ├── bookkeeping/
+        │   │   ├── AccountTransactionsTab.tsx # Interactive Account Transactions register with opening & running balance
+        │   │   ├── BankRecReportTab.tsx       # Formal Bank Reconciliation Proof & duplicate statement line detector
+        │   │   ├── BankRulesCashCodingTab.tsx # Deterministic Bank Rules CRUD, bulk Cash Coding & Split/Fee multi-match
+        │   │   ├── ConversionBalancesTab.tsx  # Guided Opening / Conversion Balances migration wizard
+        │   │   └── FindRecodeTab.tsx          # Batch Find & Recode via atomic Reclassification Journal
+        │   ├── dashboard/
+        │   │   ├── BookkeeperHome.tsx  # ACCOUNTANT daily bookkeeping & tax workbench landing home
+        │   │   ├── EmployeeHome.tsx    # EMPLOYEE mobile-first self-service expense claims & banking portal
+        │   │   ├── ExecutiveHome.tsx   # ADMIN / MANAGER / AUDITOR executive financial intelligence home
+        │   │   └── SpecialistHome.tsx  # AR_SPECIALIST / AP_SPECIALIST focused operational queue home
+        │   └── tax/
+        │       ├── CashAccrualBasTab.tsx      # ATO BAS Cash vs. Accrual basis worksheet toggle
+        │       ├── CashFlowComparativeTab.tsx # Statement of Cash Flows & Comparative P&L (Prior Period / YoY)
+        │       ├── FixedAssetsTab.tsx         # ATO Fixed Asset Register, monthly depreciation runner & disposal
+        │       └── HealthCheckTab.tsx         # Month-End & BAS Close Checklist, GST ABN diagnostics & EOFY CSV export
         ├── hooks/
         │   └── useAuth.tsx    # Global auth context, multi-org memberships, and switcher state
         ├── lib/
@@ -258,6 +271,7 @@ The application relies strictly on Google Cloud Run container configuration (zer
             ├── AccountsPage.tsx      # Module 2 Chart of Accounts workbench (list, create, seed system accounts)
             ├── BankingPage.tsx       # Module 7 Multi-Account Banking, Inter-Account Transfers & Split-Pane Reconciliation
             ├── BillsPage.tsx         # Accounts Payable bills (list, line items, payments out, GL modal)
+            ├── BookkeepingPage.tsx   # Module 18 (Wave 1) Bookkeeping Workbench (/bookkeeping — Register, Bank Rules, Cash Coding, Rec Proof, Find & Recode, Conversion Balances)
             ├── ConnectorsPage.tsx    # Module 15 Connectors Hub (/connectors — External Apps & Scoped Inbound API Keys)
             ├── ContactsPage.tsx      # Contacts directory (list, filter, create, edit modal)
             ├── DashboardPage.tsx     # Executive dashboard with live working capital KPIs & actionable approvals queue
@@ -269,5 +283,6 @@ The application relies strictly on Google Cloud Run container configuration (zer
             ├── LoginPage.tsx         # Google sign-in landing page
             ├── OnboardingModal.tsx   # First-time organization creation modal
             ├── ReportsPage.tsx       # Module 8 Financial Statements, Dimensional P&L, Balance Sheet & ATO BAS Engine
-            └── SettingsPage.tsx      # Module 1 & 12 Workspace Governance, EFT Banking, RBAC Team, Audit Log & Centralized Admin Bulk CSV Import Hub
+            ├── SettingsPage.tsx      # Module 1 & 12 Workspace Governance, EFT Banking, RBAC Team, Audit Log & Centralized Admin Bulk CSV Import Hub
+            └── TaxClosePage.tsx      # Module 19 (Wave 2) Tax Agent & Period-Close Workbench (/tax-close — Health Check, Cash/Accrual BAS, Cash Flow, Comparative P&L, Fixed Assets)
 ```

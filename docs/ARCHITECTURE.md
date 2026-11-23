@@ -376,7 +376,28 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `POST` | `/api/v1/connectors/google/drive/sync` | Cookie Session (`CONNECTORS` module) | `ADMIN`, `ACCOUNTANT` | Archives Trial Balance, Customer Invoices, and Vendor Bills CSV snapshots into `YYYY/YYYY-MM` subfolders inside Google Drive (auto-creating `JBTDA-DWS ERP Archive` if blank) and logs to `connector_sync_logs`. |
 | `POST` | `/api/v1/connectors/google/calendar/sync` | Cookie Session (`CONNECTORS` module) | `ADMIN`, `ACCOUNTANT` | Idempotently syncs open AR/AP due dates, ATO quarterly BAS lodgement deadlines, and active Recurring Schedules to Google Calendar using deterministic event IDs and logs to `connector_sync_logs`. |
 
-### 24. Frontend Client Routes (`frontend/src/App.tsx`)
+### 24. Bookkeeping Workbench & Tax Period-Close API (`/api/v1/bookkeeping/*`, `/api/v1/tax/*`)
+| Verb | Exact Path | Auth Required | RBAC Scope | Purpose / Side Effects |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/bookkeeping/account-transactions` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR` | Interactive Account Transactions Register with opening & running balances, date/account/dimension/search filters, and source sub-ledger links. |
+| `GET`/`POST` | `/api/v1/bookkeeping/bank-rules` | Cookie Session | `ADMIN`, `ACCOUNTANT` (Read: `AUDITOR`) | Lists or creates deterministic Bank Reconciliation auto-coding rules (`bank_rules`). |
+| `PATCH`/`DELETE` | `/api/v1/bookkeeping/bank-rules/:id` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Updates or deletes a tenant bank rule. |
+| `POST` | `/api/v1/bookkeeping/bank-rules/apply` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Applies active Bank Rules to unreconciled `bank_statement_lines`, populating suggested Contact, Account, Cost Centre, and Tax Treatment. |
+| `POST` | `/api/v1/bookkeeping/cash-coding/reconcile` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Atomically creates `DirectTransaction` + balanced GL journals and reconciles multiple bank statement lines in one batch. |
+| `POST` | `/api/v1/bookkeeping/reconciliation/split-match` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Matches one bank statement line across multiple open Invoices or Bills with optional inline bank/merchant fee adjustment. |
+| `GET` | `/api/v1/bookkeeping/reconciliation/summary` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Formal Bank Reconciliation Summary Proof comparing Statement Balance vs. GL Balance with unpresented items and duplicate statement line detection. |
+| `GET`/`POST` | `/api/v1/bookkeeping/find-recode/preview`, `/apply` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Previews posted non-system GL lines and batch-recodes them via an atomic balanced `FIND_AND_RECODE` Reclassification Journal. |
+| `POST` | `/api/v1/bookkeeping/conversion-balances` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Posts balanced Opening / Conversion Balances (`CONVERSION_BALANCE` journal) for businesses migrating from prior accounting software. |
+| `GET` | `/api/v1/tax/health-check` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Month-End & BAS Close Checklist with readiness score and ATO GST ABN exception diagnostics. |
+| `GET` | `/api/v1/tax/bas-basis` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR` | Computes ATO BAS worksheet (G1, G3, G11, 1A, 1B, Net GST) on either `CASH` or `ACCRUAL` accounting basis. |
+| `GET` | `/api/v1/tax/cash-flow` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR` | Statement of Cash Flows across Operating, Investing, and Financing activities. |
+| `GET` | `/api/v1/tax/comparative-pl` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR` | Comparative Profit & Loss (Current vs. Prior Period or Prior Year YoY) with `$` and integer basis-point `%` variances. |
+| `GET`/`POST` | `/api/v1/tax/fixed-assets` | Cookie Session | `ADMIN`, `ACCOUNTANT` (Read: `AUDITOR`) | Lists or registers ATO Fixed Assets (`fixed_assets`) with Straight-Line / Diminishing-Value schedules. |
+| `POST` | `/api/v1/tax/fixed-assets/run-depreciation` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Calculates integer-cent ATO depreciation across active assets and posts a balanced `DEPRECIATION` GL journal. |
+| `POST` | `/api/v1/tax/fixed-assets/:id/dispose` | Cookie Session | `ADMIN`, `ACCOUNTANT` | Disposes a fixed asset and posts proceeds, accumulated depreciation clearance, and gain/loss GL journal. |
+| `GET` | `/api/v1/tax/workpaper-pack` | Cookie Session | `ADMIN`, `ACCOUNTANT`, `AUDITOR` | Downloads 1-click EOFY Tax Agent Workpaper Pack `.CSV` (Trial Balance + Fixed Asset Schedule). |
+
+### 25. Frontend Client Routes (`frontend/src/App.tsx`)
 | Client Route | Guard Status | Rendered Component | Purpose / Description |
 | :--- | :--- | :--- | :--- |
 | `/` | Authenticated | `<DashboardPage />` | Executive dashboard overview, live working capital metrics, actionable approvals banner, and financial KPIs. |
@@ -388,6 +409,8 @@ Per **AGENTS.md Rule 14 (Zero-Ambiguity Entrypoint & Configuration Documentation
 | `/bills` | Authenticated | `<BillsPage />` | Accounts Payable Bills, Purchase Orders, Vendor Credits, and Batch Payments workbench. |
 | `/expenses` | Authenticated | `<ExpensesPage />` | Direct Spend Money, Out-of-Pocket Expense Claims, Approvals Queue, and Reimbursement Payouts workbench. |
 | `/banking` | Authenticated | `<BankingPage />` | Bank & Credit Card Accounts, Inter-Account Transfers, Statement CSV Import, and Smart Split-Pane Reconciliation workbench. |
+| `/bookkeeping` | Authenticated (`ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR`) | `<BookkeepingPage />` | Stage 18 Bookkeeping Workbench: Account Transactions Register, Bank Rules & Bulk Cash Coding, Split/Fee Reconciliation, Bank Rec Proof, Find & Recode, and Conversion Balances. |
+| `/tax-close` | Authenticated (`ADMIN`, `ACCOUNTANT`, `MANAGER`, `AUDITOR`) | `<TaxClosePage />` | Stage 19 Tax Agent & Period-Close Workbench: Period-Close Health Check & GST ABN Diagnostics, Cash vs. Accrual BAS, Statement of Cash Flows, Comparative P&L, ATO Fixed Asset Register, and EOFY Workpaper Export. |
 | `/accounts` | Authenticated | `<AccountsPage />` | Chart of Accounts and Tracking Dimensions workbench. |
 | `/ledger` | Authenticated | `<LedgerPage />` | General Ledger audit trail and manual journal entry management. |
 | `/reports` | Authenticated | `<ReportsPage />` | Financial Statements (Trial Balance, Dimensional P&L, Balance Sheet, Aged AR/AP) and Australian ATO BAS Engine workbench. |

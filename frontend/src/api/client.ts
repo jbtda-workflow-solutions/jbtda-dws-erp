@@ -3086,4 +3086,450 @@ export const connectorsApi = {
     }>('POST', '/connectors/google/calendar/sync', data ?? {}),
 };
 
+// ---------------------------------------------------------------------------
+// Stage 18 (Wave 1): Bookkeeping Workbench API (/api/v1/bookkeeping/*)
+// ---------------------------------------------------------------------------
+
+export interface AccountTransactionRow {
+  id: string;
+  journalEntryId: string;
+  entryNumber: string | null;
+  postedAt: string;
+  referenceType: string;
+  referenceId: string;
+  sourceHref: string;
+  isReconciled: boolean;
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  trackingOptionId: string | null;
+  trackingOptionName: string | null;
+  description: string;
+  journalDescription: string;
+  debitCents: number;
+  creditCents: number;
+  runningBalanceCents: number | null;
+}
+
+export interface AccountTransactionsResponse {
+  account: {
+    id: string;
+    code: string;
+    name: string;
+    type: string;
+    normalBalance: string;
+  } | null;
+  openingBalanceCents: number;
+  closingBalanceCents: number | null;
+  totalDebitsCents: number;
+  totalCreditsCents: number;
+  count: number;
+  transactions: AccountTransactionRow[];
+}
+
+export interface BankRule {
+  id: string;
+  name: string;
+  direction: 'SPEND' | 'RECEIVE';
+  matchField: 'DESCRIPTION' | 'REFERENCE' | 'ANY';
+  matchType: 'CONTAINS' | 'EXACT' | 'STARTS_WITH';
+  matchValue: string;
+  contactId: string | null;
+  accountId: string;
+  trackingOptionId: string | null;
+  taxTreatment: TaxTreatment;
+  priority: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface BankRecSummaryResponse {
+  asOfDate: string;
+  bankAccount: {
+    id: string;
+    code: string;
+    name: string;
+    bankBsb: string | null;
+    bankAccountNumber: string | null;
+  };
+  summary: {
+    statementImportedBalanceCents: number;
+    reconciledStatementCents: number;
+    ledgerBalanceCents: number;
+    reconciledLedgerCents: number;
+    unreconciledDepositsCents: number;
+    unreconciledPaymentsCents: number;
+    varianceCents: number;
+    isBalanced: boolean;
+  };
+  unreconciledStatementCount: number;
+  unreconciledLedgerCount: number;
+  duplicateStatementLineIds: string[];
+  unreconciledStatementLines: Array<{
+    id: string;
+    statementDate: string;
+    description: string;
+    reference: string | null;
+    amountCents: number;
+  }>;
+  unreconciledLedgerItems: Array<{
+    id: string;
+    entryNumber: string | null;
+    postedAt: string;
+    description: string;
+    amountCents: number;
+  }>;
+}
+
+export interface FindRecodeLine {
+  id: string;
+  journalEntryId: string;
+  accountId: string;
+  trackingOptionId: string | null;
+  description: string | null;
+  entryType: 'DEBIT' | 'CREDIT';
+  amountCents: number;
+  account: { id: string; code: string; name: string; type: string };
+  trackingOption: { id: string; name: string } | null;
+  journalEntry: {
+    id: string;
+    entryNumber: string | null;
+    description: string;
+    postedAt: string;
+    referenceType: string;
+  };
+}
+
+export const bookkeepingApi = {
+  getAccountTransactions: (params?: {
+    accountId?: string;
+    startDate?: string;
+    endDate?: string;
+    trackingOptionId?: string;
+    referenceType?: string;
+    search?: string;
+    limit?: number;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.accountId) q.set('accountId', params.accountId);
+    if (params?.startDate) q.set('startDate', params.startDate);
+    if (params?.endDate) q.set('endDate', params.endDate);
+    if (params?.trackingOptionId) q.set('trackingOptionId', params.trackingOptionId);
+    if (params?.referenceType) q.set('referenceType', params.referenceType);
+    if (params?.search) q.set('search', params.search);
+    if (params?.limit) q.set('limit', String(params.limit));
+    const qs = q.toString();
+    return request<AccountTransactionsResponse>(
+      'GET',
+      `/bookkeeping/account-transactions${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  listBankRules: () => request<{ rules: BankRule[] }>('GET', '/bookkeeping/bank-rules'),
+
+  createBankRule: (data: {
+    name: string;
+    direction: 'SPEND' | 'RECEIVE';
+    matchField: 'DESCRIPTION' | 'REFERENCE' | 'ANY';
+    matchType: 'CONTAINS' | 'EXACT' | 'STARTS_WITH';
+    matchValue: string;
+    contactId?: string | null;
+    accountId: string;
+    trackingOptionId?: string | null;
+    taxTreatment: TaxTreatment;
+    priority?: number;
+  }) => request<{ rule: BankRule }>('POST', '/bookkeeping/bank-rules', data),
+
+  deleteBankRule: (id: string) =>
+    request<{ ok: boolean }>('DELETE', `/bookkeeping/bank-rules/${id}`),
+
+  applyBankRules: (bankAccountId?: string) =>
+    request<{ ok: boolean; scannedLines: number; matchedCount: number }>(
+      'POST',
+      '/bookkeeping/bank-rules/apply',
+      { bankAccountId },
+    ),
+
+  cashCodingReconcile: (items: Array<{
+    statementLineId: string;
+    contactId?: string | null;
+    accountId: string;
+    trackingOptionId?: string | null;
+    taxTreatment: TaxTreatment;
+    description?: string;
+  }>) =>
+    request<{ ok: boolean; reconciledCount: number }>(
+      'POST',
+      '/bookkeeping/cash-coding/reconcile',
+      { items },
+    ),
+
+  splitMatchReconcile: (data: {
+    statementLineId: string;
+    mode: 'INVOICES' | 'BILLS';
+    allocations: Array<{ documentId: string; amountCents: number }>;
+    adjustment?: {
+      accountId: string;
+      amountCents: number;
+      taxTreatment: TaxTreatment;
+      description?: string;
+      trackingOptionId?: string | null;
+    };
+  }) =>
+    request<{ ok: boolean; journalId: string; entryNumber: string | null }>(
+      'POST',
+      '/bookkeeping/reconciliation/split-match',
+      data,
+    ),
+
+  getReconciliationSummary: (params?: { bankAccountId?: string; asOfDate?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.bankAccountId) q.set('bankAccountId', params.bankAccountId);
+    if (params?.asOfDate) q.set('asOfDate', params.asOfDate);
+    const qs = q.toString();
+    return request<BankRecSummaryResponse>(
+      'GET',
+      `/bookkeeping/reconciliation/summary${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  previewFindRecode: (params?: {
+    accountId?: string;
+    trackingOptionId?: string;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.accountId) q.set('accountId', params.accountId);
+    if (params?.trackingOptionId) q.set('trackingOptionId', params.trackingOptionId);
+    if (params?.startDate) q.set('startDate', params.startDate);
+    if (params?.endDate) q.set('endDate', params.endDate);
+    if (params?.search) q.set('search', params.search);
+    const qs = q.toString();
+    return request<{ lines: FindRecodeLine[] }>(
+      'GET',
+      `/bookkeeping/find-recode/preview${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  applyFindRecode: (data: {
+    lineIds: string[];
+    targetAccountId?: string;
+    targetTrackingOptionId?: string | null;
+    effectiveDate: string;
+    reason: string;
+  }) =>
+    request<{ ok: boolean; journalId: string; entryNumber: string | null; recodedLineCount: number }>(
+      'POST',
+      '/bookkeeping/find-recode/apply',
+      data,
+    ),
+
+  postConversionBalances: (data: {
+    conversionDate: string;
+    notes?: string;
+    lines: Array<{ accountId: string; debitCents: number; creditCents: number }>;
+  }) =>
+    request<{ ok: boolean; journalId: string; entryNumber: string | null }>(
+      'POST',
+      '/bookkeeping/conversion-balances',
+      data,
+    ),
+};
+
+// ---------------------------------------------------------------------------
+// Stage 19 (Wave 2): Tax Agent & Period-Close API (/api/v1/tax/*)
+// ---------------------------------------------------------------------------
+
+export interface TaxHealthCheckResponse {
+  period: { startDate: string; endDate: string };
+  organization: { name: string; abn: string; lockDate: string | null };
+  readinessScorePercent: number;
+  checklist: Array<{
+    id: string;
+    label: string;
+    status: 'PASS' | 'WARN' | 'FAIL' | 'INFO';
+    count: number;
+    detail: string;
+    href: string;
+  }>;
+  gstExceptions: {
+    billsMissingVendorAbn: Array<{
+      id: string;
+      reference: string;
+      contactName: string;
+      issueDate: string;
+      totalCents: number;
+      gstCents: number;
+    }>;
+    invoicesMissingCustomerAbn: Array<{
+      id: string;
+      invoiceNumber: string;
+      contactName: string;
+      issueDate: string;
+      totalCents: number;
+      gstCents: number;
+    }>;
+  };
+}
+
+export interface BasBasisResponse {
+  basis: 'ACCRUAL' | 'CASH';
+  period: { startDate: string; endDate: string };
+  boxes: {
+    g1TotalSalesCents: number;
+    g3GstFreeSalesCents: number;
+    g11NonCapitalPurchasesCents: number;
+    box1aGstOnSalesCents: number;
+    box1bGstOnPurchasesCents: number;
+    netGstPayableCents: number;
+  };
+}
+
+export interface CashFlowResponse {
+  period: { startDate: string; endDate: string };
+  openingCashCents: number;
+  operating: { inflowsCents: number; outflowsCents: number; netCents: number };
+  investing: { netCents: number };
+  financing: { netCents: number };
+  netCashChangeCents: number;
+  closingCashCents: number;
+}
+
+export interface ComparativePlRow {
+  accountId: string;
+  code: string;
+  name: string;
+  currentCents: number;
+  priorCents: number;
+  varianceCents: number;
+  varianceBps: number | null;
+}
+
+export interface ComparativePlResponse {
+  compareMode: 'PRIOR_PERIOD' | 'PRIOR_YEAR';
+  currentPeriod: { startDate: string; endDate: string };
+  priorPeriod: { startDate: string; endDate: string };
+  revenue: ComparativePlRow[];
+  expenses: ComparativePlRow[];
+  totals: {
+    currentRevenueCents: number;
+    priorRevenueCents: number;
+    currentExpenseCents: number;
+    priorExpenseCents: number;
+    currentNetProfitCents: number;
+    priorNetProfitCents: number;
+    netProfitVarianceCents: number;
+  };
+}
+
+export interface FixedAssetRecord {
+  id: string;
+  assetNumber: string;
+  name: string;
+  category: string;
+  purchaseDate: string;
+  costCents: number;
+  residualValueCents: number;
+  usefulLifeMonths: number;
+  depreciationMethod: 'STRAIGHT_LINE' | 'DIMINISHING_VALUE';
+  depreciationRateBps: number;
+  assetAccountId: string;
+  accumulatedDepAccountId: string;
+  depExpenseAccountId: string;
+  accumulatedDepCents: number;
+  writtenDownValueCents: number;
+  lastDepreciatedAt: string | null;
+  status: 'ACTIVE' | 'DISPOSED';
+  disposalDate: string | null;
+  disposalProceedsCents: number | null;
+  notes: string | null;
+}
+
+export const taxCloseApi = {
+  getHealthCheck: (params?: { startDate?: string; endDate?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.startDate) q.set('startDate', params.startDate);
+    if (params?.endDate) q.set('endDate', params.endDate);
+    const qs = q.toString();
+    return request<TaxHealthCheckResponse>('GET', `/tax/health-check${qs ? `?${qs}` : ''}`);
+  },
+
+  getBasBasis: (params: { basis: 'ACCRUAL' | 'CASH'; startDate: string; endDate: string }) => {
+    const q = new URLSearchParams({
+      basis: params.basis,
+      startDate: params.startDate,
+      endDate: params.endDate,
+    });
+    return request<BasBasisResponse>('GET', `/tax/bas-basis?${q.toString()}`);
+  },
+
+  getCashFlow: (params: { startDate: string; endDate: string }) => {
+    const q = new URLSearchParams({ startDate: params.startDate, endDate: params.endDate });
+    return request<CashFlowResponse>('GET', `/tax/cash-flow?${q.toString()}`);
+  },
+
+  getComparativePl: (params: {
+    startDate: string;
+    endDate: string;
+    compareMode: 'PRIOR_PERIOD' | 'PRIOR_YEAR';
+  }) => {
+    const q = new URLSearchParams({
+      startDate: params.startDate,
+      endDate: params.endDate,
+      compareMode: params.compareMode,
+    });
+    return request<ComparativePlResponse>('GET', `/tax/comparative-pl?${q.toString()}`);
+  },
+
+  listFixedAssets: () =>
+    request<{ assets: FixedAssetRecord[] }>('GET', '/tax/fixed-assets'),
+
+  createFixedAsset: (data: {
+    assetNumber: string;
+    name: string;
+    category: string;
+    purchaseDate: string;
+    costCents: number;
+    residualValueCents?: number;
+    usefulLifeMonths: number;
+    depreciationMethod: 'STRAIGHT_LINE' | 'DIMINISHING_VALUE';
+    depreciationRateBps: number;
+    assetAccountId: string;
+    accumulatedDepAccountId: string;
+    depExpenseAccountId: string;
+    notes?: string;
+  }) => request<{ asset: FixedAssetRecord }>('POST', '/tax/fixed-assets', data),
+
+  runDepreciation: (data: { asOfDate: string; months: number }) =>
+    request<{
+      ok: boolean;
+      journalId: string;
+      entryNumber: string | null;
+      depreciatedAssetsCount: number;
+      totalDepCents: number;
+    }>('POST', '/tax/fixed-assets/run-depreciation', data),
+
+  disposeFixedAsset: (
+    id: string,
+    data: {
+      disposalDate: string;
+      disposalProceedsCents: number;
+      bankAccountId?: string;
+      gainLossAccountId: string;
+    },
+  ) =>
+    request<{
+      ok: boolean;
+      journalId: string;
+      entryNumber: string | null;
+      gainOrLossCents: number;
+    }>('POST', `/tax/fixed-assets/${id}/dispose`, data),
+
+  workpaperPackUrl: (asOfDate: string) =>
+    `/api/v1/tax/workpaper-pack?asOfDate=${encodeURIComponent(asOfDate)}`,
+};
+
 
